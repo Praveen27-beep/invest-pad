@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/holding.schema.json",
+  "title": "Holding",
+  "description": "DERIVED, NEVER STORED. Computed from the transaction ledger on every read. If this ever appears as a table in a migration, the architecture has been broken. Source of truth: docs/DATA_MODEL.md section 'Derived' and docs/ENGINE_SPEC.md sections 1-2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "quantity", "avg_cost", "invested"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Display only. May change over time; never key on it."
+    },
+    "quantity": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Net position. Positions at or below zero are closed and excluded from output."
+    },
+    "avg_cost": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "invested / quantity. A sale removes cost proportionally, so selling never moves this number."
+    },
+    "invested": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "The cost pool. BONUS, SPLIT_ADJ and DEMERGER_IN add quantity and leave this unchanged, which is what automatically corrects cost basis after a corporate action."
+    },
+    "last_price": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "From the price pipe, not from ingestion. Absent price raises MissingPriceError; it is never defaulted to zero."
+    },
+    "market_value": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "quantity * last_price"
+    },
+    "unrealised": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "market_value - invested"
+    },
+    "unrealised_pct": {
+      "type": ["number", "null"],
+      "description": "unrealised / invested. Null when invested is zero, which is undefined rather than infinite."
+    },
+    "weight_pct": {
+      "type": ["number", "null"],
+      "description": "market_value / total market_value across all holdings."
+    },
+    "first_buy_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "fifo_cost": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Cost of the surviving FIFO lots. Differs from `invested` only where a position has been partly sold. Brokers report this convention; `invested` is the weighted average that ENGINE_SPEC section 1 displays. Both are correct answers to different questions, and reconciliation needs this one."
+    },
+    "fifo_avg": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "fifo_cost / quantity, to 4dp. What a broker holdings statement calls average price."
+    },
+    "cost_estimated": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when any acquisition contributing to this position's cost pool carried an estimated rather than a documented cost. STICKY: once averaged, estimated rupees cannot be separated from verified ones, so one estimated acquisition marks the whole pool. Any surface showing invested or unrealised for a flagged holding must say so - 'cost estimated' rather than 'cost verified'. Presenting an estimate as a fact is the failure this field exists to prevent."
+    }
+  }
+}

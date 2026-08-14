@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/lot.schema.json",
+  "title": "Lot",
+  "description": "One open FIFO lot. DERIVED, NEVER STORED. Lots run alongside weighted-average cost: the average is what the UI displays, the lots are what tax computation needs. Source of truth: docs/ENGINE_SPEC.md section 3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "open_date", "quantity_open", "cost_per_unit"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$"
+    },
+    "open_date": {
+      "type": "string",
+      "format": "date",
+      "description": "The acquiring transaction's trade date. Holding period is measured from here."
+    },
+    "quantity_open": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Remaining unconsumed quantity. A sell smaller than the oldest lot splits that lot rather than consuming it."
+    },
+    "cost_per_unit": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "BONUS and SPLIT_ADJ push a lot at cost 0, dated the corporate-action date. That is what makes bonus-stripping rules computable in a later phase."
+    }
+  }
+}

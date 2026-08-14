@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/performance.schema.json",
+  "title": "Performance",
+  "description": "The performance response. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md sections 4-6.\n\nENCODING RULE: rates are JSON numbers, not strings, matching how fixtures/golden_portfolio.json and fixtures/engine_cases.json already encode xirr_all and xirr_holdings. Money remains a string. Python holds rates as Decimal regardless, converting at the boundary via str().\n\nBOTH XIRR VARIANTS ARE REQUIRED TOGETHER. They answer different questions and the gap between them is itself the insight. Reporting only one leaves a choice about which number flatters the portfolio, and that choice should not exist.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["as_of", "xirr_all", "xirr_holdings"],
+  "properties": {
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
+    "xirr_all": {
+      "type": ["number", "null"],
+      "description": "Every transaction ever. Answers 'what has my investing returned, all in?'. Null when there are fewer than two flows, no sign change, or the solver fails."
+    },
+    "xirr_holdings": {
+      "type": ["number", "null"],
+      "description": "Only ISINs currently held. Answers 'how is the live book performing?'. Never present this without xirr_all beside it."
+    },
+    "absolute_return": {
+      "type": ["number", "null"],
+      "description": "(market_value + realised_to_date - net_invested) / net_invested"
+    },
+    "cagr": {
+      "type": ["number", "null"],
+      "description": "Assumes a single lump sum and no flows, so it is valid per-holding only. XIRR is the headline metric."
+    },
+    "invested": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "market_value": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "unrealised": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "realised_to_date": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "benchmark": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Cash-flow-replicated index return: what buying the index on exactly the days you bought stocks would have returned. Comparing portfolio XIRR against a headline index CAGR is not a valid comparison and must not be shown.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": ["NIFTY50_TRI", "SENSEX_TRI"],
+          "description": "Total-return indices only. Price indices exclude dividends and understate the benchmark."
+        },
+        "xirr": {
+          "type": ["number", "null"]
+        },
+        "terminal_value": {
+          "$ref": "transaction.schema.json#/$defs/decimal"
+        }
+      }
+    },
+    "warning": {
+      "type": ["string", "null"],
+      "description": "Set when a period XIRR spans under 90 days: annualising a six-day return is arithmetically valid and practically nonsense."
+    }
+  }
+}

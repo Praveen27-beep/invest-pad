@@ -1,0 +1,46 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.DS_Store
+
+# OAuth grants and client secrets for the Gmail adapter. Developer-local, never committed.
+client_secret*.json
+gmail.json
+*.token.json
+
+# ---------------------------------------------------------------------------
+# CLIENT DATA NEVER ENTERS VERSION CONTROL.
+#
+# Statements, contract notes, tradebooks and CAS files are one person's financial
+# history. Under DPDP they must be erasable on request, and git history is the one
+# place data cannot be erased from -- a force-push does not reach anyone who has
+# already cloned. They live in object storage with a retention policy instead.
+# ---------------------------------------------------------------------------
+*.pdf
+*.xlsx
+*.xls
+*.csv
+
+# The golden fixture is REAL: every trade, date, quantity and price one investor has
+# made, plus their demat identifiers. It is the correctness bar for the engine and it
+# stays local. tests/test_golden_portfolio.py skips without it, and the local path is
+# named in that module's docstring.
+fixtures/golden_portfolio.json
+
+# Anything dropped into the repo for a one-off local run.
+local/
+scratch/
+*.local.*
+
+# Synthetic and public fixtures are safe and DO belong in the repo -- re-admitted
+# below, deliberately and one at a time rather than with a blanket !fixtures/** :
+#   engine_cases.json  hand-computed unit cases, no real data
+#   bhavcopy/*.csv     public end-of-day exchange prices
+!fixtures/engine_cases.json
+!fixtures/bhavcopy/
+!fixtures/bhavcopy/*.csv

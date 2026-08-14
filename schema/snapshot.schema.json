@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/snapshot.schema.json",
+  "title": "Snapshot",
+  "description": "Portfolio totals as at one date. Source of truth: docs/DATA_MODEL.md section 'Derived' and docs/ENGINE_SPEC.md section 8.\n\nA persisted snapshot is a CACHE OF A DERIVATION, not a source of truth. It must always remain recomputable from the ledger. Storing these daily is what later unlocks the portfolio-value chart and TWRR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["as_of", "invested", "market_value"],
+  "properties": {
+    "as_of": {
+      "type": "string",
+      "format": "date",
+      "description": "Always passed in explicitly. The engine never reads the clock, because that would make tests non-deterministic and historical replay impossible."
+    },
+    "invested": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "market_value": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "unrealised": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "market_value - invested"
+    },
+    "realised_to_date": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Cumulative realised gain across every sell up to as_of."
+    }
+  }
+}

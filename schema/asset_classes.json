@@ -1,0 +1,342 @@
+{
+ "_comment": "Lookup table ONLY. Phase 1 BUILDS exactly one class: EQ. This full list exists so the asset_class enum never needs a migration - see docs/BLUEPRINT_REVIEW.md section Corrected-2. Seeding all codes is correct; building all codes is not.",
+ "_source": "Feature archaeology from the MProfit capture, extended with REIT/InvIT/SGB/PMS/CRYPTO.",
+ "phases": {
+  "1": "MVP - built and verified against golden fixtures",
+  "2": "Mutual funds - the natural second class (registrar CAS carries cost basis)",
+  "3": "Fixed income, retirement, REIT/InvIT - mostly statement-driven",
+  "4": "Long tail - physical, alternative, international, derivatives"
+ },
+ "asset_classes": [
+  {
+   "code": "EQ",
+   "display_name": "Stocks & ETFs",
+   "group": "DOMESTIC_EQUITY",
+   "phase": 1,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "MVP. The only class built in Phase 1."
+  },
+  {
+   "code": "MF_EQUITY",
+   "display_name": "Mutual Funds - Equity",
+   "group": "DOMESTIC_MF",
+   "phase": 2,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "CAMS/KFintech CAS carries cost basis - unlike demat CAS."
+  },
+  {
+   "code": "MF_DEBT",
+   "display_name": "Mutual Funds - Debt",
+   "group": "DOMESTIC_MF",
+   "phase": 2,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 1095,
+   "notes": "Post 1-Apr-2023 purchases taxed at slab; pre-2023 indexation applies."
+  },
+  {
+   "code": "SIF",
+   "display_name": "Specialised Investment Fund",
+   "group": "DOMESTIC_MF",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": ""
+  },
+  {
+   "code": "BND",
+   "display_name": "Traded Bonds",
+   "group": "DOMESTIC_DEBT",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "Listed bonds: 12m long-term."
+  },
+  {
+   "code": "NCD",
+   "display_name": "NCD / Debentures",
+   "group": "DOMESTIC_DEBT",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": ""
+  },
+  {
+   "code": "SGB",
+   "display_name": "Sovereign Gold Bonds",
+   "group": "DOMESTIC_DEBT",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "Redemption at maturity is tax-exempt - special case."
+  },
+  {
+   "code": "FD",
+   "display_name": "Fixed Deposits",
+   "group": "DOMESTIC_CASH",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Interest accrual, not capital gains."
+  },
+  {
+   "code": "BNK",
+   "display_name": "Banks",
+   "group": "DOMESTIC_CASH",
+   "phase": 3,
+   "is_taxable": false,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Cash balances; funds the cashflow view."
+  },
+  {
+   "code": "CD",
+   "display_name": "Deposits & Loans",
+   "group": "DOMESTIC_CASH",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "LN",
+   "display_name": "Loans",
+   "group": "DOMESTIC_CASH",
+   "phase": 4,
+   "is_taxable": false,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Liability - contributes NEGATIVE net worth."
+  },
+  {
+   "code": "PPF_EPF",
+   "display_name": "PPF / EPF",
+   "group": "RETIREMENT",
+   "phase": 3,
+   "is_taxable": false,
+   "supports_xirr": true,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Tax-exempt; XIRR still meaningful."
+  },
+  {
+   "code": "NPS_ULIP",
+   "display_name": "NPS / ULIP",
+   "group": "RETIREMENT",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "NSDL CSV + monthly PDF statement."
+  },
+  {
+   "code": "INS",
+   "display_name": "Insurance",
+   "group": "RETIREMENT",
+   "phase": 4,
+   "is_taxable": false,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "PO",
+   "display_name": "Post Office Schemes",
+   "group": "RETIREMENT",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "REIT",
+   "display_name": "REITs",
+   "group": "DOMESTIC_EQUITY",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "Holding period reduced 36m->12m in Budget 2024."
+  },
+  {
+   "code": "INVIT",
+   "display_name": "InvITs",
+   "group": "DOMESTIC_EQUITY",
+   "phase": 3,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "Same 12m change as REITs."
+  },
+  {
+   "code": "GLD",
+   "display_name": "Gold",
+   "group": "PHYSICAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "SLV",
+   "display_name": "Silver",
+   "group": "PHYSICAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "JWL",
+   "display_name": "Jewellery",
+   "group": "PHYSICAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "PR",
+   "display_name": "Property",
+   "group": "PHYSICAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 730,
+   "notes": ""
+  },
+  {
+   "code": "ART",
+   "display_name": "Art",
+   "group": "PHYSICAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "AIF",
+   "display_name": "Alternative Investment Funds",
+   "group": "ALTERNATIVE",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": "Drawdowns + distributions; needs capital-call modelling."
+  },
+  {
+   "code": "PE",
+   "display_name": "Private Equity",
+   "group": "ALTERNATIVE",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "PMS",
+   "display_name": "Portfolio Management Services",
+   "group": "ALTERNATIVE",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 365,
+   "notes": "Underlying-holdings passthrough + bankbook for cashflows."
+  },
+  {
+   "code": "US_EQ",
+   "display_name": "US Stocks & ETFs",
+   "group": "INTERNATIONAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": 730,
+   "notes": "USD base currency; needs FX at transaction date."
+  },
+  {
+   "code": "INTL_PE",
+   "display_name": "International Private Equity",
+   "group": "INTERNATIONAL",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": ""
+  },
+  {
+   "code": "STOCK_FNO",
+   "display_name": "Stock F&O",
+   "group": "DERIVATIVES",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Business income, not capital gains. Different tax treatment entirely."
+  },
+  {
+   "code": "OTHER_FNO",
+   "display_name": "Index / Other F&O",
+   "group": "DERIVATIVES",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": false,
+   "supports_capital_gains": false,
+   "long_term_days": null,
+   "notes": "Same."
+  },
+  {
+   "code": "CRYPTO",
+   "display_name": "Virtual Digital Assets",
+   "group": "ALTERNATIVE",
+   "phase": 4,
+   "is_taxable": true,
+   "supports_xirr": true,
+   "supports_capital_gains": true,
+   "long_term_days": null,
+   "notes": "Flat 30% + 1% TDS; no loss set-off. Isolated tax rules."
+  }
+ ]
+}

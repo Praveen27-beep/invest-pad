@@ -1,0 +1,101 @@
+"""UDiFF bhavcopy parsing -- one parser, both exchanges.
+
+NSE and BSE now publish the same UDiFF layout with identical column headers, including an
+ISIN column. That last point is what makes this pipe possible at all: the legacy NSE
+``cmDDMMMYYYYbhav`` format carries only SYMBOL, so keying on it would have required a
+symbol lookup table and reintroduced exactly the ticker-reuse problem CLAUDE.md opens with
+(Indosolar's ISIN now resolves to WAAREEINDO; the ISIN never moved).
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import zipfile
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal, InvalidOperation
+
+ISIN_COLUMN = "ISIN"
+CLOSE_COLUMN = "ClsPric"
+DATE_COLUMN = "TradDt"
+SYMBOL_COLUMN = "TckrSymb"
+SERIES_COLUMN = "SctySrs"
+INSTRUMENT_COLUMN = "FinInstrmTp"
+
+#: Cash-segment equity only. A UDiFF file also carries derivatives, whose "close" is a
+#: settlement price for a contract - valuing a share at one would be nonsense.
+EQUITY_INSTRUMENTS = {"STK", "EQ", ""}
+
+
+@dataclass(frozen=True, slots=True)
+class BhavcopyRow:
+    isin: str
+    close: Decimal
+    price_date: date
+    symbol: str
+    series: str
+    exchange: str
+
+
+class BhavcopyFormatError(ValueError):
+    """The file is not a UDiFF bhavcopy. Raised rather than returning nothing, because
+    silently parsing zero rows out of a changed format is how a pipe reports success while
+    delivering no prices."""
+
+
+def _decompress(payload: bytes) -> str:
+    """NSE ships a ZIP, BSE ships bare CSV. Detect rather than configure."""
+    if payload[:2] == b"PK":
+        archive = zipfile.ZipFile(io.BytesIO(payload))
+        return archive.read(archive.namelist()[0]).decode("utf-8", "replace")
+    return payload.decode("utf-8-sig", "replace")
+
+
+def parse(payload: bytes, exchange: str) -> list[BhavcopyRow]:
+    """Rows with a usable ISIN and close. Everything else is skipped, quietly and safely.
+
+    Raises:
+        BhavcopyFormatError: the expected columns are absent, which means the format
+            changed and nothing downstream should trust this file.
+    """
+    reader = csv.DictReader(io.StringIO(_decompress(payload)))
+    if reader.fieldnames is None:
+        raise BhavcopyFormatError(f"{exchange}: file is empty")
+
+    columns = {(f or "").strip() for f in reader.fieldnames}
+    missing = {ISIN_COLUMN, CLOSE_COLUMN, DATE_COLUMN} - columns
+    if missing:
+        raise BhavcopyFormatError(
+            f"{exchange}: not a UDiFF bhavcopy, missing {sorted(missing)}. "
+            "The legacy format has no ISIN column at all."
+        )
+
+    rows: list[BhavcopyRow] = []
+    for raw in reader:
+        isin = (raw.get(ISIN_COLUMN) or "").strip()
+        if not isin:
+            continue
+        instrument = (raw.get(INSTRUMENT_COLUMN) or "").strip().upper()
+        if instrument not in EQUITY_INSTRUMENTS:
+            continue
+        try:
+            close = Decimal(str(raw.get(CLOSE_COLUMN) or "").strip())
+            price_date = date.fromisoformat((raw.get(DATE_COLUMN) or "").strip())
+        except (InvalidOperation, ValueError):
+            continue
+        if close <= 0:
+            # A zero close is a suspended or untraded scrip, not a price. Storing it would
+            # value a holding at nothing, which is the failure MissingPriceError exists for.
+            continue
+        rows.append(
+            BhavcopyRow(
+                isin=isin,
+                close=close,
+                price_date=price_date,
+                symbol=(raw.get(SYMBOL_COLUMN) or "").strip(),
+                series=(raw.get(SERIES_COLUMN) or "").strip(),
+                exchange=exchange,
+            )
+        )
+    return rows

@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/transaction.schema.json",
+  "title": "Transaction",
+  "description": "The only writable object in the system, and the thing everything else is derived from. APPEND-ONLY: a correction is a new reversing row, never an edit. Source of truth: docs/DATA_MODEL.md, table `transaction`.\n\nENCODING RULE: money and quantity are JSON strings, never numbers, so no precision is lost in transit and no consumer is tempted to parse them into a binary floating-point type. Rates (see performance.schema.json) are the sole exception.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "txn_date", "txn_type", "quantity", "price"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "account_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Which demat/broker account. Absent in engine unit fixtures, which test pure calculation."
+    },
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$",
+      "description": "THE identity of a security. 12 characters; INE.../INF... are the common prefixes. Never key on ticker: tickers get renamed and reused, ISINs do not."
+    },
+    "txn_date": {
+      "type": "string",
+      "format": "date",
+      "description": "TRADE date, not settlement date. Reconciliation depends on this distinction."
+    },
+    "txn_type": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL",
+        "BONUS",
+        "SPLIT_ADJ",
+        "DEMERGER_IN",
+        "TRANSFER_IN",
+        "TRANSFER_OUT",
+        "IPO_ALLOT",
+        "BUYBACK",
+        "DIVIDEND"
+      ],
+      "description": "Quantity and cash effects per txn_type are tabulated in docs/DATA_MODEL.md and docs/ENGINE_SPEC.md section 1."
+    },
+    "quantity": {
+      "$ref": "#/$defs/decimal",
+      "description": "ALWAYS POSITIVE. Direction comes from txn_type, never from a sign here."
+    },
+    "price": {
+      "$ref": "#/$defs/decimal",
+      "description": "Per unit, excluding charges."
+    },
+    "charges": {
+      "$ref": "#/$defs/decimal",
+      "description": "Brokerage + STT + GST + stamp, combined. Defaults to 0."
+    },
+    "dividend_amount": {
+      "$ref": "#/$defs/decimal",
+      "description": "Used only when txn_type is DIVIDEND, where quantity and price are 0. A separate field rather than overloading `price`, because a dividend is a per-holding cash event, not a per-unit trade."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["MANUAL", "CSV", "TRADEBOOK", "CONTRACT_NOTE", "EMAIL", "CORP_ACTION"],
+      "description": "Which adapter produced this row. The engine must never branch on it."
+    },
+    "source_ref": {
+      "type": "string",
+      "description": "Contract-note number, trade id, or equivalent from the originating document."
+    },
+    "dedupe_key": {
+      "type": "string",
+      "description": "sha256(account_id | source | source_ref | isin | txn_date | txn_type | quantity | price). A UNIQUE INDEX on this column is what makes re-importing safe. Email forwarding will deliver the same contract note twice; the database must be the thing that refuses it, not application code someone later forgets to call."
+    },
+    "raw_payload": {
+      "type": ["object", "null"],
+      "description": "The original parsed row, kept for forensics."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "An exact decimal carried as a string. Maps to Python decimal.Decimal and Postgres NUMERIC(20,6)."
+    }
+  }
+}

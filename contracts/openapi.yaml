@@ -1,0 +1,238 @@
+openapi: 3.1.0
+info:
+  title: Portfolio Intelligence API
+  version: 0.1.0-mvp
+  description: |
+    THE STACK-AGNOSTIC CONTRACT.
+
+    This file, plus schema/*.schema.json and fixtures/*.json, IS the system.
+    Any language or framework honouring these and passing the fixtures is a
+    valid implementation. Generate server stubs with openapi-generator.
+
+    Two invariants the API must preserve:
+      1. Holdings and performance are DERIVED on read. There is no PUT /holdings.
+      2. Transactions are APPEND-ONLY. There is no PUT or DELETE on /transactions;
+         corrections are new reversing rows via POST.
+
+servers:
+  - url: https://api.example.com/v1
+
+tags:
+  - name: transactions
+    description: The only writable ledger. Append-only.
+  - name: derived
+    description: Computed on every request. Never stored.
+  - name: ingestion
+    description: Adapters. Each converts a source into Transaction[] and stops.
+  - name: ops
+    description: Prices and reconciliation.
+
+paths:
+  /investors/{investor_id}/transactions:
+    get:
+      tags: [transactions]
+      summary: List the ledger
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: isin,   in: query, schema: { type: string } }
+        - { name: from,   in: query, schema: { type: string, format: date } }
+        - { name: to,     in: query, schema: { type: string, format: date } }
+        - { name: account_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'https://mei.capital/schema/transaction.schema.json' }
+    post:
+      tags: [transactions]
+      summary: Append transactions (idempotent on dedupe_key)
+      description: |
+        Duplicates are SKIPPED, not errors. Returns counts so the caller can show
+        an honest import summary. This endpoint backs manual entry, CSV import and
+        the email webhook alike.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: 'https://mei.capital/schema/transaction.schema.json' }
+      responses:
+        '200':
+          description: Import summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  inserted: { type: integer }
+                  skipped_duplicates: { type: integer }
+                  rejected:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        row: { type: integer }
+                        reason: { type: string }
+
+  /investors/{investor_id}/holdings:
+    get:
+      tags: [derived]
+      summary: Current holdings, computed from the ledger
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: as_of, in: query, schema: { type: string, format: date }, description: Historical replay. Defaults to today. }
+        - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'https://mei.capital/schema/holding.schema.json' }
+        '409':
+          description: MissingPriceError - one or more held ISINs have no usable price
+
+  /investors/{investor_id}/performance:
+    get:
+      tags: [derived]
+      summary: Both XIRR variants, returns, benchmark
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: as_of, in: query, schema: { type: string, format: date } }
+        - { name: period_start, in: query, schema: { type: string, format: date },
+            description: For the adviser-onboarding case. Requires period_opening_value. }
+        - { name: period_opening_value, in: query, schema: { type: string },
+            description: MARKET value on period_start, not cost. }
+        - { name: benchmark, in: query, schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: 'https://mei.capital/schema/performance.schema.json' }
+
+  /investors/{investor_id}/lots:
+    get:
+      tags: [derived]
+      summary: Open FIFO lots
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: OK }
+
+  /investors/{investor_id}/realised:
+    get:
+      tags: [derived]
+      summary: Realised gains, FIFO-matched, short/long classified
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: fy, in: query, schema: { type: string, examples: ["2025-26"] } }
+      responses:
+        '200': { description: OK }
+
+  /ingest/csv:
+    post:
+      tags: [ingestion]
+      summary: Upload one or more broker CSV/XLSX files
+      description: |
+        Multi-file by design. Console caps each tradebook download at 365 days, so a
+        full history is several files. Merge and dedupe server-side.
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                investor_id: { type: string, format: uuid }
+                account_id:  { type: string, format: uuid }
+                adapter:     { type: string, enum: [zerodha_tradebook, generic_csv] }
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        '200': { description: Import summary }
+
+  /ingest/email:
+    post:
+      tags: [ingestion]
+      summary: Inbound email webhook (SendGrid / Mailgun / Postmark)
+      description: |
+        Routing is by the `to` address, NEVER by sniffing content. Address pattern:
+        {investor_code}-{broker}-{doctype}@in.yourdomain.com
+
+        Zerodha sends at least four document types from the same sender address, so
+        content sniffing misclassifies. Address routing cannot.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to:      { type: string }
+                from:    { type: string }
+                subject: { type: string }
+                attachments:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      filename:     { type: string }
+                      content_type: { type: string }
+                      content_b64:  { type: string }
+      responses:
+        '202': { description: Accepted for processing }
+
+  /ops/prices/refresh:
+    post:
+      tags: [ops]
+      summary: Fetch NSE + BSE bhavcopy and upsert prices
+      description: |
+        Runs daily ~18:30 IST. BOTH exchanges are mandatory - some SME/BSE-only
+        scrips have no NSE symbol at all, and an unpriced holding makes XIRR
+        uncomputable. Failure must alert, never silently serve stale prices.
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prices_stored: { type: integer }
+                  missing_isins: { type: array, items: { type: string } }
+                  price_date:    { type: string, format: date }
+
+  /investors/{investor_id}/reconcile:
+    post:
+      tags: [ops]
+      summary: Compare computed holdings against declared quantities
+      description: |
+        The corporate-action detector. Feed CAS or broker holdings quantities;
+        any mismatch is a corporate action, off-market transfer, missed contract
+        note, or bug.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                as_of:  { type: string, format: date }
+                source: { type: string }
+                holdings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      isin:     { type: string }
+                      quantity: { type: string }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'https://mei.capital/schema/discrepancy.schema.json' }

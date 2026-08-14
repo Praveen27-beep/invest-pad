@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/discrepancy.schema.json",
+  "title": "Discrepancy",
+  "description": "One mismatch between computed holdings and a depository- or broker-declared quantity. Source of truth: docs/ENGINE_SPEC.md section 7.\n\nThis is the corporate-action detector. A mismatch means exactly one of: a corporate action, an off-market transfer, a missed contract note, or a bug. All four need a human; all four are invisible without this check.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "computed_qty", "declared_qty", "difference"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$"
+    },
+    "computed_qty": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "What replaying the ledger says the investor holds."
+    },
+    "declared_qty": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "What the CAS or broker statement says. Used to CHECK the engine, never as a source of truth for display."
+    },
+    "difference": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "declared_qty - computed_qty"
+    },
+    "ratio": {
+      "type": ["number", "null"],
+      "description": "declared_qty / computed_qty. Null when computed_qty is zero. The cause heuristics key off this: about 2 suggests a 1:1 bonus or 1:2 split, about 3 a 1:2 bonus or 1:3 split, about 5 or 10 a split."
+    },
+    "likely_cause": {
+      "type": "string",
+      "description": "Human-readable diagnosis from the ratio heuristics table in ENGINE_SPEC section 7. A hypothesis for a human to confirm, never an instruction to auto-correct the ledger."
+    }
+  }
+}

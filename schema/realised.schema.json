@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/realised.schema.json",
+  "title": "Realised",
+  "description": "One FIFO-matched realised gain: a slice of a sell against a single lot. A sell spanning two lots produces two of these. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md section 3.\n\nThe MVP computes and displays realised gains. It does NOT produce a tax return: Section 112A grandfathering, bonus stripping and demerger cost ratios are a later phase (docs/TAX_ENGINE.md).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["quantity", "proceeds", "cost", "gain", "term"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$"
+    },
+    "sell_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "quantity": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Quantity consumed from this particular lot, not the whole sell."
+    },
+    "proceeds": {
+      "$ref": "transaction.schema.json#/$defs/decimal"
+    },
+    "cost": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "quantity * the matched lot's cost_per_unit."
+    },
+    "gain": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "proceeds - cost"
+    },
+    "holding_days": {
+      "type": "integer",
+      "description": "sell_date - lot.open_date"
+    },
+    "term": {
+      "type": "string",
+      "enum": ["SHORT", "LONG"],
+      "description": "LONG when holding_days exceeds the threshold for the asset class, otherwise SHORT. The threshold lives in schema/asset_classes.json as long_term_days (365 for EQ), never hardcoded, because it differs by asset and changes with the annual budget."
+    }
+  }
+}
