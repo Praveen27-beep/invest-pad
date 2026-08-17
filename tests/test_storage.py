@@ -11,10 +11,9 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
-from storage.base import ObjectNotFoundError, SignatureError
-from storage.keys import content_hash, extension_of, investor_prefix, object_key
-from storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
+from app.storage.base import ObjectNotFoundError, SignatureError
+from app.storage.keys import content_hash, extension_of, investor_prefix, object_key
+from app.storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
 
 PDF = b"%PDF-1.4 a client statement"
 OTHER = b"%PDF-1.4 a different statement"
@@ -39,7 +38,7 @@ def s3_store():
     with moto.mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket="test-bucket")
-        from storage.s3 import S3DocumentStore
+        from app.storage.s3 import S3DocumentStore
 
         yield S3DocumentStore(bucket="test-bucket", client=client)
 

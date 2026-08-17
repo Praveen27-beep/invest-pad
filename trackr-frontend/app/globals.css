@@ -1,0 +1,224 @@
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,500&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------------
+ * Design tokens. Every colour Tailwind resolves for `navy-*` / `cream-*` / `brass-*` /
+ * `surface` / `positive` / `negative` (see tailwind.config.ts) points at one of these
+ * variables, so a single flip of `.dark` on <html> re-themes every existing component
+ * -- no component file has to know a dark mode exists.
+ *
+ * The role of each name stays constant across themes (cream-100 is always "the page
+ * background", navy-900 is always "the strongest text colour") while the actual value
+ * inverts, which is what keeps `text-navy-900` correct in both instead of becoming a
+ * lie in one of them.
+ * ------------------------------------------------------------------------------- */
+:root {
+  --color-navy-900: 16 26 41;
+  --color-navy-700: 27 42 65;
+  --color-navy-600: 38 55 79;
+  --color-navy-400: 61 81 112;
+  --color-navy-100: 214 220 230;
+  --color-navy-50: 238 241 245;
+
+  --color-cream-200: 234 225 205;
+  --color-cream-100: 245 240 230;
+  --color-cream-50: 251 249 244;
+
+  --color-brass-600: 143 113 48;
+  --color-brass-500: 176 141 62;
+  --color-brass-400: 201 168 76;
+  --color-brass-50: 248 241 225;
+
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-positive: 30 122 76;
+  --color-negative: 179 38 30;
+
+  /* Ambient background glow -- see body::before. Off in light mode: a spot of colour
+     under a cream page reads as a stain, not depth. */
+  --glow-opacity: 0;
+  color-scheme: light;
+}
+
+:root.dark {
+  --color-navy-900: 245 240 230;
+  --color-navy-700: 228 231 236;
+  --color-navy-600: 184 192 204;
+  --color-navy-400: 135 146 162;
+  --color-navy-100: 42 49 64;
+  --color-navy-50: 28 34 46;
+
+  --color-cream-200: 35 42 56;
+  --color-cream-100: 11 14 20;
+  --color-cream-50: 22 27 36;
+
+  --color-brass-600: 201 168 76;
+  --color-brass-500: 217 189 115;
+  --color-brass-400: 230 206 148;
+  --color-brass-50: 46 36 16;
+
+  --color-surface: 18 23 33;
+  --color-surface-raised: 23 29 41;
+  --color-positive: 52 176 118;
+  --color-negative: 225 92 82;
+
+  --glow-opacity: 1;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    /* Retina/HiDPI crispness: hint the renderer to do full glyph shaping rather than
+       the coarser metric it may fall back to for small UI text. */
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-cream-100 text-navy-700 font-body antialiased;
+    min-height: 100vh;
+    transition: background-color 0.25s ease, color 0.25s ease;
+    position: relative;
+  }
+
+  /* Two soft, fixed colour blobs behind everything -- the "glassmorphism" depth cue
+     that makes translucent panels (Sidebar, Header, .glass-panel) read as floating
+     over something rather than over a flat fill. Fixed + pointer-events:none, so it
+     never affects layout or scroll. Invisible in light mode via --glow-opacity. */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    width: 42rem;
+    height: 42rem;
+    border-radius: 9999px;
+    filter: blur(120px);
+    opacity: var(--glow-opacity);
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  body::before {
+    top: -12rem;
+    right: -10rem;
+    background: rgb(var(--color-brass-500) / 0.16);
+  }
+  body::after {
+    bottom: -16rem;
+    left: -14rem;
+    background: rgb(var(--color-navy-400) / 0.14);
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-heading text-navy-900;
+  }
+
+  ::selection {
+    background: rgb(var(--color-brass-400) / 0.35);
+  }
+
+  /* A visible, on-brand focus ring for keyboard nav, since a couple of interactive
+     elements below use `focus:outline-none` and swap in their own border colour --
+     that alone isn't enough contrast for a11y on Tab-navigation. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-brass-500) / 0.7);
+    outline-offset: 2px;
+  }
+
+  /* Slim, theme-aware scrollbars -- default OS scrollbars are the one visibly
+     un-designed element in an otherwise considered layout, and Retina displays make
+     the default chunky bar more noticeable, not less. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--color-navy-100)) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--color-navy-100));
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--color-navy-400) / 0.6);
+    background-clip: content-box;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* Frosted, translucent surface for chrome that floats over the ambient glow: the
+     Sidebar and Header. Saturate() keeps colour underneath from washing out grey the
+     way a plain blur does. */
+  .glass-panel {
+    background-color: rgb(var(--color-surface) / 0.72);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+  }
+
+  /* Cards: a lighter frost than the chrome above, plus a soft shadow that reads as
+     "lifted" and a hover state that lifts a touch further -- the one microinteraction
+     used consistently across every KPI card, table card and form panel. */
+  .glass-card {
+    background-color: rgb(var(--color-surface) / 0.86);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -8px rgb(0 0 0 / 0.10);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  }
+  :root.dark .glass-card {
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 28px -8px rgb(0 0 0 / 0.55);
+  }
+  .glass-card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 40px -16px rgb(0 0 0 / 0.16);
+  }
+  :root.dark .glass-card-hover:hover {
+    box-shadow: 0 20px 44px -16px rgb(0 0 0 / 0.6);
+  }
+
+  .press-scale {
+    transition: transform 0.15s ease;
+  }
+  .press-scale:active {
+    transform: scale(0.97);
+  }
+
+  .animate-delay-1 {
+    animation-delay: 60ms;
+  }
+  .animate-delay-2 {
+    animation-delay: 120ms;
+  }
+  .animate-delay-3 {
+    animation-delay: 180ms;
+  }
+  .animate-delay-4 {
+    animation-delay: 240ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

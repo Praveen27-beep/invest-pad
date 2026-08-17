@@ -12,9 +12,8 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from db import audit, consent, crypto, privacy, repository, retention
-from engine.types import Source, Transaction, TxnType
+from app.db import audit, consent, crypto, privacy, repository, retention
+from app.engine.types import Source, Transaction, TxnType
 
 pytestmark = pytest.mark.db
 

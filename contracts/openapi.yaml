@@ -18,6 +18,8 @@ servers:
   - url: https://api.example.com/v1
 
 tags:
+  - name: onboarding
+    description: Creating investors and accounts. Everything else needs one of these to exist first.
   - name: transactions
     description: The only writable ledger. Append-only.
   - name: derived
@@ -26,8 +28,211 @@ tags:
     description: Adapters. Each converts a source into Transaction[] and stops.
   - name: ops
     description: Prices and reconciliation.
+  - name: consent
+    description: |
+      DPDP consent-first (docs/COMPLIANCE.md). A live grant is required before
+      POST /ingest/csv, POST /ingest/email or POST /investors/{id}/transactions will
+      process anything for that investor -- see app.db.consent.require_consent.
 
 paths:
+  /investors:
+    post:
+      tags: [onboarding]
+      summary: Onboard a new investor
+      description: |
+        The only way an investor row is created outside db/load_golden.py's fixture
+        seed. `code` must be unique (docs/DATA_MODEL.md: "use this in files and logs,
+        never the name or PAN").
+
+        `pan` is optional and write-only: if supplied, it is hashed and encrypted into
+        `investor_secret` via app.db.crypto and is never stored on this row or echoed
+        back in any response, per CLAUDE.md's rule that PAN never lands on `investor`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, display_name]
+              properties:
+                code:
+                  type: string
+                  description: Unique short code, e.g. C002.
+                display_name:
+                  type: string
+                family_group_id:
+                  type: string
+                  format: uuid
+                  nullable: true
+                pan:
+                  type: string
+                  description: Optional, write-only. Routed through app.db.crypto; never returned.
+                onboarding_date:
+                  type: string
+                  format: date
+                  nullable: true
+                  description: |
+                    When the advisory relationship with this client began. Optional.
+                    Feeds compute_period_xirr's start_date (app/engine/xirr.py) via
+                    GET /investors/{investor_id}/performance's period_xirr. Lives on
+                    investor rather than account: account.is_advised already scopes
+                    which trades count toward advisory performance, and performance
+                    is computed per investor across all of their accounts.
+      responses:
+        '201':
+          description: Investor created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  code: { type: string }
+                  display_name: { type: string }
+                  family_group_id: { type: string, format: uuid, nullable: true }
+                  onboarding_date: { type: string, format: date, nullable: true }
+                  created_at: { type: string, format: date-time }
+        '400':
+          description: pan does not match the mandated PAN format
+        '409':
+          description: code is already in use
+
+  /investors/{investor_id}/accounts:
+    post:
+      tags: [onboarding]
+      summary: Add a broker/demat account to an investor
+      description: |
+        One row per demat/broker account (docs/DATA_MODEL.md) -- a client's CAS
+        routinely reveals accounts nobody knew existed, so onboarding must be able to
+        add more than one per investor.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [broker]
+              properties:
+                broker:
+                  type: string
+                  description: "e.g. ZERODHA, GROWW, AXIS"
+                dp_id: { type: string, nullable: true }
+                client_id: { type: string, nullable: true }
+                is_advised:
+                  type: boolean
+                  default: true
+                  description: False = the client's own punting; excluded from advisory performance.
+                label: { type: string, nullable: true }
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  investor_id: { type: string, format: uuid }
+                  broker: { type: string }
+                  dp_id: { type: string, nullable: true }
+                  client_id: { type: string, nullable: true }
+                  is_advised: { type: boolean }
+                  label: { type: string, nullable: true }
+                  forwarding_addresses:
+                    type: array
+                    items: { type: string }
+                    description: |
+                      One address per (broker, doctype) pair with a working adapter
+                      (app.ingest.webhook._ADAPTER_FACTORIES), computed from
+                      INGEST_DOMAIN and the investor's code. Empty for a broker with
+                      no adapter yet.
+        '404':
+          description: no investor with this id
+
+  /investors/{investor_id}/consent:
+    get:
+      tags: [consent]
+      summary: Check whether this investor has a live consent grant
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: purpose, in: query, required: false, schema: { type: string, default: PORTFOLIO_TRACKING } }
+      responses:
+        '200':
+          description: Current consent status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  has_live_consent: { type: boolean }
+    post:
+      tags: [consent]
+      summary: Grant consent
+      description: |
+        Required before POST /ingest/csv, POST /ingest/email or
+        POST /investors/{id}/transactions will process anything for this investor --
+        app.db.consent.require_consent refuses with 403 otherwise. Never edits an
+        existing row: a re-grant after withdrawal is always a new row, so the history
+        of what was agreed, when, and under which notice_version survives intact.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notice_version, evidence_ref]
+              properties:
+                notice_version:
+                  type: string
+                  description: Which wording of the consent notice was agreed to (docs/COMPLIANCE.md §3).
+                evidence_ref:
+                  type: string
+                  description: What proves the principal actually agreed -- an email message-id, a signed PDF path, or a UI-channel label for an in-app grant.
+                purpose:
+                  type: string
+                  default: PORTFOLIO_TRACKING
+                lawful_basis:
+                  type: string
+                  default: CONSENT
+      responses:
+        '201':
+          description: Consent recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  investor_id: { type: string, format: uuid }
+                  notice_version: { type: string }
+                  purpose: { type: string }
+                  lawful_basis: { type: string }
+
+  /investors/{investor_id}/consent/withdraw:
+    post:
+      tags: [consent]
+      summary: Withdraw consent
+      description: |
+        Stamps withdrawn_at on every live consent row for this purpose -- takes effect
+        immediately, per app.db.consent.withdraw_consent. Erasure of the underlying
+        data is a separate right; see POST /privacy/erase.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: purpose, in: query, required: false, schema: { type: string, default: PORTFOLIO_TRACKING } }
+      responses:
+        '200':
+          description: Withdrawal recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  withdrawn_count: { type: integer }
+
   /investors/{investor_id}/transactions:
     get:
       tags: [transactions]
@@ -100,13 +305,18 @@ paths:
     get:
       tags: [derived]
       summary: Both XIRR variants, returns, benchmark
+      description: |
+        period_xirr (the adviser-onboarding case) and its period_start are resolved
+        entirely server-side from the investor's stored onboarding_date (set via POST
+        /investors) and a live market-value snapshot on that date -- there is no
+        request parameter for it, deliberately: accepting a client-supplied opening
+        value would be exactly the kind of stand-in fy_xirr already refuses to accept
+        for its own opening value. Both come back null when onboarding_date is unset,
+        is after as_of, or has no usable price.
       parameters:
         - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: as_of, in: query, schema: { type: string, format: date } }
-        - { name: period_start, in: query, schema: { type: string, format: date },
-            description: For the adviser-onboarding case. Requires period_opening_value. }
-        - { name: period_opening_value, in: query, schema: { type: string },
-            description: MARKET value on period_start, not cost. }
+        - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
         - { name: benchmark, in: query, schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] } }
       responses:
         '200':
@@ -161,7 +371,11 @@ paths:
       summary: Inbound email webhook (SendGrid / Mailgun / Postmark)
       description: |
         Routing is by the `to` address, NEVER by sniffing content. Address pattern:
-        {investor_code}-{broker}-{doctype}@in.yourdomain.com
+        {investor_code}-{broker}-{doctype}@{INGEST_DOMAIN}, e.g.
+        c001-zerodha-contractnote@ingest.example.com. INGEST_DOMAIN is the
+        deployment's configured domain (app/config.py); POST
+        /investors/{investor_id}/accounts returns each account's real addresses on
+        `forwarding_addresses` rather than a client having to construct one by hand.
 
         Zerodha sends at least four document types from the same sender address, so
         content sniffing misclassifies. Address routing cannot.
@@ -203,6 +417,41 @@ paths:
                   prices_stored: { type: integer }
                   missing_isins: { type: array, items: { type: string } }
                   price_date:    { type: string, format: date }
+
+  /ops/snapshots/run:
+    post:
+      tags: [ops]
+      summary: Persist daily portfolio-level snapshots (docs/ENGINE_SPEC.md section 8)
+      description: |
+        The only path that writes portfolio_snapshot -- a cache of compute_snapshot(),
+        never a source of truth. No start/end -> both default to today, the cheap daily
+        catch-up meant to run alongside /ops/prices/refresh. A wider range is a resumable
+        historical backfill: missing bhavcopy is fetched first (clamped to whatever date
+        the NSE archive actually serves), then one row per (investor, advised_only,
+        trading day) is computed and upserted. advised_only gets its own series because
+        GET /investors/{investor_id}/performance's advised_only parameter filters the
+        ledger before computing anything, not the response after.
+      parameters:
+        - { name: start, in: query, schema: { type: string, format: date } }
+        - { name: end, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots_written:  { type: integer }
+                  price_dates_fetched: { type: integer }
+                  skipped_missing_price:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        investor_id:  { type: string, format: uuid }
+                        advised_only: { type: boolean }
+                        as_of:        { type: string, format: date }
+                        isins:        { type: array, items: { type: string } }
 
   /investors/{investor_id}/reconcile:
     post:

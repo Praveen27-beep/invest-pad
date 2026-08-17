@@ -11,7 +11,7 @@ import base64
 from datetime import date, datetime
 from typing import Any
 
-from ingest.gmail_oauth import (
+from app.ingest.gmail_oauth import (
     KNOWN_SENDERS,
     SCOPES,
     MailDocument,

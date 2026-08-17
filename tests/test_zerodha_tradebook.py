@@ -13,10 +13,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from engine.dedupe import make_dedupe_key
-from engine.types import Source, TxnType
-from ingest.zerodha_tradebook import ZerodhaTradebookAdapter
+from app.engine.dedupe import make_dedupe_key
+from app.engine.types import Source, TxnType
+from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 
 ACCOUNT = "11111111-1111-1111-1111-111111111111"
 

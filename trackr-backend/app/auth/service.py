@@ -1,0 +1,133 @@
+"""Password hashing and JWT issue/verify.
+
+The only place either happens. A router must never call ``bcrypt`` or ``jwt`` directly --
+routing every login and every token check through here is what keeps the two consistent
+and keeps a future change (rotating ``JWT_SECRET``, tightening password rules) to one file.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+import bcrypt
+import jwt
+
+from app.auth import repository
+from app.config import Settings
+
+
+class EmailAlreadyRegisteredError(ValueError):
+    """This email already has an account."""
+
+    def __init__(self, email: str) -> None:
+        self.email = email
+        super().__init__(f"{email} is already registered")
+
+
+class InvalidCredentialsError(ValueError):
+    """Wrong email or wrong password. Deliberately one error for both: telling an
+    attacker WHICH was wrong is a free account-enumeration oracle."""
+
+
+class InvalidTokenError(ValueError):
+    """Missing, malformed, expired, or revoked. Same posture as above -- one error, so
+    a caller learns only "not authenticated", never which specific check failed."""
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 of the issued JWT. Stored, never the token itself -- session_token_hash
+    exists precisely so a stolen database is not also a set of stolen live sessions."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def register(
+    conn: Any, email: str, password: str, display_name: str | None = None
+) -> dict[str, Any]:
+    """Create a new user. Raises EmailAlreadyRegisteredError if the email is taken."""
+    import psycopg
+
+    normalised = email.strip().lower()
+    try:
+        return repository.create_user(
+            conn, normalised, hash_password(password), display_name
+        )
+    except psycopg.errors.UniqueViolation as exc:
+        raise EmailAlreadyRegisteredError(normalised) from exc
+
+
+def issue_token(settings: Settings, conn: Any, user_id: str) -> tuple[str, int]:
+    """Mint an access token for ``user_id`` and record its session row.
+
+    Returns ``(token, expires_in_seconds)``. The token is signed first -- its own ``exp``
+    is authoritative -- then hashed and recorded, so a later request can look the session
+    up by that hash (see ``current_user``) rather than trusting the signature alone. That
+    lookup is what makes revocation possible for something that would otherwise stay
+    valid, unrevocably, until it simply expires.
+    """
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(seconds=settings.jwt_expiry_seconds)
+
+    payload = {"sub": str(user_id), "exp": expires_at, "iat": now}
+    token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+    repository.create_session(conn, user_id, _hash_token(token), expires_at)
+    return token, settings.jwt_expiry_seconds
+
+
+def login(
+    conn: Any, settings: Settings, email: str, password: str
+) -> tuple[str, int, dict[str, Any]]:
+    """Verify credentials and issue a token. Returns ``(token, expires_in, user)``.
+
+    Raises:
+        InvalidCredentialsError: no such user, wrong password, or a deactivated account.
+            All three collapse to the same error and the same 401 -- see the class
+            docstring.
+    """
+    user = repository.get_user_by_email(conn, email.strip().lower())
+    if user is None or not user["is_active"]:
+        # Hash something anyway. Returning immediately on "no such user" makes a login
+        # attempt against a real email measurably slower than one against a fake one --
+        # a timing oracle for account enumeration.
+        bcrypt.checkpw(b"", bcrypt.gensalt())
+        raise InvalidCredentialsError("invalid email or password")
+    if not verify_password(password, user["password_hash"]):
+        raise InvalidCredentialsError("invalid email or password")
+
+    token, expires_in = issue_token(settings, conn, str(user["id"]))
+    return token, expires_in, user
+
+
+def current_user(conn: Any, settings: Settings, token: str) -> dict[str, Any]:
+    """Verify a bearer token and return the user it names.
+
+    Checks the JWT signature and expiry AND the session row: a token whose session was
+    revoked must stop working before its own ``exp``, which the signature check alone
+    cannot express.
+
+    Raises:
+        InvalidTokenError: malformed, expired, revoked, or the user no longer exists.
+    """
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError("invalid or expired token") from exc
+
+    session = repository.get_active_session_by_token_hash(conn, _hash_token(token))
+    if session is None:
+        raise InvalidTokenError("session revoked or expired")
+
+    user = repository.get_user_by_id(conn, payload["sub"])
+    if user is None or not user["is_active"]:
+        raise InvalidTokenError("no such user")
+    return user

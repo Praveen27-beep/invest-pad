@@ -127,8 +127,7 @@ def db(pg_cluster: str) -> Iterator[object]:
     would stop them from exercising the idempotency the runner promises.
     """
     import psycopg
-
-    from db.migrate import migrate
+    from app.db.migrate import migrate
 
     with psycopg.connect(pg_cluster) as conn:
         migrate(conn)
@@ -166,7 +165,7 @@ def db(pg_cluster: str) -> Iterator[object]:
 @pytest.fixture()
 def crypto_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test secrets. Two distinct values, as in production."""
-    from db.crypto import ENCRYPTION_KEY_ENV, PAN_PEPPER_ENV, generate_key
+    from app.db.crypto import ENCRYPTION_KEY_ENV, PAN_PEPPER_ENV, generate_key
 
     monkeypatch.setenv(ENCRYPTION_KEY_ENV, generate_key())
     monkeypatch.setenv(PAN_PEPPER_ENV, "test-pepper-not-for-production")
@@ -193,3 +192,17 @@ def investor(db: object) -> str:
     db.commit()
     os.environ["_TEST_ACCOUNT_ID"] = account_id
     return investor_id
+
+
+@pytest.fixture()
+def consented_investor(db: object, investor: str) -> str:
+    """The ``investor`` fixture with a live consent grant already in place -- for tests
+    that exercise a consent-gated endpoint (ingestion, manual transaction entry) and
+    are not themselves testing the gate's refusal path (see
+    tests/test_db_compliance.py and tests/test_db_consent_router.py for that; those use
+    the plain ``investor`` fixture, which deliberately has no consent, and must keep
+    it that way)."""
+    from app.db import consent
+
+    consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
+    return investor

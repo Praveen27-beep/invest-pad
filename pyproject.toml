@@ -8,50 +8,22 @@ version = "0.1.0"
 description = "Portfolio intelligence platform for Indian investors. Everything derives from transactions."
 requires-python = ">=3.11"
 
-# pyxirr is the solver, added in Session 3. ENGINE_SPEC section 4 says do not hand-roll
-# Newton-Raphson, and a convergence bug in the headline metric is not a risk worth taking.
-# Installs as a prebuilt wheel on this Python (cp314, macOS arm64) - no source build.
-dependencies = [
-  "pyxirr>=0.10",
-  # An explicit CA bundle. Python does not use the macOS keychain and a fresh install has
-  # no certificates, so the bhavcopy fetch fails verification on hosts where curl works.
-  # Containers have the same gap. Verification is never disabled to work around it.
-  "certifi>=2024.0",
-]
+# No runtime source lives at the repo root any more -- engine/, db/, ingest/, storage/
+# and prices/ relocated to trackr-backend/app/ (see docs/structure_revamp_plan.md) and
+# api/ was retired in the same move. This project now exists to run tests/ against that
+# package: `make install` installs both this file's dev extra AND trackr-backend's own
+# dependencies into the one shared .venv. Package-specific dependencies (pyxirr, fastapi,
+# psycopg, boto3, ...) live in trackr-backend/pyproject.toml, not here, so there is one
+# place that declares each.
 
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
   "ruff>=0.6",
 ]
-# Gmail OAuth adapter -- PERSONAL TESTING ONLY, not authorised for client use until a
-# Google CASA assessment clears the restricted gmail.readonly scope. Optional so the
-# core install and the fixtures stay free of it. See ingest/gmail_oauth.py.
-gmail = [
-  "google-api-python-client>=2.100",
-  "google-auth-oauthlib>=1.2",
-]
-# Persistence. psycopg3 maps NUMERIC to Decimal natively, which is why no conversion
-# layer is needed between the database and the engine.
-db = [
-  "psycopg[binary]>=3.1",
-  "cryptography>=42",
-]
-# Private object storage. R2 is the production target and is S3-compatible, so boto3
-# covers it. moto mocks S3 behind a real boto3 client, so presigning and the paginated
-# delete are genuinely exercised offline rather than stubbed.
-storage = [
-  "boto3>=1.34",
-  "moto[s3]>=5.0",
-]
-# Contract-note PDF parsing. Optional: the engine, the fixtures and every other adapter
-# run without it, and pdfplumber is slow and heavy enough not to impose on them.
-pdf = [
-  "pdfplumber>=0.11",
-]
 
 [tool.setuptools]
-packages = ["engine", "ingest", "db", "storage", "prices"]
+packages = []
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -75,8 +47,3 @@ select = [
   "UP",   # pyupgrade
   "B",    # bugbear
 ]
-
-[tool.ruff.lint.per-file-ignores]
-# Stubs import the types they will return once implemented; the signatures are the
-# specification and must not be trimmed to satisfy an unused-import check.
-"engine/*.py" = ["F401"]

@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trackr-backend"
+version = "0.1.0"
+description = "Trackr portfolio intelligence platform -- FastAPI production package."
+requires-python = ">=3.11"
+
+# Same engine dependencies as the root package -- pyxirr is the solver (ENGINE_SPEC
+# section 4 forbids hand-rolled Newton-Raphson) and certifi supplies an explicit CA
+# bundle for the bhavcopy fetch. FastAPI/pydantic/uvicorn are new: this package is the
+# HTTP surface the root package never had.
+dependencies = [
+  "pyxirr>=0.10",
+  "certifi>=2024.0",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "python-multipart>=0.0.9",
+  # Auth: password hashing and JWT issue/verify. No ORM -- users/sessions are raw SQL,
+  # same as every other table.
+  "bcrypt>=4.1",
+  "pyjwt>=2.8",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  # fastapi.testclient.TestClient needs httpx installed -- tests/test_db_webhook.py is
+  # the first suite in this repo to drive a route over a real HTTP round trip rather
+  # than calling the handler function directly (see that file's docstring for why: the
+  # thing under test is provider-specific request parsing, which calling the Python
+  # function directly would bypass).
+  "httpx>=0.27",
+]
+# Gmail OAuth adapter -- PERSONAL TESTING ONLY, not authorised for client use until a
+# Google CASA assessment clears the restricted gmail.readonly scope. See
+# app/ingest/gmail_oauth.py and docs/INGESTION.md. Never wired into a router.
+gmail = [
+  "google-api-python-client>=2.100",
+  "google-auth-oauthlib>=1.2",
+]
+# Persistence. psycopg3 maps NUMERIC to Decimal natively, so no conversion layer sits
+# between the database and the engine.
+db = [
+  "psycopg[binary]>=3.1",
+  "cryptography>=42",
+]
+# Private object storage. R2 is the production target and is S3-compatible, so boto3
+# covers it. moto mocks S3 behind a real boto3 client for offline tests.
+storage = [
+  "boto3>=1.34",
+  "moto[s3]>=5.0",
+]
+# Contract-note PDF parsing. Optional: the engine, the fixtures and every other adapter
+# run without it, and pdfplumber is slow and heavy enough not to impose on them.
+pdf = [
+  "pdfplumber>=0.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [".venv"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle
+  "F",    # pyflakes
+  "I",    # import sorting
+  "UP",   # pyupgrade
+  "B",    # bugbear
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Stubs import the types they will return once implemented; the signatures are the
+# specification and must not be trimmed to satisfy an unused-import check.
+"app/engine/*.py" = ["F401"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom IS `Depends(...)`/`Query(...)` in an argument
+# default -- that is not a mutable-default bug, it is how a route declares what it
+# needs. B008 cannot tell the difference on its own; this is the documented fix, not a
+# suppression of a real one.
+extend-immutable-calls = [
+  "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body",
+  "fastapi.Header", "fastapi.Form", "fastapi.File",
+]

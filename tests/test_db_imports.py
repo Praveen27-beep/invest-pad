@@ -11,10 +11,9 @@ import os
 from pathlib import Path
 
 import pytest
-
-from db import imports
-from ingest.zerodha_tradebook import ZerodhaTradebookAdapter
-from storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
+from app.db import imports
+from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
+from app.storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
 
 pytestmark = pytest.mark.db
 
@@ -190,7 +189,7 @@ def test_the_uploaded_file_is_stored_before_it_is_parsed(db, adapter, investor, 
     batch = stage(db, adapter, investor, store=store)
     assert batch["document_id"]
 
-    from db import documents
+    from app.db import documents
 
     (doc,) = documents.documents_for_investor(db, investor)
     assert store.get(doc["storage_key"]) == CSV.encode()
@@ -271,8 +270,8 @@ def test_promotion_registers_unknown_securities(db, adapter, investor) -> None:
 @pytest.mark.skipif(not TRADEBOOKS, reason="real Console exports not present")
 def test_the_ledger_replays_into_holdings(db, adapter, investor) -> None:
     """End to end: real files -> database -> engine. Nothing in between knows the others."""
-    from db import repository
-    from engine.holdings import compute_holdings
+    from app.db import repository
+    from app.engine.holdings import compute_holdings
 
     for path in TRADEBOOKS:
         batch = stage(db, adapter, investor, content=Path(path).read_bytes(),
@@ -285,7 +284,7 @@ def test_the_ledger_replays_into_holdings(db, adapter, investor) -> None:
     # The four exports stop at 2026-01-28 and are missing the corporate actions the CAS
     # carries, so some positions go negative - exactly the condition NegativeHoldingError
     # exists to announce, and the same gap the golden fixture had to be anchored around.
-    from engine.errors import NegativeHoldingError
+    from app.engine.errors import NegativeHoldingError
 
     with pytest.raises(NegativeHoldingError):
         compute_holdings(transactions)

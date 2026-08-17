@@ -16,8 +16,8 @@ from dataclasses import MISSING, fields
 from typing import Any
 
 import pytest
+from app.engine import types as engine_types
 
-from engine import types as engine_types
 from tests.conftest import SCHEMA, load_json
 
 #: dataclass name -> schema filename. Benchmark is nested inside performance.schema.json

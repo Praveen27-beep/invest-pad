@@ -6,12 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from engine.errors import MissingPriceError
-from engine.holdings import compute_holdings
-from engine.types import Transaction, TxnType
-from engine.valuation import total_market_value, value_holdings
-from engine.xirr import (
+from app.engine.errors import MissingPriceError
+from app.engine.holdings import compute_holdings
+from app.engine.types import Transaction, TxnType
+from app.engine.valuation import total_market_value, value_holdings
+from app.engine.xirr import (
     PERIOD_TOO_SHORT_WARNING,
     compute_period_xirr,
     compute_xirr,
@@ -181,15 +180,38 @@ def test_mid_period_deposit_is_not_counted_as_growth() -> None:
 
 
 def test_transactions_on_the_start_date_are_not_double_counted() -> None:
-    """opening_value already reflects them; counting both would inflate the outflow."""
-    rows = [txn("BUY", "100", "100", "2025-08-11")]
-    with_row = compute_period_xirr(
-        rows, {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11)
+    """opening_value already reflects a transaction dated exactly on start_date; it must
+    not also appear as a fresh cash outflow, or the outflow is double-counted.
+
+    Checked against a position built entirely BEFORE the period instead of an empty
+    ledger: both end up holding the identical 100 shares at ``as_of``, so if the
+    same-day buy were (wrongly) also counted as a flow, only the same-day-buy scenario
+    would move -- the two must land on the same answer.
+    """
+    same_day = compute_period_xirr(
+        [txn("BUY", "100", "100", "2025-08-11")],
+        {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11),
     )
-    without = compute_period_xirr(
-        [], {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11)
+    pre_existing = compute_period_xirr(
+        [txn("BUY", "100", "100", "2020-01-01")],
+        {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11),
     )
-    assert with_row == without
+    assert same_day == pre_existing
+
+
+def test_a_position_untouched_during_the_period_still_counts_in_the_terminal_value() -> None:
+    """A buy-and-hold position with no in-period transaction must not vanish from the
+    closing value. The terminal flow is the current market value of EVERYTHING held at
+    ``as_of`` (ENGINE_SPEC section 4), not only of positions traded during the window --
+    a regression guard for a bug where the terminal replay used only post-``start_date``
+    rows and so silently dropped every untouched position's contribution to zero."""
+    rows = [txn("BUY", "100", "100", "2020-01-01")]
+    result = compute_period_xirr(
+        rows, {ISIN_A: Decimal("200")}, date(2025, 8, 11), Decimal("15000"), date(2026, 8, 11)
+    )
+    assert result is not None
+    # 15000 -> 20000 over exactly one year: XIRR is exactly the simple return.
+    assert abs(result - Decimal("0.33333")) <= Decimal("0.001")
 
 
 def test_short_window_is_computed_but_flagged() -> None:

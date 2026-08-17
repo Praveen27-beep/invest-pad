@@ -6,10 +6,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-
-from engine.errors import NegativeHoldingError
-from engine.holdings import compute_holdings
-from engine.types import Source, Transaction, TxnType
+from app.engine.errors import NegativeHoldingError
+from app.engine.holdings import compute_holdings
+from app.engine.types import Source, Transaction, TxnType
 
 
 def txn(txn_type: str, qty: str, price: str, day: str, isin: str = "INE153T01027", **kw):

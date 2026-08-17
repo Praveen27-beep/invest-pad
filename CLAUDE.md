@@ -48,7 +48,8 @@ Consequences you must respect:
 
 **In:** Indian listed equities. Manual entry, CSV import, tradebook import, Gmail
 forwarding. Holdings, FIFO lots, average cost, realised + unrealised P/L, dividends,
-XIRR, absolute return, CAGR, allocation, benchmark comparison, historical value.
+XIRR, absolute return, CAGR (per-holding only — never a portfolio figure, see
+`docs/ENGINE_SPEC.md` §5), allocation, benchmark comparison, historical value.
 
 **Out (build the seams, not the features):** mutual funds, bonds, SGB, NPS, PMS, AIF,
 REIT/InvIT, international, crypto, derivatives, CAS parsing, execution.

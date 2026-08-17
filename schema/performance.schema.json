@@ -5,7 +5,7 @@
   "description": "The performance response. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md sections 4-6.\n\nENCODING RULE: rates are JSON numbers, not strings, matching how fixtures/golden_portfolio.json and fixtures/engine_cases.json already encode xirr_all and xirr_holdings. Money remains a string. Python holds rates as Decimal regardless, converting at the boundary via str().\n\nBOTH XIRR VARIANTS ARE REQUIRED TOGETHER. They answer different questions and the gap between them is itself the insight. Reporting only one leaves a choice about which number flatters the portfolio, and that choice should not exist.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["as_of", "xirr_all", "xirr_holdings"],
+  "required": ["as_of", "xirr_all", "xirr_holdings", "fy_xirr"],
   "properties": {
     "as_of": {
       "type": "string",
@@ -18,6 +18,10 @@
     "xirr_holdings": {
       "type": ["number", "null"],
       "description": "Only ISINs currently held. Answers 'how is the live book performing?'. Never present this without xirr_all beside it."
+    },
+    "fy_xirr": {
+      "type": ["number", "null"],
+      "description": "Financial-year-to-date, from 1 April. opening_value is the real market value on 1 April via compute_snapshot against that date's prices, never today's value or cost. Null when no 1-April price exists for a held ISIN -- never substituted with today's price or the nearest available date, which would count the year's entire gain as if it already existed on day one. Never presented without xirr_all and xirr_holdings beside it."
     },
     "absolute_return": {
       "type": ["number", "null"],
@@ -57,9 +61,18 @@
         }
       }
     },
+    "period_xirr": {
+      "type": ["number", "null"],
+      "description": "Money-weighted return since the investor's stored onboarding_date (docs/DATA_MODEL.md investor.onboarding_date) -- the adviser-onboarding case. opening_value is the real market value on onboarding_date via compute_snapshot against that date's prices, never today's value or cost. Null when no onboarding_date is set, when onboarding_date is after as_of, or when no usable price exists on/before it for a held ISIN. Never presented without xirr_all and xirr_holdings beside it."
+    },
+    "period_start": {
+      "type": ["string", "null"],
+      "format": "date",
+      "description": "The onboarding_date period_xirr was actually computed from, echoed back so the caller never has to guess which date backs the percentage. Null exactly when period_xirr is null."
+    },
     "warning": {
       "type": ["string", "null"],
-      "description": "Set when a period XIRR spans under 90 days: annualising a six-day return is arithmetically valid and practically nonsense."
+      "description": "Set when period_xirr spans under 90 days: annualising a six-day return is arithmetically valid and practically nonsense."
     }
   }
 }

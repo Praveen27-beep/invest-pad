@@ -1,0 +1,842 @@
+{
+  "_comment": "Synthetic demo data for local development and screenshots -- NOT the golden portfolio (fixtures/golden_portfolio.json), which is the acceptance-test fixture CLAUDE.md refers to. Loaded by app/db/seed_demo.py, which is the only place prices are generated (dynamically, at seed time, so they never fall outside MAX_PRICE_STALENESS_DAYS). ISINs are shaped like real registry ISINs for realism but this dataset's quantities, prices and cash flows are entirely fictitious.",
+  "investor": {
+    "code": "DEMO-ARJUN",
+    "display_name": "Arjun Mehta"
+  },
+  "demo_user": {
+    "email": "demo@trackr.plus",
+    "password": "TrackrDemo@2025",
+    "display_name": "Arjun Mehta"
+  },
+  "accounts": [
+    {
+      "key": "zerodha",
+      "broker": "Zerodha",
+      "dp_id": "1208160012345678",
+      "client_id": "ZD4821",
+      "is_advised": true,
+      "label": "Zerodha (Advised)"
+    },
+    {
+      "key": "groww",
+      "broker": "Groww",
+      "dp_id": null,
+      "client_id": "GW90231",
+      "is_advised": false,
+      "label": "Groww (Self-directed)"
+    }
+  ],
+  "securities": [
+    {
+      "isin": "INE002A01018",
+      "symbol": "RELIANCE",
+      "name": "Reliance Industries Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE467B01029",
+      "symbol": "TCS",
+      "name": "Tata Consultancy Services Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE009A01021",
+      "symbol": "INFY",
+      "name": "Infosys Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE040A01034",
+      "symbol": "HDFCBANK",
+      "name": "HDFC Bank Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE090A01021",
+      "symbol": "ICICIBANK",
+      "name": "ICICI Bank Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE062A01020",
+      "symbol": "SBIN",
+      "name": "State Bank of India",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE154A01025",
+      "symbol": "ITC",
+      "name": "ITC Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE018A01030",
+      "symbol": "LT",
+      "name": "Larsen & Toubro Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE155A01022",
+      "symbol": "TATAMOTORS",
+      "name": "Tata Motors Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE030A01027",
+      "symbol": "HINDUNILVR",
+      "name": "Hindustan Unilever Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE296A01024",
+      "symbol": "BAJFINANCE",
+      "name": "Bajaj Finance Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE237A01028",
+      "symbol": "KOTAKBANK",
+      "name": "Kotak Mahindra Bank Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE280A01028",
+      "symbol": "TITAN",
+      "name": "Titan Company Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE075A01022",
+      "symbol": "WIPRO",
+      "name": "Wipro Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE585B01010",
+      "symbol": "MARUTI",
+      "name": "Maruti Suzuki India Ltd",
+      "exchange": "NSE"
+    },
+    {
+      "isin": "INE021A01026",
+      "symbol": "ASIANPAINT",
+      "name": "Asian Paints Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE238A01034",
+      "symbol": "AXISBANK",
+      "name": "Axis Bank Ltd",
+      "exchange": "BOTH"
+    },
+    {
+      "isin": "INE044A01036",
+      "symbol": "SUNPHARMA",
+      "name": "Sun Pharmaceutical Industries Ltd",
+      "exchange": "BOTH"
+    }
+  ],
+  "transactions": [
+    {
+      "account": "zerodha",
+      "isin": "INE002A01018",
+      "txn_date": "2023-05-08",
+      "txn_type": "BUY",
+      "quantity": "60",
+      "price": "2410.50",
+      "charges": "260.33",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE002A01018",
+      "txn_date": "2023-11-14",
+      "txn_type": "BUY",
+      "quantity": "40",
+      "price": "2340.20",
+      "charges": "168.49",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE002A01018",
+      "txn_date": "2024-02-20",
+      "txn_type": "BONUS",
+      "quantity": "100",
+      "price": "0",
+      "source": "CORP_ACTION",
+      "source_ref": "RELIANCE-BONUS-1:1"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE002A01018",
+      "txn_date": "2025-01-10",
+      "txn_type": "BUY",
+      "quantity": "30",
+      "price": "2680.00",
+      "charges": "144.72",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2023-04-18",
+      "txn_type": "BUY",
+      "quantity": "25",
+      "price": "3280.00",
+      "charges": "147.60",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2023-09-05",
+      "txn_type": "BUY",
+      "quantity": "15",
+      "price": "3410.75",
+      "charges": "92.09",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2024-07-22",
+      "txn_type": "BUY",
+      "quantity": "20",
+      "price": "3850.10",
+      "charges": "138.60",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2023-10-12",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "900.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2024-04-15",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1080.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE467B01029",
+      "txn_date": "2025-04-14",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1440.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE009A01021",
+      "txn_date": "2023-06-01",
+      "txn_type": "BUY",
+      "quantity": "80",
+      "price": "1320.40",
+      "charges": "190.14",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE009A01021",
+      "txn_date": "2023-12-11",
+      "txn_type": "SELL",
+      "quantity": "30",
+      "price": "1510.00",
+      "charges": "81.54",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE009A01021",
+      "txn_date": "2024-08-19",
+      "txn_type": "BUY",
+      "quantity": "50",
+      "price": "1690.25",
+      "charges": "152.12",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE009A01021",
+      "txn_date": "2023-10-25",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1360.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE009A01021",
+      "txn_date": "2024-10-24",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "990.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE040A01034",
+      "txn_date": "2023-03-20",
+      "txn_type": "BUY",
+      "quantity": "90",
+      "price": "1585.00",
+      "charges": "256.77",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE040A01034",
+      "txn_date": "2023-08-09",
+      "txn_type": "BUY",
+      "quantity": "60",
+      "price": "1640.50",
+      "charges": "177.17",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE040A01034",
+      "txn_date": "2024-09-30",
+      "txn_type": "SELL",
+      "quantity": "50",
+      "price": "1710.00",
+      "charges": "153.90",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE040A01034",
+      "txn_date": "2025-02-11",
+      "txn_type": "BUY",
+      "quantity": "40",
+      "price": "1695.20",
+      "charges": "122.05",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE040A01034",
+      "txn_date": "2024-05-17",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1710.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE090A01021",
+      "txn_date": "2023-05-22",
+      "txn_type": "BUY",
+      "quantity": "100",
+      "price": "915.60",
+      "charges": "164.81",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE090A01021",
+      "txn_date": "2024-03-14",
+      "txn_type": "BUY",
+      "quantity": "60",
+      "price": "1042.30",
+      "charges": "112.57",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE090A01021",
+      "txn_date": "2025-05-08",
+      "txn_type": "BUY",
+      "quantity": "45",
+      "price": "1198.75",
+      "charges": "97.10",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE090A01021",
+      "txn_date": "2024-08-20",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "800.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE062A01020",
+      "txn_date": "2023-02-16",
+      "txn_type": "BUY",
+      "quantity": "150",
+      "price": "540.10",
+      "charges": "145.83",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE062A01020",
+      "txn_date": "2023-10-03",
+      "txn_type": "BUY",
+      "quantity": "100",
+      "price": "578.40",
+      "charges": "104.11",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE062A01020",
+      "txn_date": "2024-11-25",
+      "txn_type": "SELL",
+      "quantity": "90",
+      "price": "745.00",
+      "charges": "120.69",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE062A01020",
+      "txn_date": "2024-06-14",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1782.50",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2023-01-25",
+      "txn_type": "BUY",
+      "quantity": "300",
+      "price": "382.20",
+      "charges": "206.39",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2023-07-19",
+      "txn_type": "BUY",
+      "quantity": "200",
+      "price": "440.85",
+      "charges": "158.71",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2024-04-08",
+      "txn_type": "BUY",
+      "quantity": "150",
+      "price": "428.50",
+      "charges": "115.70",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2023-05-24",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "4650.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2023-11-16",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "1500.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2024-05-24",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "6500.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE154A01025",
+      "txn_date": "2025-05-23",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "7150.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE018A01030",
+      "txn_date": "2023-06-27",
+      "txn_type": "BUY",
+      "quantity": "20",
+      "price": "2320.00",
+      "charges": "83.52",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE018A01030",
+      "txn_date": "2024-01-30",
+      "txn_type": "BUY",
+      "quantity": "15",
+      "price": "3180.50",
+      "charges": "85.87",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE018A01030",
+      "txn_date": "2025-03-18",
+      "txn_type": "BUY",
+      "quantity": "10",
+      "price": "3420.75",
+      "charges": "61.57",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE155A01022",
+      "txn_date": "2023-04-04",
+      "txn_type": "BUY",
+      "quantity": "200",
+      "price": "440.30",
+      "charges": "158.51",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE155A01022",
+      "txn_date": "2023-11-08",
+      "txn_type": "SELL",
+      "quantity": "120",
+      "price": "680.00",
+      "charges": "146.88",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE155A01022",
+      "txn_date": "2024-06-21",
+      "txn_type": "BUY",
+      "quantity": "100",
+      "price": "950.10",
+      "charges": "171.02",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE155A01022",
+      "txn_date": "2025-06-02",
+      "txn_type": "SELL",
+      "quantity": "60",
+      "price": "1010.00",
+      "charges": "109.08",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE030A01027",
+      "txn_date": "2023-08-16",
+      "txn_type": "BUY",
+      "quantity": "30",
+      "price": "2545.00",
+      "charges": "137.43",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE030A01027",
+      "txn_date": "2024-05-06",
+      "txn_type": "BUY",
+      "quantity": "25",
+      "price": "2280.60",
+      "charges": "102.63",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE030A01027",
+      "txn_date": "2023-11-08",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "510.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE030A01027",
+      "txn_date": "2024-11-08",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "935.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE296A01024",
+      "txn_date": "2023-09-12",
+      "txn_type": "BUY",
+      "quantity": "8",
+      "price": "6480.00",
+      "charges": "93.31",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE296A01024",
+      "txn_date": "2024-10-15",
+      "txn_type": "BUY",
+      "quantity": "6",
+      "price": "6950.50",
+      "charges": "75.07",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE296A01024",
+      "txn_date": "2025-07-01",
+      "txn_type": "BUY",
+      "quantity": "5",
+      "price": "7280.00",
+      "charges": "65.52",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE237A01028",
+      "txn_date": "2023-05-30",
+      "txn_type": "BUY",
+      "quantity": "45",
+      "price": "1780.00",
+      "charges": "144.18",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE237A01028",
+      "txn_date": "2024-02-27",
+      "txn_type": "BUY",
+      "quantity": "30",
+      "price": "1720.40",
+      "charges": "92.90",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE237A01028",
+      "txn_date": "2025-04-02",
+      "txn_type": "SELL",
+      "quantity": "25",
+      "price": "1890.00",
+      "charges": "85.05",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE280A01028",
+      "txn_date": "2023-07-11",
+      "txn_type": "BUY",
+      "quantity": "25",
+      "price": "2950.00",
+      "charges": "132.75",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE280A01028",
+      "txn_date": "2024-01-19",
+      "txn_type": "BUY",
+      "quantity": "15",
+      "price": "3380.20",
+      "charges": "91.27",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE280A01028",
+      "txn_date": "2024-08-05",
+      "txn_type": "SPLIT_ADJ",
+      "quantity": "40",
+      "price": "0",
+      "source": "CORP_ACTION",
+      "source_ref": "TITAN-SPLIT-1:1"
+    },
+    {
+      "account": "zerodha",
+      "isin": "INE280A01028",
+      "txn_date": "2025-05-12",
+      "txn_type": "BUY",
+      "quantity": "20",
+      "price": "3210.60",
+      "charges": "115.58",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE075A01022",
+      "txn_date": "2023-03-09",
+      "txn_type": "BUY",
+      "quantity": "250",
+      "price": "390.20",
+      "charges": "175.59",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE075A01022",
+      "txn_date": "2024-04-24",
+      "txn_type": "BUY",
+      "quantity": "150",
+      "price": "465.00",
+      "charges": "125.55",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE075A01022",
+      "txn_date": "2024-06-19",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "200.00",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE585B01010",
+      "txn_date": "2023-10-20",
+      "txn_type": "BUY",
+      "quantity": "6",
+      "price": "9650.00",
+      "charges": "104.22",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE585B01010",
+      "txn_date": "2024-12-02",
+      "txn_type": "BUY",
+      "quantity": "4",
+      "price": "11200.00",
+      "charges": "80.64",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE021A01026",
+      "txn_date": "2023-02-27",
+      "txn_type": "BUY",
+      "quantity": "30",
+      "price": "2870.00",
+      "charges": "154.98",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE021A01026",
+      "txn_date": "2023-12-18",
+      "txn_type": "BUY",
+      "quantity": "20",
+      "price": "3120.50",
+      "charges": "112.34",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE021A01026",
+      "txn_date": "2025-03-05",
+      "txn_type": "SELL",
+      "quantity": "15",
+      "price": "2980.00",
+      "charges": "80.46",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE238A01034",
+      "txn_date": "2023-07-27",
+      "txn_type": "BUY",
+      "quantity": "90",
+      "price": "980.40",
+      "charges": "158.82",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE238A01034",
+      "txn_date": "2024-02-14",
+      "txn_type": "SELL",
+      "quantity": "40",
+      "price": "1120.00",
+      "charges": "80.64",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE238A01034",
+      "txn_date": "2025-01-22",
+      "txn_type": "BUY",
+      "quantity": "55",
+      "price": "1080.75",
+      "charges": "106.99",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE044A01036",
+      "txn_date": "2023-05-15",
+      "txn_type": "BUY",
+      "quantity": "70",
+      "price": "1055.00",
+      "charges": "132.93",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE044A01036",
+      "txn_date": "2024-09-09",
+      "txn_type": "BUY",
+      "quantity": "40",
+      "price": "1480.20",
+      "charges": "106.57",
+      "source": "TRADEBOOK"
+    },
+    {
+      "account": "groww",
+      "isin": "INE044A01036",
+      "txn_date": "2024-08-28",
+      "txn_type": "DIVIDEND",
+      "quantity": "0",
+      "price": "0",
+      "dividend_amount": "245.00",
+      "source": "TRADEBOOK"
+    }
+  ]
+}

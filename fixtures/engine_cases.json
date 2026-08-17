@@ -239,6 +239,71 @@
    }
   },
   {
+   "name": "absolute_return_net_lifetime_cash_contributed",
+   "spec_ref": "ENGINE_SPEC section 5",
+   "note": "Same transactions as sell_half_leaves_average_unchanged. net_invested = 20000 + 30000 - 40000 = 10000. realised_to_date (FIFO, one lot matched) = 40000 - 20000 = 20000. market_value = 100 remaining shares @ 350 = 35000. absolute_return = (35000 + 20000 - 10000) / 10000 = 4.5.",
+   "transactions": [
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-01-10",
+     "txn_type": "BUY",
+     "quantity": "100",
+     "price": "200"
+    },
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-06-10",
+     "txn_type": "BUY",
+     "quantity": "100",
+     "price": "300"
+    },
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2025-01-10",
+     "txn_type": "SELL",
+     "quantity": "100",
+     "price": "400"
+    }
+   ],
+   "prices": {
+    "INE153T01027": "350"
+   },
+   "as_of": "2025-06-10",
+   "expected": {
+    "net_invested": "10000",
+    "realised_to_date": "20000",
+    "absolute_return": 4.5
+   }
+  },
+  {
+   "name": "absolute_return_undefined_after_full_profitable_exit",
+   "spec_ref": "ENGINE_SPEC section 5",
+   "note": "A full exit at a profit: net_invested = 20000 - 50000 = -30000, negative despite a genuine 30000 gain. absolute_return must be null -- the guard against a zero-or-negative net_invested denominator, not merely a divide-by-zero crash.",
+   "transactions": [
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-01-10",
+     "txn_type": "BUY",
+     "quantity": "100",
+     "price": "200"
+    },
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-06-10",
+     "txn_type": "SELL",
+     "quantity": "100",
+     "price": "500"
+    }
+   ],
+   "prices": {},
+   "as_of": "2024-12-31",
+   "expected": {
+    "net_invested": "-30000",
+    "realised_to_date": "30000",
+    "absolute_return": null
+   }
+  },
+  {
    "name": "period_xirr_mid_period_deposit_not_inflated",
    "spec_ref": "ENGINE_SPEC section Period XIRR",
    "note": "Every transaction between period_start and as_of must be its own dated cash flow, never folded into the opening or closing value. An implementation that uses only the opening value and the terminal value returns approximately 2.05 (205%) here instead of 0.05, because the 2,000,000 the client ADDED mid-period is counted as growth. The two answers are forty times apart, so this case needs no fine tolerance to catch the bug.",

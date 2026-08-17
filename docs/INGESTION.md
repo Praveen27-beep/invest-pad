@@ -107,12 +107,21 @@ both simpler and safer, and it is what mature trackers actually do.
 
 ### Address scheme
 
-One address per `(investor, broker, document type)`:
+One address per `(investor, broker, document type)`, at whatever domain
+`INGEST_DOMAIN` names (`app/config.py`; see `.env.example`) -- the examples below use
+the illustrative `ingest.example.com`:
 
 ```
-c001-zerodha-contractnote@in.yourdomain.com
-c001-cdsl-cas@in.yourdomain.com
+c001-zerodha-contractnote@ingest.example.com
+c001-cdsl-cas@ingest.example.com
 ```
+
+`app.ingest.addresses.forwarding_addresses` computes the real address for each account
+from `INGEST_DOMAIN` plus the investor's code, for every `(broker, doctype)` pair with
+a working adapter in `app.ingest.webhook._ADAPTER_FACTORIES` -- today that's only
+`zerodha`/`contractnote`; `c001-cdsl-cas` above illustrates the general scheme, not a
+working address. `POST /investors/{id}/accounts` returns each account's live addresses
+on `forwarding_addresses` rather than leaving a client to construct one from prose.
 
 Routing by address rather than by sniffing content is the single most important design
 decision here. Zerodha alone sends at least four different document types from the
@@ -126,7 +135,7 @@ client's inbox
    │  one-time filter: from:noreply@zerodha.com
    │                   subject:"Contract Note"
    ▼
-c001-zerodha-contractnote@in.yourdomain.com
+c001-zerodha-contractnote@ingest.example.com
    │  inbound-parse webhook (SendGrid / Mailgun / Postmark)
    ▼
 POST /ingest/email   { to, from, subject, attachments[] }

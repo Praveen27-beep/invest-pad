@@ -9,8 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-
-from db import grievance, privacy
+from app.db import grievance, privacy
 
 pytestmark = pytest.mark.db
 

@@ -51,6 +51,10 @@
       "type": "string",
       "format": "date"
     },
+    "cagr": {
+      "type": ["number", "null"],
+      "description": "(market_value / invested) ^ (365.25 / days) - 1, days from first_buy_date to as_of. A single-lump-sum approximation: treats the current weighted-average cost as if fully invested on the earliest acquisition date. Never computed at the portfolio level (ENGINE_SPEC section 5) -- per-holding only. Null when no as_of/first_buy_date/positive cost basis is available; never defaulted to zero."
+    },
     "fifo_cost": {
       "$ref": "transaction.schema.json#/$defs/decimal",
       "description": "Cost of the surviving FIFO lots. Differs from `invested` only where a position has been partly sold. Brokers report this convention; `invested` is the weighted average that ENGINE_SPEC section 1 displays. Both are correct answers to different questions, and reconciliation needs this one."

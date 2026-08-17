@@ -14,11 +14,10 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-
-from db import audit, repository
-from db.migrate import discover, migrate
-from engine.dedupe import make_dedupe_key
-from engine.types import Source, Transaction, TxnType
+from app.db import audit, repository
+from app.db.migrate import discover, migrate
+from app.engine.dedupe import make_dedupe_key
+from app.engine.types import Source, Transaction, TxnType
 
 pytestmark = pytest.mark.db
 

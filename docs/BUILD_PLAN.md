@@ -139,7 +139,7 @@ exchange — `INE0N6U01018` and `INE0O4R01018`.
 
 ### Session 11 — Gmail forwarding
 - Inbound-parse webhook → `POST /ingest/email`.
-- Address scheme `{code}-{broker}-{doctype}@in.yourdomain.com`. Route by address only.
+- Address scheme `{code}-{broker}-{doctype}@{INGEST_DOMAIN}`. Route by address only.
 - Per-broker PDF password rules (Zerodha/Groww uppercase PAN, Upstox lowercase).
 - Store raw payload before parsing.
 - Client setup walkthrough page with the Gmail verification-code flow.

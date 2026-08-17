@@ -21,7 +21,8 @@ pytest_plugins = ["tests.conftest_db"]
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "fixtures"
 SCHEMA = ROOT / "schema"
-ENGINE = ROOT / "engine"
+#: relocated to trackr-backend/app/engine -- see docs/structure_revamp_plan.md.
+ENGINE = ROOT / "trackr-backend" / "app" / "engine"
 
 
 def load_json(path: Path) -> Any:
@@ -44,7 +45,7 @@ def to_transaction(row: dict[str, Any]) -> Any:
     Imported lazily so that a failure inside the engine surfaces as a test failure with
     a case name attached, rather than as a collection error with no name at all.
     """
-    from engine.types import Source, Transaction, TxnType
+    from app.engine.types import Source, Transaction, TxnType
 
     return Transaction(
         isin=row["isin"],

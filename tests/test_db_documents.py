@@ -10,9 +10,8 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-
-from db import audit, documents, privacy
-from storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
+from app.db import audit, documents, privacy
+from app.storage.local import SIGNING_SECRET_ENV, LocalDocumentStore
 
 pytestmark = pytest.mark.db
 
@@ -170,8 +169,7 @@ def test_export_lists_documents_without_embedding_bytes(db, store, investor) -> 
 def test_pan_hash_cannot_be_stored_without_its_ciphertext(db, investor, crypto_env) -> None:
     """A hash without the PAN behind it can never be re-peppered. See docs/KEY_ROTATION.md."""
     import psycopg
-
-    from db import crypto
+    from app.db import crypto
 
     with db.cursor() as cur, pytest.raises(psycopg.errors.CheckViolation):
         cur.execute(

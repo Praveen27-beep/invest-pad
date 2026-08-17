@@ -6,11 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from app.engine.errors import NegativeHoldingError
+from app.engine.lots import DEFAULT_LONG_TERM_DAYS, compute_lots
+from app.engine.realised import compute_realised
+from app.engine.types import Term, Transaction, TxnType
 
-from engine.errors import NegativeHoldingError
-from engine.lots import DEFAULT_LONG_TERM_DAYS, compute_lots
-from engine.realised import compute_realised
-from engine.types import Term, Transaction, TxnType
 from tests.conftest import SCHEMA, load_json
 
 
@@ -135,7 +135,7 @@ def test_disposal_exceeding_open_lots_raises() -> None:
 
 def test_lots_and_holdings_agree_on_quantity() -> None:
     """Two methods, one ledger. If total quantity disagrees, one replay is wrong."""
-    from engine.holdings import compute_holdings
+    from app.engine.holdings import compute_holdings
 
     rows = [
         *TWO_BUYS,

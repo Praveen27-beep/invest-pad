@@ -7,10 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from app.db import prices as dbprices
+from app.engine.holdings import MAX_PRICE_STALENESS_DAYS
+from app.prices.pipe import fetch_day
 
-from db import prices as dbprices
-from engine.holdings import MAX_PRICE_STALENESS_DAYS
-from prices.pipe import fetch_day
 from tests.test_prices import HELD, NSE_ONLY, PRICE_DATE, both_sources
 
 pytestmark = pytest.mark.db
@@ -19,7 +19,7 @@ BLS = "INE153T01027"
 
 
 def seed(db, isin=BLS, on=None, close="100", source="NSE_BHAVCOPY"):
-    from prices.pipe import MergedPrice
+    from app.prices.pipe import MergedPrice
 
     with db.cursor() as cur:
         cur.execute(
@@ -118,8 +118,8 @@ def test_a_full_days_prices_land_and_cover_every_holding(db) -> None:
 
 def test_valuation_runs_off_stored_prices(db, investor) -> None:
     """End to end: bhavcopy -> database -> engine valuation. No layer knows the others."""
-    from engine.types import Holding
-    from engine.valuation import value_holdings
+    from app.engine.types import Holding
+    from app.engine.valuation import value_holdings
 
     result = fetch_day(PRICE_DATE, sources=both_sources())
     with db.cursor() as cur:
@@ -148,8 +148,8 @@ def test_held_isins_covers_everything_ever_traded(db, investor) -> None:
     """Not only current holdings: a historical snapshot needs prices for closed positions."""
     import os
 
-    from db import repository
-    from engine.types import Source, Transaction, TxnType
+    from app.db import repository
+    from app.engine.types import Source, Transaction, TxnType
 
     with db.cursor() as cur:
         cur.execute("INSERT INTO security (isin) VALUES (%s) ON CONFLICT DO NOTHING", (BLS,))

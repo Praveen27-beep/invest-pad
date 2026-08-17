@@ -44,3 +44,24 @@ scratch/
 !fixtures/engine_cases.json
 !fixtures/bhavcopy/
 !fixtures/bhavcopy/*.csv
+
+# Connection strings with real credentials. DATABASE_URL is read from the environment
+# (db/connection.py refuses to guess one), and a .env holding a production URL is the
+# most likely way a password reaches git history -- where it cannot be erased.
+.env
+.env.*
+# The template is safe and belongs in the repo: names and comments only, every value
+# blank. Re-admitted explicitly, same pattern as the fixtures exceptions below.
+!.env.example
+!**/.env.example
+
+# trackr-frontend/ (Next.js)
+trackr-frontend/node_modules/
+trackr-frontend/.next/
+trackr-frontend/out/
+trackr-frontend/next-env.d.ts
+trackr-frontend/*.tsbuildinfo
+
+# start.sh / stop.sh runtime state (PIDs and logs, written at repo root)
+.trackr-pids/
+.trackr-logs/

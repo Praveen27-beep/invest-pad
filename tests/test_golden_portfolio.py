@@ -22,10 +22,10 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from app.engine.holdings import compute_holdings
+from app.engine.valuation import value_holdings
+from app.engine.xirr import compute_xirr, compute_xirr_holdings
 
-from engine.holdings import compute_holdings
-from engine.valuation import value_holdings
-from engine.xirr import compute_xirr, compute_xirr_holdings
 from tests.conftest import FIXTURES, dec, load_json, to_date, to_transaction
 
 GOLDEN_PATH = FIXTURES / "golden_portfolio.json"

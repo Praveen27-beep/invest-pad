@@ -16,11 +16,10 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-
-from engine.dedupe import make_dedupe_key
-from engine.types import Source, TxnType
-from ingest.base import CONFIDENCE_CERTAIN, CONFIDENCE_DERIVED
-from ingest.zerodha_contract_note import (
+from app.engine.dedupe import make_dedupe_key
+from app.engine.types import Source, TxnType
+from app.ingest.base import CONFIDENCE_CERTAIN, CONFIDENCE_DERIVED
+from app.ingest.zerodha_contract_note import (
     ISIN_PATTERN,
     ZerodhaContractNoteAdapter,
     parse_charges,
@@ -288,7 +287,7 @@ def test_the_same_trade_from_two_sources_does_not_currently_dedupe(adapter) -> N
     asserts the CURRENT behaviour so the gap is visible; when the key is fixed this test
     will fail and should be inverted.
     """
-    from ingest.zerodha_tradebook import ZerodhaTradebookAdapter
+    from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 
     tradebooks = sorted(
         glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv")

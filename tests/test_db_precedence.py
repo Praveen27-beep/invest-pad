@@ -14,11 +14,10 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-
-from db import imports, precedence, repository
-from engine.types import Source, Transaction, TxnType
-from ingest.zerodha_contract_note import ZerodhaContractNoteAdapter
-from ingest.zerodha_tradebook import ZerodhaTradebookAdapter
+from app.db import imports, precedence, repository
+from app.engine.types import Source, Transaction, TxnType
+from app.ingest.zerodha_contract_note import ZerodhaContractNoteAdapter
+from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 
 #: Real broker documents stay OUT of the repo. Point this at them to run the tests
 #: that need them; without it those tests skip.

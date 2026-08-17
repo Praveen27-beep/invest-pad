@@ -260,9 +260,30 @@ absolute_return = (market_value + realised_to_date − net_invested) ÷ net_inve
 cagr            = (end_value ÷ start_value)^(365.25 ÷ days) − 1
 ```
 
+`net_invested` — **net lifetime cash contributed**: every `BUY`/`IPO_ALLOT` cash
+outflow minus every `SELL`/`BUYBACK` cash inflow, summed across the *entire*
+transaction history, not just currently-held positions. This is the same cash-flow
+universe `xirr_all` solves over (§4's `_transaction_flows`, summed instead of dated),
+so `absolute_return` is the non-annualised sibling of `xirr_all` — both answer "what has
+my investing returned, all in?", one as a ratio, one as a rate. `DIVIDEND` flows and the
+terminal market-value flow are excluded, matching how `_transaction_flows` scopes cash
+movement (dividends are not capital contributed).
+
+`absolute_return` is **undefined when `net_invested <= 0`** — a portfolio with heavy net
+withdrawals can drive lifetime net contributions to zero or negative even while
+positions remain open. Return `None` in that case rather than raising or dividing by
+zero; same convention `unrealised_pct` uses in §2.
+
 CAGR assumes a single lump sum and no flows — only valid on a position basis or where
 there were genuinely no contributions. **XIRR is the default headline metric**; CAGR is
-shown per-holding only.
+shown per-holding only and is **never computed at the portfolio level, permanently, not
+provisionally.** A portfolio is by construction a series of staggered dated
+contributions — exactly the condition that breaks CAGR's lump-sum assumption, and
+unlike `net_invested` above this is not a gap to fill in: there is no portfolio-level
+`start_value`/`days` pair that isn't itself invented. In the one case where a
+portfolio-level CAGR would be mathematically valid — a single funding date, no
+subsequent flows — it coincides exactly with `xirr_all`, so there is no case where it is
+both valid and not already covered by XIRR.
 
 TWRR (time-weighted) is Phase 2. Note for later: TWRR removes the effect of *when* the
 client added money, so it measures the adviser; XIRR includes it, so it measures the
