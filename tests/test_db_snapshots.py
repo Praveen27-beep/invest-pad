@@ -28,7 +28,9 @@ def seed_price(db, isin: str, on: date, close: str) -> None:
     )
 
 
-def buy(account_id: str, isin: str, day: date, quantity: str, price: str, ref: str) -> TransactionIn:
+def buy(
+    account_id: str, isin: str, day: date, quantity: str, price: str, ref: str
+) -> TransactionIn:
     return TransactionIn(
         account_id=account_id, isin=isin, txn_date=day, txn_type="BUY",
         quantity=quantity, price=price, source="MANUAL", source_ref=ref,

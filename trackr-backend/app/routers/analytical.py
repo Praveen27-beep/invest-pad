@@ -1,4 +1,4 @@
-"""GET /investors/{id}/performance, POST /ops/prices/refresh.
+"""GET /investors/{id}/performance, POST /ops/prices/refresh, POST /ops/snapshots/run.
 
 ``absolute_return`` is computed via ``compute_net_invested``/``compute_absolute_return``
 (app/engine/returns.py), per the ``net_invested`` definition in ENGINE_SPEC section 5:
@@ -52,7 +52,7 @@ from app.engine.xirr import (
     period_warning,
 )
 from app.prices.alerts import Notifier, get_notifier
-from app.prices.pipe import NSE_BHAVCOPY_EARLIEST, backfill_days, trading_days, fetch_day
+from app.prices.pipe import NSE_BHAVCOPY_EARLIEST, backfill_days, fetch_day, trading_days
 from app.schemas.analytical import (
     PerformanceResponse,
     PriceRefreshResponse,

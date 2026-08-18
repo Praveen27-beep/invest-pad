@@ -22,8 +22,10 @@ from decimal import Decimal
 
 import pytest
 from app.db import prices as dbprices
+from app.db import snapshots as dbsnapshots
 from app.db.repository import load_transactions
 from app.engine.snapshot import compute_snapshot
+from app.engine.types import Snapshot
 from app.engine.xirr import PERIOD_TOO_SHORT_WARNING, compute_fy_xirr, compute_period_xirr
 from app.prices.pipe import MergedPrice
 from app.routers.analytical import performance
@@ -174,6 +176,38 @@ def test_fy_xirr_is_null_when_no_holdings_are_priced_at_all(db, investor) -> Non
     assert result["fy_xirr"] is None
 
 
+def test_fy_xirr_prefers_a_persisted_snapshot_over_live_recomputation(db, investor) -> None:
+    """Phase 2 Session 1's actual payoff: when a portfolio_snapshot row already exists
+    for 1 April, _fy_xirr must use it and skip the live compute_snapshot call entirely --
+    proven by seeding a row with a market_value live computation would NOT produce (no
+    1-April price is stored at all) and asserting the response matches the SEEDED value,
+    not None and not a guess."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    create_transactions(
+        investor,
+        [buy(advised_account, ISIN_A, date(2023, 1, 10), "100", "100", "T1")],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "200")
+    # Deliberately NOT seeding a price on/near FY_START -- a live compute_snapshot call
+    # would raise MissingPriceError and fy_xirr would come back None. The persisted row
+    # below is the only way this test's fy_xirr can be non-null.
+    dbsnapshots.upsert_snapshot(
+        db, investor, False,
+        Snapshot(
+            as_of=FY_START, invested=Decimal("10000"), market_value=Decimal("15000"),
+            unrealised=Decimal("5000"), realised_to_date=Decimal("0"),
+        ),
+    )
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["fy_xirr"] is not None
+    transactions = load_transactions(db, investor_id=investor)
+    expected = compute_fy_xirr(transactions, {ISIN_A: Decimal("200")}, Decimal("15000"), AS_OF)
+    assert result["fy_xirr"] == pytest.approx(float(expected))
+
+
 # --- period_xirr (adviser onboarding) -------------------------------------------------
 
 ONBOARDING = date(2023, 6, 1)
@@ -294,6 +328,38 @@ def test_period_warning_fires_when_the_window_is_under_90_days(db, investor) -> 
 
     assert result["period_xirr"] is not None
     assert result["warning"] == PERIOD_TOO_SHORT_WARNING
+
+
+def test_period_xirr_prefers_a_persisted_snapshot_over_live_recomputation(db, investor) -> None:
+    """Same proof as fy_xirr's equivalent test: seed a portfolio_snapshot row for
+    onboarding_date with no corresponding price stored anywhere near it, so a live
+    compute_snapshot call would raise MissingPriceError and period_xirr would come back
+    None. A non-null result here is only possible via the persisted row."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    set_onboarding_date(db, investor, ONBOARDING)
+    create_transactions(
+        investor,
+        [buy(advised_account, ISIN_A, date(2023, 1, 10), "100", "100", "T1")],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "200")
+    dbsnapshots.upsert_snapshot(
+        db, investor, False,
+        Snapshot(
+            as_of=ONBOARDING, invested=Decimal("10000"), market_value=Decimal("14000"),
+            unrealised=Decimal("4000"), realised_to_date=Decimal("0"),
+        ),
+    )
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["period_xirr"] is not None
+    assert result["period_start"] == ONBOARDING
+    transactions = load_transactions(db, investor_id=investor)
+    expected = compute_period_xirr(
+        transactions, {ISIN_A: Decimal("200")}, ONBOARDING, Decimal("14000"), AS_OF
+    )
+    assert result["period_xirr"] == pytest.approx(float(expected))
 
 
 def test_period_warning_does_not_fire_when_the_window_is_90_days_or_more(db, investor) -> None:
