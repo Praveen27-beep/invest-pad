@@ -326,6 +326,70 @@
     "xirr_period": 0.05,
     "tolerance": 0.02
    }
+  },
+  {
+   "name": "benchmark_cash_flow_replication",
+   "spec_ref": "ENGINE_SPEC section 6",
+   "note": "Units accumulate with the sign FLIPPED relative to _transaction_flows own convention: a BUY (cash flow -20000) buys +200 index units (-(-20000)/100); a SELL (cash flow +15000) redeems -136.363636 units (-(15000)/110). total_units=63.636364, benchmark_terminal=63.636364*120=7636.363636. The final XIRR solve reuses the ORIGINAL unflipped flows (-20000, +15000) with benchmark_terminal appended as the terminal flow, same shape as xirr.py _series.",
+   "transactions": [
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-01-10",
+     "txn_type": "BUY",
+     "quantity": "100",
+     "price": "200"
+    },
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-06-10",
+     "txn_type": "SELL",
+     "quantity": "50",
+     "price": "300"
+    }
+   ],
+   "index_levels": {
+    "2024-01-10": "100",
+    "2024-06-10": "110",
+    "2025-01-10": "120"
+   },
+   "as_of": "2025-01-10",
+   "expected": {
+    "benchmark_terminal": "7636.363636",
+    "benchmark_xirr": 0.22650434103614217,
+    "tolerance": 0.0001
+   }
+  },
+  {
+   "name": "twrr_dividend_and_contribution_sub_periods",
+   "spec_ref": "ENGINE_SPEC section 5",
+   "note": "Pins the chaining convention confirmed 2026-08-20 (docs/trackr_plus_phase2_overview.md section 4): sub-periods are consecutive persisted snapshots, each closed by that sub-period's flow, dividends included as a portfolio outflow (Candidate B, total-return TWRR) -- the mirror image of section 4's investor-side sign table. Sub-period 1 (2024-01-01 -> 2024-07-01): flow=+10000 (BUY), r1=(118000-10000)/100000-1=0.08. Sub-period 2 (2024-07-01 -> 2025-01-01): flow=-2000 (DIVIDEND, outflow), r2=(121900-(-2000))/118000-1=0.05. twrr_cumulative=1.08*1.05-1=0.134. total_days=366 (2024 is a leap year). twrr=1.134**(365.25/366)-1, cross-checked independently via float math.log/exp to agree with the Decimal ** result to 1e-16.",
+   "snapshots": [
+    { "as_of": "2024-01-01", "invested": "100000", "market_value": "100000" },
+    { "as_of": "2024-07-01", "invested": "110000", "market_value": "118000" },
+    { "as_of": "2025-01-01", "invested": "108000", "market_value": "121900" }
+   ],
+   "transactions": [
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-03-01",
+     "txn_type": "BUY",
+     "quantity": "50",
+     "price": "200"
+    },
+    {
+     "isin": "INE153T01027",
+     "txn_date": "2024-12-15",
+     "txn_type": "DIVIDEND",
+     "quantity": "0",
+     "price": "0",
+     "dividend_amount": "2000"
+    }
+   ],
+   "expected": {
+    "twrr_cumulative": "0.134",
+    "twrr": 0.1337078207068066,
+    "tolerance": 0.000001
+   }
   }
  ]
 }

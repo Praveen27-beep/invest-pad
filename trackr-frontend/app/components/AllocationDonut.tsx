@@ -1,15 +1,23 @@
-import type { AllocationGroupOut } from "@/lib/api-types";
 import { formatPercent } from "@/lib/format";
 import { EmptyState } from "./PageState";
 
 const SLICE_COLORS = ["#1B2A41", "#B08D3E", "#3D5170", "#C9A84C", "#8F7130", "#26374F"];
 
 /**
- * Grouped by asset_class (GET /summary's `allocation`), not sector -- security.sector
- * is null for every row today (docs/DATA_MODEL.md). In Phase 1 (equities only) this
- * renders as a single 100% slice, which is correct, not a bug.
+ * Grouping-agnostic: renders whichever slices it's handed, whether that's GET
+ * /summary's `allocation` (by asset_class) or `allocation_by_sector`. `key` is the raw
+ * grouping value (may be `null` -- an "Unclassified" sector group carries a real
+ * `label` but a `null` key) and only ever used for React's list key, never displayed;
+ * `label` is what's shown. The caller (app/page.tsx) adapts either response array into
+ * this shape.
  */
-export function AllocationDonut({ groups }: { groups: AllocationGroupOut[] }) {
+export interface AllocationSlice {
+  key: string | null;
+  label: string;
+  weight_pct: number | null;
+}
+
+export function AllocationDonut({ groups }: { groups: AllocationSlice[] }) {
   const priced = groups.filter((g) => g.weight_pct !== null && g.weight_pct > 0);
 
   if (priced.length === 0) {
@@ -36,7 +44,7 @@ export function AllocationDonut({ groups }: { groups: AllocationGroupOut[] }) {
       />
       <ul className="flex-1 space-y-2 text-sm">
         {priced.map((g, i) => (
-          <li key={g.asset_class} className="flex items-center justify-between gap-3">
+          <li key={g.key ?? "__unclassified__"} className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-2 text-navy-600">
               <span
                 className="h-2.5 w-2.5 rounded-full"

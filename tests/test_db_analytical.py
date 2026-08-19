@@ -26,7 +26,12 @@ from app.db import snapshots as dbsnapshots
 from app.db.repository import load_transactions
 from app.engine.snapshot import compute_snapshot
 from app.engine.types import Snapshot
-from app.engine.xirr import PERIOD_TOO_SHORT_WARNING, compute_fy_xirr, compute_period_xirr
+from app.engine.xirr import (
+    PERIOD_TOO_SHORT_WARNING,
+    compute_fy_xirr,
+    compute_period_xirr,
+    years_before,
+)
 from app.prices.pipe import MergedPrice
 from app.routers.analytical import performance
 from app.routers.transactions import create_transactions
@@ -378,6 +383,143 @@ def test_period_warning_does_not_fire_when_the_window_is_90_days_or_more(db, inv
 
     assert result["period_xirr"] is not None
     assert result["warning"] is None
+
+
+# --- xirr_1y / xirr_3y / xirr_5y (Phase 2 Session 3: trailing windows) ----------------
+
+
+def test_xirr_5y_blanks_independently_while_fy_1y_3y_still_compute(db, investor) -> None:
+    """~3.7 years of real history: fy_xirr/xirr_1y/xirr_3y compute normally while
+    xirr_5y alone is None -- the per-window guard's independence, not an all-or-nothing
+    outcome. Also the regression guard for the latent bug where a target predating the
+    ledger degenerates into xirr_all silently mislabeled with the window's name: without
+    the guard, compute_holdings at the 5Y target would be empty, opening_value would be
+    0, and every transaction the investor ever made would fold into the flow list."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    earliest = date(2021, 1, 10)  # after the 5Y target (2019-09-30), before the 3Y one
+    create_transactions(
+        investor,
+        [buy(advised_account, ISIN_A, earliest, "100", "100", "T1")],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "200")
+    for target in (FY_START, years_before(AS_OF, 1), years_before(AS_OF, 3)):
+        dbsnapshots.upsert_snapshot(
+            db, investor, False,
+            Snapshot(
+                as_of=target, invested=Decimal("10000"), market_value=Decimal("12000"),
+                unrealised=Decimal("2000"), realised_to_date=Decimal("0"),
+            ),
+        )
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["fy_xirr"] is not None
+    assert result["xirr_1y"] is not None
+    assert result["xirr_3y"] is not None
+    assert result["xirr_5y"] is None
+
+
+def test_xirr_1y_uses_the_snapshots_own_date_not_the_target_when_nearby(db, investor) -> None:
+    """A persisted snapshot 5 days before the 1Y target (exactly at the
+    MAX_PRICE_STALENESS_DAYS bound) stands in for it -- but the router must pass the
+    SNAPSHOT's own as_of into compute_period_xirr, not the target date, or the
+    transaction dated between the two would be silently dropped from both the opening
+    value and the flow list. Same failure class as the documented mid-period-deposit
+    bug, scoped to the gap instead of the whole period."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    target_1y = years_before(AS_OF, 1)
+    snapshot_date = target_1y - timedelta(days=5)
+    gap_txn_date = target_1y - timedelta(days=3)
+
+    create_transactions(
+        investor,
+        [
+            buy(advised_account, ISIN_A, date(2020, 1, 10), "100", "100", "T1"),
+            buy(advised_account, ISIN_A, gap_txn_date, "50", "300", "T2"),
+        ],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "400")
+    dbsnapshots.upsert_snapshot(
+        db, investor, False,
+        Snapshot(
+            as_of=snapshot_date, invested=Decimal("10000"), market_value=Decimal("15000"),
+            unrealised=Decimal("5000"), realised_to_date=Decimal("0"),
+        ),
+    )
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["xirr_1y"] is not None
+    transactions = load_transactions(db, investor_id=investor)
+    expected = compute_period_xirr(
+        transactions, {ISIN_A: Decimal("400")}, snapshot_date, Decimal("15000"), AS_OF
+    )
+    assert result["xirr_1y"] == pytest.approx(float(expected))
+
+    # The buggy alternative: labelling the same opening value with target_1y instead of
+    # the snapshot's real date silently drops the gap transaction from the flow list
+    # entirely (txn_date > target_1y excludes it). Must not match what the router
+    # actually returned.
+    buggy = compute_period_xirr(
+        transactions, {ISIN_A: Decimal("400")}, target_1y, Decimal("15000"), AS_OF
+    )
+    assert result["xirr_1y"] != pytest.approx(float(buggy))
+
+
+def test_a_persisted_snapshot_older_than_the_staleness_bound_is_not_used(db, investor) -> None:
+    """A persisted row exists but 10 days before the 1Y target -- beyond
+    MAX_PRICE_STALENESS_DAYS (5). Using it directly would silently widen the window by
+    that much; the router must treat it as a miss and fall through to the live path
+    instead. No price exists anywhere near the target for that live path either, so
+    xirr_1y must come back None -- proof the stale row was rejected, not silently
+    accepted (if it had been used, xirr_1y would be non-null)."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    target_1y = years_before(AS_OF, 1)
+    create_transactions(
+        investor,
+        [buy(advised_account, ISIN_A, date(2020, 1, 10), "100", "100", "T1")],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "200")  # nothing anywhere near target_1y
+    dbsnapshots.upsert_snapshot(
+        db, investor, False,
+        Snapshot(
+            as_of=target_1y - timedelta(days=10), invested=Decimal("10000"),
+            market_value=Decimal("15000"), unrealised=Decimal("5000"),
+            realised_to_date=Decimal("0"),
+        ),
+    )
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["xirr_1y"] is None
+
+
+def test_fy_xirr_is_null_when_the_investors_only_transaction_postdates_fy_start(
+    db, investor
+) -> None:
+    """Latent bug regression guard: without the earliest-transaction guard, a target
+    predating the ledger makes compute_holdings(transactions, fy_start) legitimately
+    empty, opening_value legitimately 0, and compute_period_xirr then folds in every
+    transaction the investor has ever made -- numerically xirr_all, silently mislabeled
+    'this FY'. fy_xirr must come back None instead of that mislabeled number."""
+    advised_account = os.environ["_TEST_ACCOUNT_ID"]
+    create_transactions(
+        investor,
+        [buy(advised_account, ISIN_A, FY_START + timedelta(days=30), "100", "100", "T1")],
+        connection=db,
+    )
+    seed_price(db, ISIN_A, AS_OF, "200")
+
+    result = performance(fake_request(), investor, as_of=AS_OF, connection=db)
+
+    assert result["fy_xirr"] is None
+    # xirr_all is NOT None -- proving fy_xirr's None came from the guard specifically,
+    # not from some broader failure (e.g. too few flows for the solver) that would have
+    # blanked xirr_all too.
+    assert result["xirr_all"] is not None
 
 
 # --- advised_only --------------------------------------------------------------------

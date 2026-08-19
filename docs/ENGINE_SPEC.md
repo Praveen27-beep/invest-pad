@@ -285,9 +285,98 @@ portfolio-level CAGR would be mathematically valid — a single funding date, no
 subsequent flows — it coincides exactly with `xirr_all`, so there is no case where it is
 both valid and not already covered by XIRR.
 
-TWRR (time-weighted) is Phase 2. Note for later: TWRR removes the effect of *when* the
-client added money, so it measures the adviser; XIRR includes it, so it measures the
-client's experience. Store dated snapshots from day one and both become computable.
+TWRR (time-weighted) is Phase 2. TWRR removes the effect of *when* the client added
+money, so it measures the adviser; XIRR includes it, so it measures the client's
+experience. Store dated snapshots from day one and both become computable.
+
+**Chaining convention (pinned, confirmed by product decision on 2026-08-20 -- see
+`docs/trackr_plus_phase2_overview.md` section 4, which flagged this as the one Phase 2
+formula genuinely absent from this spec before now):**
+
+```
+compute_twrr(snapshot_series, transactions) -> Decimal | None
+```
+
+Sub-periods are consecutive PERSISTED snapshot rows -- not necessarily daily-adjacent; a
+gap in the persisted series (a missed backfill day) simply widens that one sub-period
+rather than being filled or interpolated, matching how `list_snapshots_range` already
+treats a missing date as absent, never filled.
+
+For each consecutive pair `(prev, curr)` in the series:
+
+```
+flow  = net external flow INTO the portfolio, transactions dated in (prev.as_of, curr.as_of]
+        BUY / IPO_ALLOT   +   qty * price + charges
+        SELL / BUYBACK    -   qty * price - charges
+        DIVIDEND          -   dividend_amount
+        corporate actions  0  omitted -- shares moved, not cash
+
+r     = (curr.market_value - flow) / prev.market_value - 1
+```
+
+This is the mirror image of section 4's `_transaction_flows` sign table: XIRR signs
+every flow from the INVESTOR's side (a BUY leaves their pocket, so it's negative; a SELL
+or DIVIDEND enters it, so it's positive). TWRR needs the same events signed from the
+PORTFOLIO's side instead, and this system has no cash sleeve (`compute_snapshot`'s
+`market_value` is holdings-only) -- so a SELL or a DIVIDEND both remove value from the
+tracked portfolio the same way, and the sign table above is just section 4's negated.
+This is forced by the existing data model, not a free choice.
+
+**Dividends are counted as return, not excluded (Candidate B of the product decision).**
+Backing the dividend out of `flow` (as a negative, i.e. an outflow) is mathematically
+equivalent to crediting it back into the sub-period's numerator -- so TWRR here is a
+TOTAL-RETURN figure (price + income), matching how an adviser's skill is judged, and
+symmetric with how `DIVIDEND` is already a positive flow to the investor in section 4's
+own table. The rejected alternative (excluding dividends, matching this section's
+`net_invested` treatment) would make dividend income invisible to TWRR entirely, since
+`market_value` never reflects it either.
+
+A sub-period with `prev.market_value == 0` (the account held nothing yet, or emptied out
+completely) makes the ratio undefined -- return `None` for the whole computation rather
+than a number computed from a division that doesn't mean anything, same posture as
+`unrealised_pct`'s zero-invested guard above.
+
+**Chaining and annualising:**
+
+```
+twrr_cumulative   = product(1 + r_i for each sub-period) - 1
+twrr              = twrr_cumulative ** (365.25 / total_days) - 1
+                    where total_days = (series[-1].as_of - series[0].as_of).days
+```
+
+Annualised the same way CAGR is (`DAYS_PER_YEAR = 365.25`, same fractional-power pattern
+`app/engine/valuation.py`'s `_cagr` already uses in Decimal) so it stays directly
+comparable to XIRR on the performance page -- the whole point of showing them together
+per `docs/PRODUCT_VISION.md` is a client reading "1Y XIRR: -5%, 1Y TWRR: +3%" and
+immediately seeing bad entry timing rather than a bad strategy. `None` when fewer than
+two snapshot rows exist, or `total_days <= 0`, or the chained product is non-positive (a
+total wipeout has no well-defined annualised rate, same reasoning `_cagr` uses for a
+non-positive base).
+
+**Worked example** (also `fixtures/engine_cases.json`'s
+`twrr_dividend_and_contribution_sub_periods` case):
+
+```
+snapshots: 2024-01-01 market_value=100000  (anchor)
+           2024-07-01 market_value=118000
+           2025-01-01 market_value=121900
+transactions: BUY 50 @ 200 on 2024-03-01 (cash +10,000)
+              DIVIDEND 2,000 on 2024-12-15
+
+sub-period 1 (2024-01-01 -> 2024-07-01): flow = +10,000
+  r1 = (118000 - 10000) / 100000 - 1 = 0.08
+
+sub-period 2 (2024-07-01 -> 2025-01-01): flow = -2,000 (dividend, outflow)
+  r2 = (121900 - (-2000)) / 118000 - 1 = 0.05
+
+twrr_cumulative = 1.08 * 1.05 - 1 = 0.134             (13.40%)
+total_days      = 366                                  (2024 is a leap year)
+twrr            = 1.134 ** (365.25/366) - 1 = 0.1337078...   (13.3708%)
+```
+
+No root-finding anywhere in this computation -- only `compute_period_xirr`'s
+already-annualised siblings need `pyxirr`; TWRR chains via plain Decimal multiplication
+and one fractional power at the very end.
 
 ---
 

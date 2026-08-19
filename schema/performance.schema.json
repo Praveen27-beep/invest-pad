@@ -23,6 +23,34 @@
       "type": ["number", "null"],
       "description": "Financial-year-to-date, from 1 April. opening_value is the real market value on 1 April via compute_snapshot against that date's prices, never today's value or cost. Null when no 1-April price exists for a held ISIN -- never substituted with today's price or the nearest available date, which would count the year's entire gain as if it already existed on day one. Never presented without xirr_all and xirr_holdings beside it."
     },
+    "xirr_1y": {
+      "type": ["number", "null"],
+      "description": "Trailing 1 calendar year from as_of, same resolution as fy_xirr: opening_value from the nearest persisted daily snapshot on or before that date (or a live equivalent when none exists), never a substitute. Independently null -- unrelated to whether fy_xirr, xirr_3y, or xirr_5y are present -- when the portfolio's history doesn't reach back that far, or no usable opening price exists."
+    },
+    "xirr_3y": {
+      "type": ["number", "null"],
+      "description": "Trailing 3 calendar years from as_of. Same resolution and independent null-ness as xirr_1y."
+    },
+    "xirr_5y": {
+      "type": ["number", "null"],
+      "description": "Trailing 5 calendar years from as_of. Same resolution and independent null-ness as xirr_1y -- most commonly null for a portfolio younger than 5 years, without affecting the shorter windows."
+    },
+    "fy_twrr": {
+      "type": ["number", "null"],
+      "description": "Time-weighted return, financial-year-to-date -- the adviser-skill companion to fy_xirr (docs/ENGINE_SPEC.md section 5: TWRR measures the adviser, XIRR measures the client's experience). Chains sub-period returns geometrically between consecutive persisted daily snapshots, each closed by that sub-period's external cash flow (BUY/SELL/DIVIDEND signed the mirror image of section 4's investor-side flow table -- dividends counted as return, not excluded). Never presented alone; sits beside fy_xirr so a wide gap between the two reads as bad entry timing rather than a bad strategy, or vice versa. Independently null when the snapshot series doesn't reach back to 1 April, or has fewer than two usable rows."
+    },
+    "twrr_1y": {
+      "type": ["number", "null"],
+      "description": "Trailing 1 calendar year from as_of, same chaining convention as fy_twrr. Independently null, same conditions as xirr_1y's."
+    },
+    "twrr_3y": {
+      "type": ["number", "null"],
+      "description": "Trailing 3 calendar years from as_of. Same resolution and independent null-ness as twrr_1y."
+    },
+    "twrr_5y": {
+      "type": ["number", "null"],
+      "description": "Trailing 5 calendar years from as_of. Same resolution and independent null-ness as twrr_1y -- most commonly null for a portfolio younger than 5 years."
+    },
     "absolute_return": {
       "type": ["number", "null"],
       "description": "(market_value + realised_to_date - net_invested) / net_invested"
@@ -63,12 +91,12 @@
     },
     "period_xirr": {
       "type": ["number", "null"],
-      "description": "Money-weighted return since the investor's stored onboarding_date (docs/DATA_MODEL.md investor.onboarding_date) -- the adviser-onboarding case. opening_value is the real market value on onboarding_date via compute_snapshot against that date's prices, never today's value or cost. Null when no onboarding_date is set, when onboarding_date is after as_of, or when no usable price exists on/before it for a held ISIN. Never presented without xirr_all and xirr_holdings beside it."
+      "description": "Money-weighted return since the investor's stored onboarding_date (docs/DATA_MODEL.md investor.onboarding_date) -- the adviser-onboarding case. opening_value is the real market value on or immediately before onboarding_date (a persisted daily snapshot when one exists within a few days, else a live equivalent computed exactly on onboarding_date), never today's value or cost. Null when no onboarding_date is set, when onboarding_date is after as_of, when the portfolio's history doesn't reach back to onboarding_date, or when no usable price exists on/before it for a held ISIN. Never presented without xirr_all and xirr_holdings beside it."
     },
     "period_start": {
       "type": ["string", "null"],
       "format": "date",
-      "description": "The onboarding_date period_xirr was actually computed from, echoed back so the caller never has to guess which date backs the percentage. Null exactly when period_xirr is null."
+      "description": "The date period_xirr's opening value was actually computed from -- onboarding_date itself in the common case, occasionally a few days earlier when only a nearby persisted snapshot existed, echoed back so the caller never has to guess which date backs the percentage. Null exactly when period_xirr is null."
     },
     "warning": {
       "type": ["string", "null"],

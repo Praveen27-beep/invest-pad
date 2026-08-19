@@ -52,6 +52,14 @@ class AllocationGroupOut(BaseModel):
     children: list[HoldingOut]
 
 
+class SectorAllocationGroupOut(BaseModel):
+    sector: str | None
+    label: str
+    market_value: str | None
+    weight_pct: float | None = None
+    children: list[HoldingOut]
+
+
 class HoldingsResponse(BaseModel):
     as_of: date
     holdings: list[HoldingOut]
@@ -68,3 +76,4 @@ class SummaryResponse(BaseModel):
     cost_estimated: bool = False
     unpriced: UnpricedOut
     allocation: list[AllocationGroupOut]
+    allocation_by_sector: list[SectorAllocationGroupOut]

@@ -63,6 +63,18 @@ export interface AllocationGroupOut {
   children: HoldingOut[];
 }
 
+// security.sector is null for any ISIN the NSE classification loader
+// (app/db/load_sectors.py) hasn't covered -- `sector: null` is that honest gap, not an
+// error. `label` is always set ("Unclassified" in that case) so a renderer never has to
+// special-case the null itself.
+export interface SectorAllocationGroupOut {
+  sector: string | null;
+  label: string;
+  market_value: string | null;
+  weight_pct: number | null;
+  children: HoldingOut[];
+}
+
 export interface HoldingsResponse {
   as_of: string;
   holdings: HoldingOut[];
@@ -79,6 +91,7 @@ export interface SummaryResponse {
   cost_estimated: boolean;
   unpriced: UnpricedOut;
   allocation: AllocationGroupOut[];
+  allocation_by_sector: SectorAllocationGroupOut[];
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +109,17 @@ export interface PerformanceResponse {
   xirr_all: number | null;
   xirr_holdings: number | null;
   fy_xirr: number | null;
+  xirr_1y: number | null;
+  xirr_3y: number | null;
+  xirr_5y: number | null;
+  // TWRR (docs/ENGINE_SPEC.md section 5) -- the adviser-skill companion to the four
+  // windows above, never shown alone. Chains the persisted daily snapshot series
+  // instead of solving a single money-weighted rate; same resolution, same
+  // independent nullability.
+  fy_twrr: number | null;
+  twrr_1y: number | null;
+  twrr_3y: number | null;
+  twrr_5y: number | null;
   period_xirr: number | null;
   period_start: string | null;
   absolute_return: number | null;
@@ -111,6 +135,16 @@ export interface PerformanceResponse {
 export interface PriceRefreshResponse {
   prices_stored: number;
   missing_isins: string[];
+}
+
+// GET /investors/{id}/snapshots -- a bare array of these, ascending by as_of. A date
+// with no persisted row is simply absent; never filled or interpolated client-side.
+export interface SnapshotOut {
+  as_of: string;
+  invested: string;
+  market_value: string;
+  unrealised: string | null;
+  realised_to_date: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +227,21 @@ export interface RealisedOut {
   gain: string;
   term: string;
   holding_days: number | null;
+}
+
+// GET /investors/{id}/dividends -- app/schemas/transactions.py's DividendSummaryOut.
+// DIVIDEND is already a positive XIRR cash flow (ENGINE_SPEC section 4); this is the
+// display aggregation over those same rows. Only ISINs with at least one DIVIDEND row
+// appear -- an ISIN absent here has a true, known zero, not a missing value.
+export interface DividendYearOut {
+  fy: string;
+  amount: string;
+}
+
+export interface DividendSummaryOut {
+  isin: string;
+  total: string;
+  by_year: DividendYearOut[];
 }
 
 // ---------------------------------------------------------------------------

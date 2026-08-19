@@ -242,6 +242,35 @@ class Snapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class DividendYear:
+    """One ISIN's dividend total for one Indian financial year, e.g. ``"2025-26"``.
+
+    Nested inside ``DividendSummary.by_year`` only -- like ``Benchmark`` inside
+    ``Performance``, it has no top-level schema file of its own; its shape is the
+    ``by_year`` items in ``dividend.schema.json``.
+    """
+
+    fy: str
+    amount: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class DividendSummary:
+    """One ISIN's lifetime dividend total, broken out by financial year. DERIVED, NEVER
+    STORED -- computed in ``app.engine.dividends`` from DIVIDEND rows already flowing
+    through XIRR (ENGINE_SPEC section 4) as a positive cash flow; this is the same rows'
+    display aggregation, not a new calculation.
+
+    An ISIN absent from a ``compute_dividends`` result has never recorded a DIVIDEND --
+    a true, known zero, not a value substituted for a required one.
+    """
+
+    isin: str
+    total: Decimal
+    by_year: list[DividendYear]
+
+
+@dataclass(frozen=True, slots=True)
 class Discrepancy:
     """One mismatch between computed holdings and a declared quantity.
 
@@ -291,6 +320,21 @@ class Performance:
     # state it, even as None when no 1-April price exists for a held ISIN -- see
     # compute_fy_xirr's docstring, which forbids a substitute for that missing price.
     fy_xirr: Decimal | None
+    # Fixed-calendar trailing windows, same resolution as fy_xirr (see
+    # app.routers.analytical._window_xirr) -- 1/3/5 calendar years back from as_of.
+    # Independently None: a portfolio with 2 years of history gets xirr_5y=None
+    # alongside real xirr_1y/xirr_3y values, never all blanked together.
+    xirr_1y: Decimal | None = None
+    xirr_3y: Decimal | None = None
+    xirr_5y: Decimal | None = None
+    # TWRR (app.engine.twrr, ENGINE_SPEC section 5) -- the adviser-skill companion to
+    # the four windows above, same target_start dates, same independent None-ness.
+    # Never a default beyond None: a window with fewer than two usable snapshots or no
+    # anchor within staleness tolerance is None, not omitted.
+    fy_twrr: Decimal | None = None
+    twrr_1y: Decimal | None = None
+    twrr_3y: Decimal | None = None
+    twrr_5y: Decimal | None = None
     absolute_return: Decimal | None = None
     cagr: Decimal | None = None
     invested: Decimal | None = None
@@ -300,7 +344,7 @@ class Performance:
     benchmark: Benchmark | None = None
     # Adviser-onboarding variant: money-weighted return since investor.onboarding_date
     # (docs/DATA_MODEL.md), resolved the same honest way fy_xirr is -- see
-    # app.routers.analytical._period_xirr. period_start echoes back the date actually
+    # app.routers.analytical._window_xirr. period_start echoes back the date actually
     # used so a caller never has to guess which onboarding_date backed the percentage.
     period_xirr: Decimal | None = None
     period_start: date | None = None

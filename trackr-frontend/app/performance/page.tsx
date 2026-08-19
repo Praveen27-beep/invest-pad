@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
 import { formatDate, formatMoney, formatPercent, signClass } from "@/lib/format";
@@ -9,12 +10,20 @@ import { KpiCard } from "../components/KpiCard";
 import { DualXirrCard } from "../components/DualXirrCard";
 import { MissingPriceNotice } from "../components/MissingPriceNotice";
 
+// Only NIFTY50_TRI has a real adapter (app.prices.index_sources) -- SENSEX_TRI is a
+// valid contract enum value with no reliable free, machine-fetchable TRI source behind
+// it yet (docs/ENGINE_SPEC.md section 6 / Plan Mode decision this session). Selecting it
+// here would just round-trip into the backend's explicit 400, so it stays disabled
+// rather than the UI ever triggering that error.
+type BenchmarkChoice = "NIFTY50_TRI" | "SENSEX_TRI";
+
 export default function PerformancePage() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
+  const [benchmark, setBenchmark] = useState<BenchmarkChoice>("NIFTY50_TRI");
 
   const performance = useFetch<PerformanceResponse>(
     investorId ? `/investors/${investorId}/performance` : null,
-    { as_of: asOf, advised_only: advisedOnly || undefined },
+    { as_of: asOf, advised_only: advisedOnly || undefined, benchmark },
     token
   );
 
@@ -37,6 +46,13 @@ export default function PerformancePage() {
           xirrAll={p?.xirr_all ?? null}
           xirrHoldings={p?.xirr_holdings ?? null}
           fyXirr={p?.fy_xirr ?? null}
+          xirr1y={p?.xirr_1y ?? null}
+          xirr3y={p?.xirr_3y ?? null}
+          xirr5y={p?.xirr_5y ?? null}
+          fyTwrr={p?.fy_twrr ?? null}
+          twrr1y={p?.twrr_1y ?? null}
+          twrr3y={p?.twrr_3y ?? null}
+          twrr5y={p?.twrr_5y ?? null}
           periodXirr={p?.period_xirr ?? null}
           periodStart={p?.period_start ?? null}
         />
@@ -66,19 +82,38 @@ export default function PerformancePage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card title="Benchmark comparison">
-          {p?.benchmark ? (
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-medium text-navy-600">Compare against</label>
+            <select
+              value={benchmark}
+              onChange={(e) => setBenchmark(e.target.value as BenchmarkChoice)}
+              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
+            >
+              <option value="NIFTY50_TRI">NIFTY 50 TRI</option>
+              <option value="SENSEX_TRI" disabled>
+                SENSEX TRI — not yet available
+              </option>
+            </select>
+          </div>
+
+          {p?.benchmark && p.benchmark.xirr !== null ? (
             <div>
               <p className="text-xs uppercase tracking-wide text-navy-400">{p.benchmark.name}</p>
               <p className={`font-heading text-2xl tabular-nums ${signClass(p.benchmark.xirr)}`}>
                 {formatPercent(p.benchmark.xirr)}
               </p>
+              {p.benchmark.terminal_value && (
+                <p className="mt-1 text-xs text-navy-500">
+                  Replicated terminal value: {formatMoney(p.benchmark.terminal_value)}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-sm text-navy-500">
-              Cash-flow-replicated NIFTY 50 / SENSEX TRI comparison isn&apos;t wired yet — it
-              needs an index-level price feed this system doesn&apos;t have. Comparing your XIRR
-              against a headline index CAGR wouldn&apos;t be valid, so nothing is shown rather
-              than an approximation (roadmap D2).
+              No usable index level for one or more of this portfolio&apos;s cash-flow dates,
+              so nothing is shown rather than an approximation. Comparing your XIRR against a
+              headline index CAGR wouldn&apos;t be valid either way — this is always the
+              cash-flow-replicated figure, apples to apples with your own buy/sell dates.
             </p>
           )}
         </Card>

@@ -3,7 +3,7 @@
 import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
-import type { LotOut, RealisedOut, TransactionOut } from "@/lib/api-types";
+import type { DividendSummaryOut, LotOut, RealisedOut, TransactionOut } from "@/lib/api-types";
 import { formatDate, formatMoney, formatQuantity, signClass } from "@/lib/format";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../../components/PageState";
 
@@ -19,10 +19,15 @@ export default function HoldingDetailPage() {
     { isin },
     token
   );
+  const dividends = useFetch<DividendSummaryOut[]>(
+    investorId ? `/investors/${investorId}/dividends` : null,
+    undefined,
+    token
+  );
 
   if (!investorId) return <NoInvestorState />;
 
-  const error = lots.error ?? realised.error ?? transactions.error;
+  const error = lots.error ?? realised.error ?? transactions.error ?? dividends.error;
   if (error) return <ErrorState message={error} />;
 
   const openLots = (lots.data ?? []).filter((l) => l.isin === isin);
@@ -30,6 +35,7 @@ export default function HoldingDetailPage() {
   const txns = (transactions.data ?? [])
     .slice()
     .sort((a, b) => (a.txn_date < b.txn_date ? 1 : -1));
+  const dividendSummary = (dividends.data ?? []).find((d) => d.isin === isin);
 
   return (
     <div className="space-y-6">
@@ -110,6 +116,36 @@ export default function HoldingDetailPage() {
               ))}
             </tbody>
           </table>
+        )}
+      </Card>
+
+      <Card title="Dividend history">
+        {dividends.loading ? (
+          <LoadingState />
+        ) : !dividendSummary || dividendSummary.by_year.length === 0 ? (
+          <p className="text-sm text-navy-400">No dividends recorded for this holding.</p>
+        ) : (
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-navy-100 text-left text-[11px] uppercase tracking-wide text-navy-400">
+                  <th className="py-2 pr-3 font-medium">Financial year</th>
+                  <th className="py-2 font-medium text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dividendSummary.by_year.map((y) => (
+                  <tr key={y.fy} className="border-b border-navy-50 last:border-0">
+                    <td className="py-2 pr-3">{y.fy}</td>
+                    <td className="py-2 text-right tabular-nums">{formatMoney(y.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-3 text-right text-sm font-medium text-navy-700">
+              Total: {formatMoney(dividendSummary.total)}
+            </p>
+          </>
         )}
       </Card>
 

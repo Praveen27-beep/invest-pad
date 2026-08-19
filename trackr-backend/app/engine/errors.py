@@ -7,6 +7,8 @@ naming the ISIN that needs attention.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class EngineError(Exception):
     """Base for every error the engine raises."""
@@ -29,6 +31,28 @@ class MissingPriceError(EngineError):
         detail = ", ".join(self.isins) if self.isins else "unknown ISIN"
         suffix = f" as at {as_of}" if as_of is not None else ""
         super().__init__(f"No usable price for: {detail}{suffix}")
+
+
+class MissingIndexLevelError(EngineError):
+    """A benchmark replication needs an index level for a date that has none within the
+    staleness window -- docs/ENGINE_SPEC.md section 6.
+
+    RAISE, same posture as ``MissingPriceError`` and for the same reason: a missing
+    index level silently defaulted to the nearest available one would produce a
+    confidently wrong benchmark XIRR. Unlike a held ISIN's missing price, this is never
+    allowed to fail the whole ``/performance`` response -- the router catches it and
+    degrades ``benchmark`` to ``null``, since the benchmark is optional and everything
+    else in the response is still valid.
+
+    The dates are carried on the exception so the caller can log exactly which ones were
+    missing rather than a generic failure.
+    """
+
+    def __init__(self, index_name: str, dates: list[Any] | None = None) -> None:
+        self.index_name = index_name
+        self.dates = sorted(dates or [])
+        detail = ", ".join(str(d) for d in self.dates) if self.dates else "unknown date"
+        super().__init__(f"No usable {index_name} level for: {detail}")
 
 
 class DuplicateTransactionError(EngineError):

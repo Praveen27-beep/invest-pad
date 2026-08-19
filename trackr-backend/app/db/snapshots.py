@@ -80,6 +80,82 @@ def get_snapshot(
     )
 
 
+def get_snapshot_on_or_before(
+    conn: Any, investor_id: str, as_of: date, advised_only: bool = False
+) -> Snapshot | None:
+    """The most recent persisted snapshot at or before ``as_of``, or ``None`` if the
+    series has nothing that far back yet.
+
+    Subsumes ``get_snapshot``'s exact-match case -- when a row exists exactly on
+    ``as_of``, it is necessarily the latest qualifying row, so one query answers both "is
+    there a snapshot for this exact date" and "what's the closest one before it". Uses
+    ``portfolio_snapshot_range_idx (investor_id, advised_only, as_of)`` as a backward
+    index scan.
+
+    Callers MUST use the returned ``Snapshot``'s own ``as_of`` -- not the requested
+    ``as_of`` -- as ``compute_period_xirr``'s ``start_date``. Labelling the opening value
+    with a later date than the one it actually came from would silently drop every
+    transaction dated in the gap from both the opening value and the flow list; see
+    ``app.routers.analytical._window_xirr``.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT as_of, invested, market_value, unrealised, realised_to_date
+            FROM portfolio_snapshot
+            WHERE investor_id = %s AND advised_only = %s AND as_of <= %s
+            ORDER BY as_of DESC
+            LIMIT 1
+            """,
+            (investor_id, advised_only, as_of),
+        )
+        row = cur.fetchone()
+    if row is None:
+        return None
+    return Snapshot(
+        as_of=row[0],
+        invested=row[1],
+        market_value=row[2],
+        unrealised=row[3],
+        realised_to_date=row[4],
+    )
+
+
+def list_snapshots_range(
+    conn: Any, investor_id: str, advised_only: bool, start: date, end: date
+) -> list[Snapshot]:
+    """Persisted rows for one investor/series between ``start`` and ``end``, inclusive,
+    ascending by ``as_of`` -- exactly what the historical-value chart needs (Phase 2
+    Session 2) and nothing the ledger has to be replayed for. Uses
+    ``portfolio_snapshot_range_idx (investor_id, advised_only, as_of)``.
+
+    A date with no persisted row is simply absent from the result -- never filled,
+    never interpolated. The caller renders that as a gap, exactly like a miss in
+    ``get_snapshot`` is a signal to fall back, not an error.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT as_of, invested, market_value, unrealised, realised_to_date
+            FROM portfolio_snapshot
+            WHERE investor_id = %s AND advised_only = %s AND as_of BETWEEN %s AND %s
+            ORDER BY as_of ASC
+            """,
+            (investor_id, advised_only, start, end),
+        )
+        rows = cur.fetchall()
+    return [
+        Snapshot(
+            as_of=row[0],
+            invested=row[1],
+            market_value=row[2],
+            unrealised=row[3],
+            realised_to_date=row[4],
+        )
+        for row in rows
+    ]
+
+
 def snapshot_dates_present(
     conn: Any, investor_id: str, advised_only: bool, start: date, end: date
 ) -> set[date]:

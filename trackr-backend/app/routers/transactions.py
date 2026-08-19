@@ -1,5 +1,5 @@
 """GET /investors/{id}/transactions, POST /investors/{id}/transactions,
-GET /investors/{id}/lots, GET /investors/{id}/realised."""
+GET /investors/{id}/lots, GET /investors/{id}/realised, GET /investors/{id}/dividends."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.database import get_conn, money
 from app.db.consent import require_consent
 from app.db.repository import load_transactions, save_transactions
+from app.engine.dividends import compute_dividends
 from app.engine.lots import compute_lots
 from app.engine.realised import compute_realised
 from app.engine.types import Transaction
 from app.schemas.transactions import (
+    DividendSummaryOut,
     ImportSummaryOut,
     LotOut,
     RealisedOut,
@@ -172,4 +174,24 @@ def realised(
             "holding_days": g.holding_days,
         }
         for g in gains
+    ]
+
+
+@router.get("/{investor_id}/dividends", response_model=list[DividendSummaryOut])
+def dividends(investor_id: str, connection: Any = Depends(get_conn)) -> list[dict[str, Any]]:
+    """Dividend income, per ISIN and per financial year (app.engine.dividends).
+
+    DIVIDEND is already a correct ledger row and already a positive XIRR cash flow
+    (docs/ENGINE_SPEC.md section 4) -- this is the display aggregation over those same
+    rows, not a new data source. Only ISINs with at least one DIVIDEND row appear, same
+    convention as ``lots``/``realised`` above.
+    """
+    rows = load_transactions(connection, investor_id=investor_id)
+    return [
+        {
+            "isin": d.isin,
+            "total": money(d.total),
+            "by_year": [{"fy": y.fy, "amount": money(y.amount)} for y in d.by_year],
+        }
+        for d in compute_dividends(rows)
     ]

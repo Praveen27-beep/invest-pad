@@ -30,6 +30,7 @@ TYPE_TO_SCHEMA = {
     "Snapshot": "snapshot.schema.json",
     "Discrepancy": "discrepancy.schema.json",
     "Performance": "performance.schema.json",
+    "DividendSummary": "dividend.schema.json",
 }
 
 

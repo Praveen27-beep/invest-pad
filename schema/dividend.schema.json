@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/dividend.schema.json",
+  "title": "DividendSummary",
+  "description": "One ISIN's dividend income, summed lifetime and per Indian financial year. DERIVED, NEVER STORED -- recomputed from DIVIDEND transactions (docs/DATA_MODEL.md's txn_type table: qty=0, price=0, amount in dividend_amount). Source of truth: docs/ENGINE_SPEC.md section 4, which already counts DIVIDEND as a positive XIRR cash flow; this object is the display aggregation over those same rows.\n\nAn ISIN that has never recorded a DIVIDEND row simply has no entry -- a true, known zero, not a value substituted for one that is missing (contrast CLAUDE.md rule 4, which forbids defaulting an UNPRICED holding to zero).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "total", "by_year"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "pattern": "^IN[A-Z0-9]{10}$"
+    },
+    "total": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "Sum of dividend_amount across every DIVIDEND row for this ISIN, all financial years combined."
+    },
+    "by_year": {
+      "type": "array",
+      "description": "Ascending by financial-year start (1 April).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fy", "amount"],
+        "properties": {
+          "fy": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}$",
+            "description": "Indian financial year, April-to-March, e.g. \"2025-26\" for 1 April 2025 - 31 March 2026 -- same label app.routers.transactions._financial_year_bounds parses for the /realised?fy= filter."
+          },
+          "amount": {
+            "$ref": "transaction.schema.json#/$defs/decimal"
+          }
+        }
+      }
+    }
+  }
+}

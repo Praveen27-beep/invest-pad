@@ -304,7 +304,7 @@ paths:
   /investors/{investor_id}/performance:
     get:
       tags: [derived]
-      summary: Both XIRR variants, returns, benchmark
+      summary: Both XIRR variants, TWRR, returns, benchmark
       description: |
         period_xirr (the adviser-onboarding case) and its period_start are resolved
         entirely server-side from the investor's stored onboarding_date (set via POST
@@ -313,16 +313,64 @@ paths:
         value would be exactly the kind of stand-in fy_xirr already refuses to accept
         for its own opening value. Both come back null when onboarding_date is unset,
         is after as_of, or has no usable price.
+
+        fy_twrr/twrr_1y/twrr_3y/twrr_5y sit beside their xirr counterparts, never
+        replacing them (docs/ENGINE_SPEC.md section 5): TWRR chains sub-period returns
+        across the persisted daily snapshot series between each window's start and
+        as_of, removing the effect of when money was added so it measures the adviser,
+        where XIRR measures the client's actual experience. No request parameter --
+        same resolution as the xirr windows, independently null under the same
+        conditions.
       parameters:
         - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
         - { name: as_of, in: query, schema: { type: string, format: date } }
         - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
-        - { name: benchmark, in: query, schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] } }
+        - name: benchmark
+          in: query
+          schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] }
+          description: |
+            Cash-flow-replicated index return (docs/ENGINE_SPEC.md section 6). Omitted
+            entirely -- never computed by default -- unless supplied. NIFTY50_TRI is
+            implemented (app.prices.index_sources, an NSE Indices TRI feed). SENSEX_TRI
+            is a valid enum value with no reliable free, machine-fetchable TRI source
+            behind it yet, so requesting it returns 400 rather than a null or guessed
+            benchmark.
       responses:
         '200':
           content:
             application/json:
               schema: { $ref: 'https://mei.capital/schema/performance.schema.json' }
+        '400':
+          description: benchmark=SENSEX_TRI, which is declared but not yet implemented
+
+  /investors/{investor_id}/snapshots:
+    get:
+      tags: [derived]
+      summary: Persisted daily portfolio snapshots for a date range
+      description: |
+        Read-only range query over portfolio_snapshot (docs/ENGINE_SPEC.md section 8) --
+        never a live compute_snapshot() replay across the range, which is the entire
+        reason this table exists. Powers the Dashboard's historical portfolio-value
+        chart (docs/trackr_plus_phase2_overview.md section 6). A date with no
+        persisted row -- before backfill's earliest reachable date, or a gap from a run
+        that hit MissingPriceError -- is simply absent from the returned array; the
+        caller must render that as an honest gap, never interpolate between the
+        surrounding points. advised_only selects the same independent series
+        /performance and /ops/snapshots/run use.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: start, in: query, required: true, schema: { type: string, format: date } }
+        - { name: end, in: query, required: true, schema: { type: string, format: date } }
+        - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'https://mei.capital/schema/snapshot.schema.json' }
+        '400':
+          description: start is after end
 
   /investors/{investor_id}/lots:
     get:
@@ -342,6 +390,25 @@ paths:
         - { name: fy, in: query, schema: { type: string, examples: ["2025-26"] } }
       responses:
         '200': { description: OK }
+
+  /investors/{investor_id}/dividends:
+    get:
+      tags: [derived]
+      summary: Dividend income, per ISIN and per financial year
+      description: |
+        DIVIDEND is already a correct ledger row (docs/DATA_MODEL.md: qty=0, price=0,
+        amount in dividend_amount) and already a positive XIRR cash flow
+        (docs/ENGINE_SPEC.md section 4). This is the display aggregation over those same
+        rows, not a new data source -- only ISINs with at least one DIVIDEND row appear.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: 'https://mei.capital/schema/dividend.schema.json' }
 
   /ingest/csv:
     post:

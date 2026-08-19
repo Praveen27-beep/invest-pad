@@ -5,10 +5,15 @@ is moved verbatim from ``api/main.py`` -- see docs/BACKEND_REUSE_AND_GAP_ANALYSI
 section 1. There is no calculation here and there must never be one: a number computed
 in this file could not be reproduced by replaying the ledger, which is CLAUDE.md's one
 architectural rule.
+
+``_sector_allocation`` groups the same valued holdings by ``security.sector`` instead of
+``asset_class``, sharing ``_group_holdings``'s weight_pct arithmetic (ENGINE_SPEC section
+2) so the two groupings can never drift apart mathematically.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -23,6 +28,11 @@ from app.engine.holdings import compute_holdings
 from app.engine.types import ZERO, Holding
 from app.engine.valuation import value_holdings
 from app.schemas.holdings import HoldingsResponse, SummaryResponse
+
+#: What an unclassified sector group is labelled. security.sector is NULL for any ISIN
+#: NSE's classification source (app.prices.sector_sources) does not cover -- shown as
+#: its own honest group, never merged into a real sector or silently dropped.
+UNCLASSIFIED_SECTOR_LABEL = "Unclassified"
 
 router = APIRouter(prefix="/investors", tags=["derived"])
 
@@ -126,31 +136,77 @@ def _unpriced(book: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _group_holdings(
+    book: dict[str, Any], key_fn: Callable[[Holding], str | None]
+) -> list[tuple[str | None, Decimal, list[dict[str, Any]]]]:
+    """Market value grouped by whatever ``key_fn`` returns for each holding -- the shared
+    mechanism behind both ``_allocation`` (by asset_class) and ``_sector_allocation`` (by
+    sector). ``None`` is a valid, distinct key (an unclassified group), never coerced into
+    an existing group or dropped.
+
+    Returns ``(key, group_value, children_rows)`` tuples, sorted by value descending --
+    the caller shapes this into its own response DTO, since asset_class and sector groups
+    carry different field names.
+    """
+    groups: dict[str | None, list[Holding]] = {}
+    for holding in book["valued"]:
+        groups.setdefault(key_fn(holding), []).append(holding)
+
+    out = [
+        (
+            key,
+            sum((h.market_value for h in holdings), ZERO),
+            sorted(
+                (_row(book, h) for h in holdings),
+                key=lambda r: Decimal(r["market_value"]),
+                reverse=True,
+            ),
+        )
+        for key, holdings in groups.items()
+    ]
+    return sorted(out, key=lambda g: g[1], reverse=True)
+
+
 def _allocation(book: dict[str, Any]) -> list[dict[str, Any]]:
     """Market value grouped by asset class, each group carrying its own holdings."""
-    groups: dict[str, list[Holding]] = {}
-    for holding in book["valued"]:
-        asset_class = securities.describe(book["meta"], holding.isin)["asset_class"]
-        groups.setdefault(asset_class, []).append(holding)
-
     total = book["market_value"]
-    out = []
-    for asset_class, holdings in groups.items():
-        group_value = sum((h.market_value for h in holdings), ZERO)
-        out.append(
-            {
-                "asset_class": asset_class,
-                "label": securities.label(asset_class),
-                "market_value": money(group_value),
-                "weight_pct": rate(group_value / total) if total != ZERO else None,
-                "children": sorted(
-                    (_row(book, h) for h in holdings),
-                    key=lambda r: Decimal(r["market_value"]),
-                    reverse=True,
-                ),
-            }
-        )
-    return sorted(out, key=lambda g: Decimal(g["market_value"]), reverse=True)
+    groups = _group_holdings(
+        book, lambda h: securities.describe(book["meta"], h.isin)["asset_class"]
+    )
+    return [
+        {
+            "asset_class": asset_class,
+            "label": securities.label(asset_class),
+            "market_value": money(group_value),
+            "weight_pct": rate(group_value / total) if total != ZERO else None,
+            "children": children,
+        }
+        for asset_class, group_value, children in groups
+    ]
+
+
+def _sector_allocation(book: dict[str, Any]) -> list[dict[str, Any]]:
+    """Market value grouped by security.sector -- ENGINE_SPEC section 2's weight_pct
+    formula, reused verbatim via ``_group_holdings``, just keyed differently.
+
+    A holding whose sector is NULL (docs/DATA_MODEL.md -- NSE's classification source
+    does not cover every ISIN) groups under its own ``sector: None`` entry rather than
+    being merged into a real sector or excluded from the response.
+    """
+    total = book["market_value"]
+    groups = _group_holdings(
+        book, lambda h: securities.describe(book["meta"], h.isin)["sector"]
+    )
+    return [
+        {
+            "sector": sector,
+            "label": sector or UNCLASSIFIED_SECTOR_LABEL,
+            "market_value": money(group_value),
+            "weight_pct": rate(group_value / total) if total != ZERO else None,
+            "children": children,
+        }
+        for sector, group_value, children in groups
+    ]
 
 
 @router.get("/{investor_id}/summary", response_model=SummaryResponse)
@@ -163,6 +219,7 @@ def summary(
         **_totals(book),
         "unpriced": _unpriced(book),
         "allocation": _allocation(book),
+        "allocation_by_sector": _sector_allocation(book),
     }
 
 

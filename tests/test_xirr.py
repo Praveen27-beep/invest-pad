@@ -16,6 +16,7 @@ from app.engine.xirr import (
     compute_xirr,
     compute_xirr_holdings,
     period_warning,
+    years_before,
 )
 
 ISIN_A = "INE0Q9301021"
@@ -218,3 +219,22 @@ def test_short_window_is_computed_but_flagged() -> None:
     """Annualising a six-day return is valid arithmetic and practical nonsense."""
     assert period_warning(date(2026, 8, 5), date(2026, 8, 11)) == PERIOD_TOO_SHORT_WARNING
     assert period_warning(date(2025, 8, 11), date(2026, 8, 11)) is None
+
+
+# --- years_before ----------------------------------------------------------------
+
+
+def test_years_before_ordinary_date() -> None:
+    assert years_before(date(2026, 8, 20), 1) == date(2025, 8, 20)
+    assert years_before(date(2026, 8, 20), 5) == date(2021, 8, 20)
+
+
+def test_years_before_leap_day_falls_back_to_february_28_in_a_non_leap_target_year() -> None:
+    """2024 is a leap year; 2023 is not. days=365*1 would silently drift onto March 1
+    instead -- real date arithmetic must land on 28 February."""
+    assert years_before(date(2024, 2, 29), 1) == date(2023, 2, 28)
+
+
+def test_years_before_leap_day_is_preserved_when_the_target_year_is_also_a_leap_year() -> None:
+    """2024 and 2020 are both leap years, four years apart -- 29 February survives."""
+    assert years_before(date(2024, 2, 29), 4) == date(2020, 2, 29)

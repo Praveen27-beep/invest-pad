@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
@@ -9,13 +10,16 @@ import { Card, ErrorState, LoadingState, NoInvestorState } from "./components/Pa
 import { KpiCard } from "./components/KpiCard";
 import { DualXirrCard } from "./components/DualXirrCard";
 import { MissingPriceNotice } from "./components/MissingPriceNotice";
-import { AllocationDonut } from "./components/AllocationDonut";
-import { HistoricalChartPlaceholder } from "./components/HistoricalChartPlaceholder";
+import { AllocationDonut, type AllocationSlice } from "./components/AllocationDonut";
+import { HistoricalValueChart } from "./components/HistoricalValueChart";
 import { HoldingsTable } from "./components/HoldingsTable";
 import { UnpricedBanner } from "./components/UnpricedBanner";
 
+type AllocationGroupBy = "asset_class" | "sector";
+
 export default function DashboardPage() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
+  const [allocationGroupBy, setAllocationGroupBy] = useState<AllocationGroupBy>("asset_class");
   const query = { as_of: asOf, advised_only: advisedOnly || undefined };
 
   const summary = useFetch<SummaryResponse>(
@@ -59,6 +63,21 @@ export default function DashboardPage() {
     .slice(0, 6);
   const topHoldings = (holdings.data?.holdings ?? []).slice(0, 5);
 
+  // AllocationDonut is grouping-agnostic (AllocationSlice); adapt whichever of the two
+  // /summary arrays is currently selected into that shape here, at the call site.
+  const allocationSlices: AllocationSlice[] =
+    allocationGroupBy === "sector"
+      ? (s?.allocation_by_sector ?? []).map((g) => ({
+          key: g.sector,
+          label: g.label,
+          weight_pct: g.weight_pct,
+        }))
+      : (s?.allocation ?? []).map((g) => ({
+          key: g.asset_class,
+          label: g.label,
+          weight_pct: g.weight_pct,
+        }));
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -80,6 +99,13 @@ export default function DashboardPage() {
             xirrAll={p.xirr_all}
             xirrHoldings={p.xirr_holdings}
             fyXirr={p.fy_xirr}
+            xirr1y={p.xirr_1y}
+            xirr3y={p.xirr_3y}
+            xirr5y={p.xirr_5y}
+            fyTwrr={p.fy_twrr}
+            twrr1y={p.twrr_1y}
+            twrr3y={p.twrr_3y}
+            twrr5y={p.twrr_5y}
             periodXirr={p.period_xirr}
             periodStart={p.period_start}
           />
@@ -101,10 +127,38 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <HistoricalChartPlaceholder />
+          <HistoricalValueChart />
         </Card>
-        <Card title="Allocation by asset class">
-          {s && <AllocationDonut groups={s.allocation} />}
+        <Card
+          title="Allocation"
+          action={
+            <div className="flex gap-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setAllocationGroupBy("asset_class")}
+                className={`press-scale rounded-md px-2 py-1 font-medium transition-colors ${
+                  allocationGroupBy === "asset_class"
+                    ? "bg-navy-700 text-cream-50"
+                    : "text-navy-500 hover:bg-cream-200"
+                }`}
+              >
+                By asset class
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllocationGroupBy("sector")}
+                className={`press-scale rounded-md px-2 py-1 font-medium transition-colors ${
+                  allocationGroupBy === "sector"
+                    ? "bg-navy-700 text-cream-50"
+                    : "text-navy-500 hover:bg-cream-200"
+                }`}
+              >
+                By sector
+              </button>
+            </div>
+          }
+        >
+          {s && <AllocationDonut groups={allocationSlices} />}
         </Card>
       </div>
 

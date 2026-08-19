@@ -1,4 +1,4 @@
-"""DTOs for GET /investors/{id}/transactions, /lots, /realised, and
+"""DTOs for GET /investors/{id}/transactions, /lots, /realised, /dividends, and
 POST /investors/{id}/transactions."""
 
 from __future__ import annotations
@@ -82,3 +82,14 @@ class RealisedOut(BaseModel):
     gain: str
     term: str
     holding_days: int | None
+
+
+class DividendYearOut(BaseModel):
+    fy: str
+    amount: str
+
+
+class DividendSummaryOut(BaseModel):
+    isin: str
+    total: str
+    by_year: list[DividendYearOut]

@@ -41,7 +41,7 @@ a plan. Do not build ahead.
 | Period-wise XIRR (1Y / 3Y / 5Y / FY) | Trivial once snapshots exist |
 | TWRR | Measures the adviser; XIRR measures the client |
 | Dividends | **No data source provides these** — manual or Console report |
-| Sector / market-cap breakdown | Needs a security master with sector data |
+| Market-cap breakdown | Sector is done (Phase 1 row above, `app/db/load_sectors.py` / NSE Industry classification); market-cap bucketing is a separate, still-unbuilt security-master field |
 | Contribution analysis | First real intelligence: which holdings drove the return |
 
 ---

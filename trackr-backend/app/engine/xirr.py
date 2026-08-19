@@ -181,6 +181,21 @@ def compute_period_xirr(
     return _solve(flows)
 
 
+def years_before(as_of: date, n: int) -> date:
+    """``as_of`` minus ``n`` calendar years -- real date arithmetic, not ``days=365*n``,
+    which drifts by a day every leap year and would make a "1Y XIRR" label subtly wrong.
+
+    Falls back to 28 February when ``as_of`` is 29 February and the target year is not
+    itself a leap year (mirrors ``dateutil.relativedelta``'s own convention) -- the only
+    case ``date.replace(year=...)`` can raise here, since every other ``(month, day)``
+    pair is valid in every year ``date`` supports.
+    """
+    try:
+        return as_of.replace(year=as_of.year - n)
+    except ValueError:
+        return as_of.replace(month=2, day=28, year=as_of.year - n)
+
+
 def financial_year_start(as_of: date) -> date:
     """1 April of the Indian financial year containing ``as_of``.
 
@@ -239,6 +254,7 @@ __all__ = [
     "ACQUIRING_TYPES",
     "compute_fy_xirr",
     "financial_year_start",
+    "years_before",
     "CASH_IN_TYPES",
     "CASH_OUT_TYPES",
     "PERIOD_TOO_SHORT_DAYS",
