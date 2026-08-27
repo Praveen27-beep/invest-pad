@@ -68,12 +68,18 @@ class RoutedAddress:
 def parse_to_address(to: str) -> RoutedAddress:
     """``{investor_code}-{broker}-{doctype}@domain`` -> its three segments.
 
+    ``investor_code`` itself may contain hyphens (e.g. ``TEST-FE54``, a real seeded
+    code) -- ``broker``/``doctype`` never do, both coming from the fixed
+    ``_ADAPTER_FACTORIES`` registry. Splitting from the right by exactly two hyphens
+    keeps that last pair intact and folds everything else back into the code, so this
+    stays the exact inverse of ``app.ingest.addresses.forwarding_addresses``.
+
     Raises:
-        UnroutableAddressError: the local part is not exactly three non-empty,
-            hyphen-separated segments.
+        UnroutableAddressError: the local part is not three non-empty segments once
+            split this way.
     """
     local = to.split("@", 1)[0]
-    parts = local.split("-")
+    parts = local.rsplit("-", 2)
     if len(parts) != 3 or not all(parts):
         raise UnroutableAddressError(f"not a routable ingest address: {to!r}")
     code, broker, doctype = parts

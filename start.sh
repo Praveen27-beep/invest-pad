@@ -238,7 +238,8 @@ if [[ ! -f "$FRONTEND_DIR/.env.local" ]]; then
 fi
 # Guarantee NEXT_PUBLIC_API_BASE_URL matches the backend port
 if grep -q "NEXT_PUBLIC_API_BASE_URL=" "$FRONTEND_DIR/.env.local"; then
-    sed -i "s|NEXT_PUBLIC_API_BASE_URL=.*|NEXT_PUBLIC_API_BASE_URL=http://localhost:${BACKEND_PORT}|" "$FRONTEND_DIR/.env.local"
+    sed -i.bak "s|NEXT_PUBLIC_API_BASE_URL=.*|NEXT_PUBLIC_API_BASE_URL=http://localhost:${BACKEND_PORT}|" "$FRONTEND_DIR/.env.local"
+    rm -f "$FRONTEND_DIR/.env.local.bak"
 else
     echo "NEXT_PUBLIC_API_BASE_URL=http://localhost:${BACKEND_PORT}" >> "$FRONTEND_DIR/.env.local"
 fi

@@ -48,7 +48,7 @@ from app.db.repository import (
 )
 from app.engine.benchmark import compute_benchmark, required_index_dates
 from app.engine.contribution import compute_contribution
-from app.engine.errors import MissingIndexLevelError, MissingPriceError
+from app.engine.errors import MissingIndexLevelError, MissingPriceError, NegativeHoldingError
 from app.engine.holdings import MAX_PRICE_STALENESS_DAYS, compute_holdings
 from app.engine.returns import compute_absolute_return, compute_net_invested
 from app.engine.snapshot import compute_snapshot
@@ -654,15 +654,14 @@ def _run_snapshots(
             for on_date in trading_days(investor_start, end):
                 if on_date in already_snapped:
                     continue
-                isins = [h.isin for h in compute_holdings(transactions, on_date)]
-                day_prices = latest_prices(connection, isins, on_date)
                 try:
+                    isins = [h.isin for h in compute_holdings(transactions, on_date)]
+                    day_prices = latest_prices(connection, isins, on_date)
                     snap = compute_snapshot(transactions, day_prices, on_date)
-                except MissingPriceError as exc:
+                except (MissingPriceError, NegativeHoldingError) as exc:
                     logger.warning(
-                        "snapshot omitted: no usable price on/before %s for %s "
-                        "(investor_id=%s advised_only=%s)",
-                        on_date, exc.isins, investor_id, advised_only,
+                        "snapshot omitted: %s on/before %s (investor_id=%s advised_only=%s)",
+                        exc, on_date, investor_id, advised_only,
                         exc_info=True,
                     )
                     skipped.append(
@@ -670,7 +669,7 @@ def _run_snapshots(
                             "investor_id": investor_id,
                             "advised_only": advised_only,
                             "as_of": on_date,
-                            "isins": exc.isins,
+                            "isins": getattr(exc, "isins", None) or [getattr(exc, "isin", None)],
                         }
                     )
                     continue
