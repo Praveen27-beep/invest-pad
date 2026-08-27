@@ -34,6 +34,14 @@
       "type": "integer",
       "description": "sell_date - lot.open_date"
     },
+    "cost_stt": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "STT embedded in `cost` for this slice, drawn from the acquiring lot's own STT-per-unit. `cost` itself is UNCHANGED by this field -- it stays net of ALL charges including STT, for Phase 1's real-cash realised-P/L display. app.engine.realised.tax_cost = cost - cost_stt is the Section-48-compliant tax figure."
+    },
+    "proceeds_stt": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "STT already subtracted out of `proceeds` for this slice, computed once per disposal transaction. `proceeds` itself is UNCHANGED. app.engine.realised.tax_proceeds = proceeds + proceeds_stt adds it back, since Section 48 disallows netting sale-side STT out of full value of consideration."
+    },
     "term": {
       "type": "string",
       "enum": ["SHORT", "LONG"],

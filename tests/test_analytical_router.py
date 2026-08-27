@@ -15,7 +15,13 @@ from decimal import Decimal
 import pytest
 from app.engine.types import Snapshot, Transaction, TxnType
 from app.prices.index_sources import IndexSourceFetchFailed
-from app.routers.analytical import _benchmark, _snapshot_row, _window_twrr, list_snapshots
+from app.routers.analytical import (
+    _benchmark,
+    _snapshot_row,
+    _window_twrr,
+    contribution,
+    list_snapshots,
+)
 from app.schemas.analytical import SnapshotOut
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -93,6 +99,21 @@ def test_list_snapshots_rejects_start_after_end_before_touching_the_database() -
             investor_id="does-not-matter",
             start=date(2024, 8, 10),
             end=date(2024, 8, 1),
+            advised_only=False,
+            connection=None,
+        )
+    assert exc_info.value.status_code == 400
+
+
+def test_contribution_rejects_period_start_after_as_of_before_touching_the_database() -> None:
+    """Mirrors list_snapshots' guard above (ENGINE_SPEC section 10): the 400 fires from
+    period_start/as_of alone, before load_transactions ever reaches ``connection``, so
+    None still proves it with no Postgres required."""
+    with pytest.raises(HTTPException) as exc_info:
+        contribution(
+            investor_id="does-not-matter",
+            period_start=date(2024, 8, 10),
+            as_of=date(2024, 8, 1),
             advised_only=False,
             connection=None,
         )

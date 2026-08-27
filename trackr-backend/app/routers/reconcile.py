@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money, rate
 from app.db.repository import load_transactions
 from app.engine.reconcile import reconcile
@@ -30,7 +31,11 @@ def _discrepancy_row(d: Discrepancy) -> dict[str, Any]:
     }
 
 
-@router.post("/{investor_id}/reconcile", response_model=list[DiscrepancyOut])
+@router.post(
+    "/{investor_id}/reconcile",
+    response_model=list[DiscrepancyOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def reconcile_holdings(
     investor_id: str,
     body: ReconcileRequest,

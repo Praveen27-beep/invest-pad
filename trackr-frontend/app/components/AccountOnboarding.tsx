@@ -2,38 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api-client";
+import { useFetch } from "@/lib/use-fetch";
 import type { AccountIn, AccountOut } from "@/lib/api-types";
 import { EmailForwardingSetup } from "./EmailForwardingSetup";
 
 const EMPTY: AccountIn = { broker: "", dp_id: null, client_id: null, is_advised: true, label: null };
 
-/** There is no GET /investors/{id}/accounts (contracts/openapi.yaml only defines the
- * POST) so an already-onboarded account can't be re-fetched -- this caches the exact
- * AccountOut responses this browser has already received from the backend, keyed per
- * investor. It is a cache of real server responses, never a fabricated address, and it
- * naturally clears if the investor ID (Settings, above) changes. */
-function storageKey(investorId: string): string {
-  return `trackr.accounts.${investorId}`;
-}
-
-function loadCached(investorId: string): AccountOut[] {
-  try {
-    const raw = localStorage.getItem(storageKey(investorId));
-    return raw ? (JSON.parse(raw) as AccountOut[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 export function AccountOnboarding({ investorId, token }: { investorId: string; token: string | null }) {
-  const [accounts, setAccounts] = useState<AccountOut[]>([]);
+  // The server is the source of truth for which accounts exist. This used to be a
+  // localStorage cache of POST responses, back when the contract had no GET -- but
+  // GET /investors/{id}/accounts exists now, and a browser-only cache meant a new
+  // browser (or a cleared one) showed "No accounts added yet" for an investor whose
+  // account was right there in the database.
+  const accounts = useFetch<AccountOut[]>(
+    investorId ? `/investors/${investorId}/accounts` : null,
+    undefined,
+    token
+  );
   const [form, setForm] = useState<AccountIn>(EMPTY);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAccounts(investorId ? loadCached(investorId) : []);
-  }, [investorId]);
 
   function set<K extends keyof AccountIn>(key: K, value: AccountIn[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -45,16 +33,12 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
     setSubmitting(true);
     setError(null);
     try {
-      const account = await api.post<AccountOut>(`/investors/${investorId}/accounts`, {
+      await api.post<AccountOut>(`/investors/${investorId}/accounts`, {
         json: { ...form, broker: form.broker.trim().toUpperCase() },
         token,
       });
-      setAccounts((prev) => {
-        const next = [account, ...prev];
-        localStorage.setItem(storageKey(investorId), JSON.stringify(next));
-        return next;
-      });
       setForm(EMPTY);
+      accounts.refetch();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add account");
     } finally {
@@ -67,6 +51,7 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
   }
 
   const ingestDomain = process.env.NEXT_PUBLIC_INGEST_DOMAIN;
+  const accountList = accounts.data ?? [];
 
   return (
     <div className="space-y-6">
@@ -120,14 +105,18 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
         </button>
       </form>
 
-      {accounts.length === 0 ? (
+      {accounts.loading ? (
+        <p className="text-sm text-navy-400">Loading accounts…</p>
+      ) : accounts.error ? (
+        <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{accounts.error}</p>
+      ) : accountList.length === 0 ? (
         <p className="text-sm text-navy-400">
-          No accounts added yet in this browser. Add one above — its real forwarding address will
+          No accounts yet. Add one above — its real forwarding address will
           appear here{ingestDomain ? ` (e.g. c001-zerodha-contractnote@${ingestDomain})` : ""}.
         </p>
       ) : (
         <div className="space-y-4">
-          {accounts.map((a) => (
+          {accountList.map((a) => (
             <div key={a.id} className="rounded-xl border border-navy-100 p-4">
               <div className="mb-3">
                 <p className="text-sm font-medium text-navy-900">

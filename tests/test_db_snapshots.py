@@ -22,6 +22,16 @@ ISIN = "INE153T01027"
 AS_OF = date(2024, 9, 30)
 
 
+@pytest.fixture(autouse=True)
+def _consent(db, investor) -> None:
+    """A couple of tests here seed through the real create_transactions, which
+    require_consent now gates -- this file is about snapshot persistence, not the
+    consent gate itself (that's tests/test_db_consent_router.py's job)."""
+    from app.db import consent
+
+    consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
+
+
 def seed_price(db, isin: str, on: date, close: str) -> None:
     upsert_prices(
         db, [MergedPrice(isin=isin, price_date=on, close=Decimal(close), source="NSE_BHAVCOPY")]

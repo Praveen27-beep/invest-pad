@@ -57,7 +57,9 @@ def store_document(
 
     existing = find_by_hash(conn, digest)
     if existing is not None:
-        return {**existing, "already_present": True}
+        # find_by_hash returns the raw row, so ``id`` is a psycopg UUID object, not the
+        # string the callers (and StageResultOut) expect. Stringify it before returning.
+        return {**existing, "id": str(existing["id"]), "already_present": True}
 
     key = object_key(investor_code, doctype, received, content, filename)
     store.put(key, content, content_type)

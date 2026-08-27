@@ -11,9 +11,6 @@ const EMPTY_INVESTOR: InvestorIn = { code: "", display_name: "", family_group_id
 
 export default function SettingsPage() {
   const { user, investorId, setInvestorId, token } = useAuth();
-  const [draft, setDraft] = useState(investorId);
-  const [saved, setSaved] = useState(false);
-
   const [newInvestor, setNewInvestor] = useState<InvestorIn>(EMPTY_INVESTOR);
   const [creatingInvestor, setCreatingInvestor] = useState(false);
   const [investorError, setInvestorError] = useState<string | null>(null);
@@ -38,7 +35,6 @@ export default function SettingsPage() {
         token,
       });
       setInvestorId(investor.id);
-      setDraft(investor.id);
       setNewInvestor(EMPTY_INVESTOR);
       setInvestorCreated(true);
       setTimeout(() => setInvestorCreated(false), 2000);
@@ -64,32 +60,16 @@ export default function SettingsPage() {
       <section className="glass-card rounded-xl border border-navy-100 p-6">
         <h2 className="font-heading text-lg text-navy-900 mb-1">Investor</h2>
         <p className="text-sm text-navy-400 mb-4">
-          There is currently no link between your login and a specific investor record.
-          Paste the investor ID whose portfolio you want this browser to show.
+          Your login owns its investors — every portfolio you can see here was created by
+          or assigned to your account, and nothing anyone else owns is reachable. Create
+          an investor below and it becomes active immediately.
         </p>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            setInvestorId(draft.trim());
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-          }}
-          className="flex items-center gap-3"
-        >
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="00000000-0000-0000-0000-000000000000"
-            className="flex-1 rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm font-mono focus:border-brass-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600"
-          >
-            Save
-          </button>
-        </form>
-        {saved && <p className="mt-2 text-xs text-positive">Saved.</p>}
+        <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
+          <dt className="text-navy-400">Active ID</dt>
+          <dd className="font-mono text-navy-700 break-all">
+            {investorId || "— none yet: create one below —"}
+          </dd>
+        </dl>
       </section>
 
       <section className="glass-card rounded-xl border border-navy-100 p-6">

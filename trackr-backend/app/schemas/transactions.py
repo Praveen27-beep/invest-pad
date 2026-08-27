@@ -36,7 +36,9 @@ class TransactionIn(BaseModel):
     quantity: Decimal = Field(ge=0)
     price: Decimal
     charges: Decimal = Decimal("0")
+    stt: Decimal = Decimal("0")
     dividend_amount: Decimal = Decimal("0")
+    cost_transfer: Decimal = Decimal("0")
     source: Source | None = None
     source_ref: str | None = None
     raw_payload: dict[str, Any] | None = None
@@ -60,7 +62,9 @@ class TransactionOut(BaseModel):
     quantity: str
     price: str
     charges: str
+    stt: str
     dividend_amount: str
+    cost_transfer: str
     source: str | None
     source_ref: str | None
     created_at: datetime | None = None

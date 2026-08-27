@@ -1,89 +1,100 @@
-# Trackr-Plus Phase 2: Analytics Depth — Overview & Execution Skeleton
+# Trackr-Plus Phase 2: Analytics Depth — Overview & Status
 
-Generated 2026-08-18, at the start of Phase 2, before any Phase 2 code exists. This is
-**not** an audit of finished work the way `docs/trackr_plus_phase1_overview.md` was —
-that document verified what already ran and passed. This one is the skeleton: what
-Phase 2 is scoped to build, how it fits the existing architecture, and what's still
-undecided. Every status in §3 is honestly `⏳ Pending Implementation` because nothing
-below has been written yet. Update this document in place as each session in
-`docs/PHASE2_PROMPTS.md` lands, the same way the Phase 1 overview was kept current
-through its own build.
+Generated 2026-08-18, at the start of Phase 2, as a skeleton — before any Phase 2 code
+existed. **Updated 2026-08-20** against the actual state of the working tree, not
+assumption: every claim below was checked directly against the code, the migrations,
+`contracts/openapi.yaml`, and a real test run (`.venv/bin/pytest tests/ -q -rs` →
+**460 passed, 246 skipped, 1 deselected, 0 failed**; `make test` with the venv on
+`PATH` → all four suites plus `make lint` pass, ruff included). This is now much closer
+to `docs/trackr_plus_phase1_overview.md`'s role than its own original one: an audit of
+finished work, not a plan for unstarted work.
 
-**Read this before starting any Phase 2 session.** It has the dependency map, the
-already-existing scaffolding (BenchmarkOut, the `benchmark` query param, the DIVIDEND
-txn_type — several Phase 2 features have more of their contract already in place than
-their name suggests), and the open questions that block naive implementation.
+**The headline change since 2026-08-18: seven of the eight Phase 2 features are built,
+tested, and committed. The eighth (contribution analysis) is built and tested but sits
+uncommitted in the working tree right now.** See §3 for the file-by-file evidence and
+§7 for what genuinely remains — it is a short list, and none of it is "write the
+feature," it is "commit it," "run it against a real database once," "close the one
+named sub-feature nobody built yet," and "fix a Phase-1 regression a field test just
+found that blocks every one of these features from ever seeing a real user's data."
+
+**Read this before starting any further Phase 2 or closeout session.** `docs/
+PHASE2_PROMPTS.md` has been rewritten to match — it no longer contains the original
+eight build prompts (they're done; kept here as a record instead) but a short closeout
+list for what §7 below identifies as still open.
 
 ---
 
 ## 1. Executive Summary & Phase Goals
 
-**Phase 1 is closed.** Verified today, not assumed: `.venv/bin/pytest tests/ -q -rs`
-reports **381 passed, 217 skipped, 1 deselected, 0 failed**; `make lint`'s three
-architecture checks (no `float` in `app/engine/`, no cross-layer imports, no credential
-storage) pass; and every item `docs/PHASE1_CLOSEOUT_PROMPTS.md` flagged as missing
-(per-holding CAGR, period XIRR from an adviser onboarding date, the DPDP privacy screen,
-consent capture and enforcement, investor onboarding through the UI) is present in the
-code today, not just planned — checked directly against
-`trackr-backend/app/schemas/holdings.py`, `trackr-backend/app/routers/consent.py`,
-`trackr-frontend/app/privacy/page.tsx`, `trackr-frontend/app/settings/page.tsx`, and
-migration `009_investor_onboarding.sql`.
+**Phase 1 is closed** — confirmed again as part of this update, not re-litigated.
 
-**What Phase 2 is.** Per `docs/FEATURE_BACKLOG.md`'s Phase 2 table — the document
-`CLAUDE.md` designates as the tie-breaker whenever another doc disagrees about scope —
-Phase 2 is **"Analytics depth (still equities)"**: eight features that deepen what the
-system can say about a portfolio that is already correctly tracked, without adding a
-second asset class, without touching tax, and without adding any new ingestion adapter.
-`docs/PRODUCT_VISION.md` frames the shift precisely: Phase 1 built the tracker; Phase 2
-starts building "the intelligence layer" — the part of the product that *explains* a
-portfolio rather than just recording it. Two of this phase's eight features (benchmark
-comparison, contribution analysis) are the first real answers to questions
-`docs/PRODUCT_VISION.md` poses directly: *"Am I beating the benchmark, on my actual cash
-flows?"* and *"Which holdings contributed most?"*
+**What Phase 2 was scoped to be.** Per `docs/FEATURE_BACKLOG.md`'s Phase 2 table — the
+document `CLAUDE.md` designates as the tie-breaker whenever another doc disagrees about
+scope — Phase 2 is **"Analytics depth (still equities)"**: eight features that deepen
+what the system can say about a portfolio that is already correctly tracked. That table
+has itself been edited since 2026-08-18 (compare its current text to what this document
+originally quoted): the "Sector / market-cap breakdown" line has been split, because
+sector allocation turned out to already be Phase 1 scope (`docs/FEATURE_BACKLOG.md`'s
+Phase 1 table has always carried "Allocation (by holding, sector)") — building it this
+phase closed a standing Phase 1 gap as much as it delivered a Phase 2 one. What remains
+genuinely Phase 2 and **unbuilt** under that line is market-cap bucketing specifically
+— see §7.
 
-**What Phase 2 is not.** Not Phase 3 (tax engine — gated behind a full quarter of real
-data and mandatory CA sign-off, `docs/TAX_ENGINE.md`), not Phase 4 (a second asset
-class), not a CAS adapter (named in `docs/BUILD_PLAN.md`'s build-next list and
-`docs/FULL_VISION_BACKEND_ROADMAP.md`'s Section D, but absent from
-`docs/FEATURE_BACKLOG.md`'s actual Phase 2 table — see `docs/PHASE2_PROMPTS.md`'s "Not
-included on purpose" section). `docs/BUILD_PLAN.md` itself cautions: *"Resist all seven
-[items on its own longer list] until the MVP has run for a month on real data."* That
-caution stands; see §7.
+**What Phase 2 actually delivered, in one paragraph.** Daily portfolio-level snapshots
+are persisted and preferred over live recomputation; the Dashboard has a real
+historical value line chart with honest gaps; NIFTY 50 TRI benchmark XIRR is computed
+by cash-flow replication and shown beside the portfolio's own XIRR, never as a bare
+index CAGR; four fixed-calendar trailing XIRR windows (FY/1Y/3Y/5Y) sit beside the
+existing all-time and onboarding-period XIRR; TWRR is computed via a chaining
+convention that was genuinely undefined at the start of this phase and is now pinned
+in `docs/ENGINE_SPEC.md` §5 with a worked example, shown beside XIRR on the same
+windows; dividends have a per-ISIN, per-financial-year summary on the holding detail
+page; sector allocation is real (NSE-sourced, ~750-company coverage, honest
+"Unclassified" slice for anything outside it) instead of Phase 1's documented
+single-slice placeholder; and contribution analysis — the first genuine
+intelligence-layer feature per `docs/PRODUCT_VISION.md` — has a formula that was
+likewise undefined at the start of this phase, is now pinned in a new `docs/
+ENGINE_SPEC.md` §10 with a worked example and an explicit, confirmed decision on every
+open question §4 originally flagged, and has a working ranked contribution page.
 
-**The one architectural rule still applies, with one new nuance.** `CLAUDE.md`:
-*"Everything is derived from transactions... Holdings are NEVER stored."* Phase 2
-introduces this system's first persisted derived artifact beyond `price` and
-`holding_snapshot` (which is CAS-reconciliation-only, per `docs/DATA_MODEL.md`): a daily
-**portfolio-level** snapshot table (§2, §4). This is not an exception to the rule — it
-is explicitly anticipated by `docs/ENGINE_SPEC.md` §8 ("Snapshots are a cache of a
-derivation, not a source of truth — they must always be recomputable from the ledger")
-and by `CLAUDE.md`'s own carve-out ("A cache is permitted only once profiling proves it
-necessary, and must always be reproducible from the ledger"). It stores portfolio
-totals, never per-ISIN quantities — it is not a holdings table under a different name.
-Treat this distinction as load-bearing throughout Phase 2, not a technicality.
+**What Phase 2 is not, still.** Not Phase 3 (tax engine), not Phase 4 (a second asset
+class), not a CAS adapter. Nothing built this phase touched either boundary — checked
+directly, not assumed: no new `asset_class` code is used anywhere in engine or router
+code, and no capital-gains logic exists under `app/engine/`.
 
-**Correctness bar, unchanged from Phase 1.** `fixtures/golden_portfolio.json` (the
-client's real 324-trade portfolio) is still not present on this machine. Nothing built
-in Phase 2 should be called "verified" in the `CLAUDE.md` sense until it lands and
-`pytest tests/test_golden_portfolio.py -v` passes against it. `fixtures/
-engine_cases.json`'s hand-computed cases remain the interim bar — every new formula this
-phase introduces needs a new case added there before implementation, not after.
+**The persisted-derivation nuance from the original plan held.** `portfolio_snapshot`
+(migration `010_portfolio_snapshots.sql`) stores portfolio-level totals only, grained
+by `(investor_id, as_of, advised_only)` — the `advised_only` decision this document
+originally flagged as needing a call was made and is worth reading directly from the
+migration's own comment, because it explains *why* rather than just recording the
+choice: an adviser-restricted ledger is a materially different set of transactions,
+not a display filter over the same one, so it gets its own row. A second, unrelated
+persisted table appeared this phase that the original plan didn't anticipate:
+`index_level` (migration `011_index_level.sql`), holding fetched NIFTY 50 TRI values.
+It is reference data, not a derivation of the transaction ledger, and both `docs/
+ENGINE_SPEC.md` §6 and `app/prices/index_sources.py`'s own docstring are explicit that
+an index level must never be confused with or joined against a security price.
+
+**Correctness bar, unchanged and still not met in the strict sense.** `fixtures/
+golden_portfolio.json` is still not on this machine. Every number this phase produces
+has been checked against `fixtures/engine_cases.json`'s hand-computed cases (now 16,
+up from the original set — benchmark, TWRR, and contribution cases were added, each
+following the existing worked-example format) and, where a case is genuinely
+independent of Postgres, against the real engine directly. But per `CLAUDE.md`'s own
+definition, nothing here is "verified" until the golden fixture lands and `pytest
+tests/test_golden_portfolio.py -v` passes against it — see §7.
 
 ---
 
 ## 2. Architecture & Data Flow
 
-The core pipeline from `CLAUDE.md` is unchanged and remains the frame for everything
-below:
+Unchanged from the original plan, and matches what actually got built:
 
 ```
 Transactions -> Holdings -> Portfolio -> Performance -> Analytics -> Insights
 ```
 
-Phase 2 adds two things to this picture that Phase 1 never needed: a **persisted
-derivation** and **external reference data**.
-
-### 2a. The new persisted-derivation path (daily snapshots)
+### 2a. The persisted-derivation path (daily snapshots) — built as planned
 
 ```
 transaction ledger (append-only, unchanged)
@@ -95,67 +106,65 @@ compute_holdings / compute_realised / value_holdings   (app/engine/*, unchanged,
 compute_snapshot(transactions, prices, on_date)         (app/engine/snapshot.py, unchanged)
         |
         v
-   [NEW] a daily backfill/write job persists ONE row per (investor[, advised_only?], as_of)
+   app/routers/analytical.py's _run_snapshots  --  POST /ops/snapshots/run
+   the ONLY writer of portfolio_snapshot, resumable, per-investor start clamped to
+   max(requested start, NSE bhavcopy archive floor, that investor's earliest txn)
         |
         v
-   [NEW] app/db/snapshots.py  --  read path
+   app/db/snapshots.py  --  read path
         |
-        +--> historical value chart endpoint  --> Dashboard chart (Session 2)
-        +--> period-wise XIRR opening_value lookups  --> Performance page (Session 4)
-        +--> TWRR sub-period series  --> Performance page (Session 5)
-        +--> _fy_xirr / _period_xirr's opening_value  --> refactored to prefer this table
-             over a live compute_snapshot call (Session 1's actual payoff)
+        +--> GET /investors/{id}/snapshots  --> HistoricalValueChart.tsx on the Dashboard
+        +--> _window_xirr's opening_value lookups (FY/1Y/3Y/5Y/onboarding), read-first
+             with a live compute_snapshot fallback only when no persisted row exists
+        +--> _window_twrr's sub-period series, same read-first/fallback shape
 ```
 
-The write side must only ever be a rebuild job calling `compute_snapshot()` — never a
-hand-written `UPDATE`, never written incidentally by a request handler. The read side is
-what every other Phase 2 session downstream of Session 1 actually touches. Nothing here
-changes how holdings themselves are computed — `compute_holdings` remains derived-on-read
-and un-persisted, exactly as `CLAUDE.md` requires.
+Confirmed by direct read of `app/routers/analytical.py`: `_window_xirr` and
+`_window_twrr` are the generalized successors to the original plan's `_fy_xirr`/
+`_period_xirr`, and both read `portfolio_snapshot` before ever calling
+`compute_snapshot()` live. The write side is exactly as constrained as planned — no
+hand-written `UPDATE`, only the rebuild job.
 
-### 2b. External reference data (new to this phase)
-
-Two Phase 2 features need a data source that isn't a bhavcopy or a client-supplied
-transaction — both are genuinely new dependencies, not implementation details, and both
-need a Plan Mode decision before coding (see `docs/PHASE2_PROMPTS.md` sessions 3 and 7):
+### 2b. External reference data — both sources decided and built
 
 ```
-[NEW] index-level TRI source (NIFTY 50 / SENSEX)  -->  app/engine/benchmark.py
-                                                    -->  performance response, gated
-                                                         behind the `benchmark` query
-                                                         param already declared in
-                                                         contracts/openapi.yaml
+NIFTY 50 TRI  -->  app/prices/index_sources.py (niftyindices.com, real adapter)
+                -->  app/db/index_levels.py + migration 011_index_level.sql
+                -->  app/engine/benchmark.py
+                -->  performance response's `benchmark` field, gated behind the
+                     `benchmark` query param
 
-[NEW] sector/industry reference data (NSE equity list or equivalent)
-                                                    -->  security.sector enrichment
-                                                    -->  allocation grouped by sector
-                                                         (app/engine/holdings.py,
-                                                         same weight_pct math as the
-                                                         existing asset_class grouping)
+SENSEX TRI    -->  NO SOURCE. app/prices/index_sources.py's own docstring: BSE's index
+                     archive has no reachable data endpoint, Asia Index has no
+                     documented API, and a third-party aggregator isn't fit as a
+                     system-of-record source for a financial product. The contract
+                     still declares SENSEX_TRI as a valid enum value; requesting it
+                     gets an explicit 400 from the router, not a silent null and not a
+                     guess. This is a permanent, documented decision, not a TODO.
+
+NSE sector/industry classification (NIFTY Total Market list, ~750 companies, ISIN-keyed)
+                -->  app/prices/sector_sources.py (real adapter)
+                -->  app/db/load_sectors.py (loader script)
+                -->  security.sector enrichment
+                -->  app/engine/holdings.py's _sector_allocation, same weight_pct math
+                     as asset_class allocation
+                -->  AllocationDonut.tsx, grouping-agnostic, honest "Unclassified"
+                     slice for any ISIN outside the ~750-company coverage
 ```
 
-Neither of these is a transaction and neither should ever be confused with one — an
-index level is not a security price and must not pass through
-`app/engine/valuation.py`'s per-holding path; a sector label is reference metadata on
-`security`, not derived from the ledger at all.
+Neither external source is confused with a transaction or a security price anywhere in
+the schema or the engine — checked directly in `app/engine/benchmark.py` and `app/
+engine/holdings.py`.
 
-### 2c. Layer rules, unchanged
+### 2c. Layer rules — still holding
 
-`docs/ARCHITECTURE.md`'s "Swapping the stack" section and `make lint`'s architecture
-checks still govern every file this phase touches:
-
-- `app/engine/` stays framework-free, pure, and `float`-free. `app/engine/benchmark.py`,
-  `app/engine/twrr.py`, `app/engine/dividends.py`, and `app/engine/contribution.py` —
-  all new this phase — must not import `app.db`, `app.routers`, `app.ingest`,
-  `app.storage`, `app.prices`, or `app.auth`, exactly like every existing engine module.
-- The ingestion layer still never touches analytics — nothing in this phase adds an
-  ingestion adapter, so this boundary is not exercised by Phase 2, only preserved.
-- `contracts/openapi.yaml` and `schema/*.schema.json` remain the source of truth per
-  `docs/ARCHITECTURE.md`: *"The contracts are the product; the code is one expression of
-  them."* Every new/changed endpoint in §5 below must be reflected in the contract
-  **before** or **alongside** implementation, not as an afterthought — this is already
-  half-true for benchmark comparison, where the contract anticipated the feature before
-  the engine did (see §5).
+`make lint`'s three architecture checks (no `float` in `app/engine/`, no cross-layer
+imports out of `app/engine/`, no credential storage) pass against the current tree,
+new modules included: `app/engine/benchmark.py`, `app/engine/twrr.py`, `app/engine/
+dividends.py`, `app/engine/contribution.py` are all framework-free and import nothing
+from `app.db`, `app.routers`, `app.ingest`, `app.storage`, `app.prices`, or `app.auth`.
+`contracts/openapi.yaml` and `schema/*.schema.json` were updated alongside the code for
+every new/changed endpoint this phase touched — checked directly, not assumed; see §5.
 
 ---
 
@@ -163,202 +172,182 @@ checks still govern every file this phase touches:
 
 | Feature | Target Router/Engine File | Target Frontend Component | Target Test Suite | Status |
 |---|---|---|---|---|
-| Daily snapshot persistence | `app/engine/snapshot.py` (existing, unchanged) + `app/db/snapshots.py` (new) + `app/routers/analytical.py` (`_fy_xirr`/`_period_xirr` refactored to read-then-fallback; new `POST /ops/snapshots/run`) | — (backend-only; unblocks the row below) | `tests/test_db_snapshots.py` (new) + two new preference cases in `tests/test_db_analytical.py` | ✅ Implemented (2026-08-18) — `make lint` and the full suite pass (381 passed, 227 skipped); the 8 new `test_db_snapshots.py` cases and the 2 new preference cases are among those skips, since no local Postgres binary was available in the session that built this — they need a real run against a Postgres cluster before this row can be called `verified` in the `CLAUDE.md` sense. |
-| Historical portfolio value chart | new `GET /investors/{investor_id}/snapshots` (`app/routers/analytical.py` or new router) | `HistoricalChartPlaceholder.tsx` → replaced with a real chart component; wired into `app/page.tsx` | schema-level response test + `tests/test_db_snapshots.py` range-read case | ⏳ Pending Implementation |
-| Benchmark XIRR (NIFTY 50 TRI / SENSEX TRI) | `app/engine/benchmark.py` (new) + `app/routers/analytical.py`'s `performance()` (wire the existing unused `benchmark` query param) | `app/performance/page.tsx`, `components/DualXirrCard.tsx` | `tests/test_benchmark.py` (new) + a new `fixtures/engine_cases.json` case | ⏳ Pending Implementation |
-| Period-wise XIRR (1Y / 3Y / 5Y / FY) | `app/engine/xirr.py`'s `compute_period_xirr` (existing, reused) + `app/routers/analytical.py` (new shared helper generalizing `_fy_xirr`/`_period_xirr`) | `app/performance/page.tsx`, `components/DualXirrCard.tsx` (period selector) | extended `tests/test_engine_cases.py` / `fixtures/engine_cases.json` cases | ⏳ Pending Implementation |
-| TWRR | `app/engine/twrr.py` (new — **formula not yet pinned in `ENGINE_SPEC.md`, see §4/§7**) | `app/performance/page.tsx` | `tests/test_twrr.py` (new) | ⏳ Pending Implementation |
-| Dividends as a first-class feature | `app/engine/dividends.py` (new) + `app/routers/holdings.py` (new endpoint) | `app/holdings/[isin]/page.tsx` (new section); portfolio-wide summary placement TBD | `tests/test_dividends.py` (new) | ⏳ Pending Implementation |
-| Sector / market-cap breakdown | `app/engine/holdings.py` (extended grouping) + `app/routers/holdings.py` + new `security.sector` loader under `app/db/` | `components/AllocationDonut.tsx` (extended past its documented single-slice Phase 1 state) | extended `tests/test_holdings.py` | ⏳ Pending Implementation |
-| Contribution analysis | `app/engine/contribution.py` (new — **formula not yet pinned in `ENGINE_SPEC.md`, see §4/§7**) | `app/holdings/page.tsx` (new ranked section) | `tests/test_contribution.py` (new) | ⏳ Pending Implementation |
+| Daily snapshot persistence | `app/engine/snapshot.py` (unchanged) + `app/db/snapshots.py` + `app/routers/analytical.py` (`_run_snapshots`, `_window_xirr`) | — (backend-only) | `tests/test_db_snapshots.py`, `tests/test_db_analytical.py` | ✅ **Implemented & committed** (`5a49b93`). DB-backed cases still skip locally (no Postgres binary on this machine, see §7) but the engine-level "always recomputable" invariant and read-first/fallback logic are exercised by the non-DB test paths and pass. |
+| Historical portfolio value chart | `GET /investors/{investor_id}/snapshots` (`app/routers/analytical.py`) | `HistoricalValueChart.tsx`, wired into `app/page.tsx` (Dashboard), replacing the old placeholder | schema-level tests in `tests/test_analytical_router.py`; component reads persisted rows only, never recomputes | ✅ **Implemented & committed** (`c4d12af`). `recharts` added to `trackr-frontend/package.json` (the deliberate charting-library choice this phase called for). A gap wider than 7 calendar days renders as a genuine line break, not an interpolation — confirmed directly in `HistoricalValueChart.tsx`. |
+| Benchmark XIRR (NIFTY 50 TRI) | `app/engine/benchmark.py` + `app/routers/analytical.py`'s `performance()` | `app/performance/page.tsx` benchmark card (selector defaults to NIFTY50_TRI; SENSEX_TRI shown but disabled in the `<select>`, never silently selectable) | `tests/test_benchmark.py`, `tests/test_engine_cases.py`'s `benchmark_cash_flow_replication` case | ✅ **Implemented & committed** (`c4d12af`). SENSEX_TRI is real scope, permanently descoped for lack of a source — see §2b, not a gap in this row. |
+| Period-wise XIRR (1Y/3Y/5Y/FY) | `app/engine/xirr.py`'s `compute_period_xirr` (reused) + `app/routers/analytical.py`'s `_window_xirr` | `DualXirrCard.tsx`, all four windows shown together with `xirr_all`/`xirr_holdings`/`period_xirr` | `tests/test_engine_cases.py`, `tests/test_analytical_router.py` | ✅ **Implemented & committed** (`c4d12af`). Contract decision made: `xirr_1y`/`xirr_3y`/`xirr_5y` are flat sibling fields on `PerformanceResponse` alongside `fy_xirr`, not folded into a map — confirmed in `app/schemas/analytical.py` and `contracts/openapi.yaml`. Windows are computed and omitted independently (checked in `_window_xirr`'s per-window `MissingPriceError` handling). |
+| TWRR | `app/engine/twrr.py` | `DualXirrCard.tsx`, `fy_twrr`/`twrr_1y`/`twrr_3y`/`twrr_5y` shown beside their XIRR counterparts, never alone | `tests/test_twrr.py`, `tests/test_engine_cases.py`'s `twrr_dividend_and_contribution_sub_periods` case | ✅ **Implemented & committed** (`c4d12af`). The chaining convention this document originally flagged as unpinned is now pinned in `docs/ENGINE_SPEC.md` §5, "confirmed by product decision on 2026-08-20," with a worked example matching the fixture case exactly. |
+| Dividends as a first-class feature | `app/engine/dividends.py` + `GET /investors/{id}/dividends` (`app/routers/transactions.py`) | Dividend history section on `app/holdings/[isin]/page.tsx` | `tests/test_dividends.py` | ✅ **Implemented & committed** (`c4d12af`). Router placement diverged from the original plan's guess (`app/routers/holdings.py`) in favor of `app/routers/transactions.py`, alongside the existing lots/realised endpoints — a reasonable call, not a deviation worth correcting. |
+| Sector allocation | `app/db/load_sectors.py` (loader) + `app/engine/holdings.py`'s `_sector_allocation` + `app/routers/holdings.py` | `AllocationDonut.tsx`, extended past its Phase 1 single-slice state, grouping-agnostic (renders either `allocation` or `allocation_by_sector`) | extended `tests/test_holdings_router.py`, `tests/test_sector_sources.py` | ✅ **Implemented & committed** (`c4d12af`). **Market-cap bucketing — the other half of this feature's original name — was never built.** No `market_cap` column, loader, engine grouping, or frontend code exists anywhere in the tree (checked directly, zero matches). `docs/FEATURE_BACKLOG.md`'s Phase 2 table now lists this as its own line, still unbuilt — see §7. |
+| Contribution analysis | `app/engine/contribution.py` | `ContributionTable.tsx` + new `app/contribution/page.tsx`, linked from `Sidebar.tsx` | `tests/test_contribution.py` (7 cases), `tests/test_engine_cases.py`'s `contribution_mid_period_buy_sell_and_dividend` case | ✅ **Implemented, fully tested (7/7 passing) — NOT YET COMMITTED.** Sitting in the working tree right now: `trackr-backend/app/engine/contribution.py`, `schema/contribution.schema.json`, `tests/test_contribution.py`, `trackr-frontend/app/components/ContributionTable.tsx`, and `trackr-frontend/app/contribution/` are untracked; `contracts/openapi.yaml`, `docs/ENGINE_SPEC.md`, `fixtures/engine_cases.json`, `app/routers/analytical.py`, `app/schemas/analytical.py`, `app/engine/types.py`, and `Sidebar.tsx` carry uncommitted modifications that wire it in. The formula this document originally flagged as unpinned is now `docs/ENGINE_SPEC.md` §10, with every open question §4 listed (mid-period buy/sell weighting, whether contributions can exceed 100%) answered explicitly: percentages are shown uncapped, never normalized (confirmed 2026-08-20). This is a "commit it" gap, not a "build it" gap — see §7. |
+
+**All engine cases pass as one suite:** `.venv/bin/pytest tests/test_engine_cases.py -v`
+→ 16/16, including all three cases added this phase. `make test` (engine + contribution
++ demo-fixture suites + full `ruff`/no-float/no-cross-layer/no-credential lint) passes
+cleanly end to end once the venv is on `PATH` — see §7 for the one environment note
+that trips this up if it isn't.
 
 ---
 
 ## 4. Engine & Formula Specifications
 
-Formulas already fully specified in `docs/ENGINE_SPEC.md` — Phase 2 implements against
-these verbatim, does not reinterpret them:
+Both formulas this document originally flagged as **not yet specified** are now pinned,
+confirmed, and implemented. Neither was guessed at — both went through the "ask, do not
+guess" discipline `CLAUDE.md` requires.
 
-**Snapshot (§8, unchanged, already implemented as `compute_snapshot`):**
-```
-Snapshot { as_of, invested, market_value, unrealised, realised_to_date }
-```
-Phase 2's job is persistence and backfill, not a new formula.
+**TWRR — `docs/ENGINE_SPEC.md` §5, "Chaining convention (pinned, confirmed by product
+decision on 2026-08-20)."** Sub-periods chain over consecutive *persisted* snapshot
+rows (a missed backfill day widens a sub-period rather than being filled). Each
+sub-period's flow is signed from the portfolio's side — the mirror image of §4's
+investor-side XIRR sign table — because this system has no cash sleeve. Dividends are
+counted as return, not backed out (Candidate B of the product decision): a dividend is
+a negative flow in the same formula that treats a SELL as a negative flow, which is
+mathematically equivalent to crediting it into the sub-period's return. Annualised the
+same way CAGR is, `365.25`-day-year, fractional power at the end. The worked example in
+the spec is byte-for-byte the same numbers as `fixtures/engine_cases.json`'s
+`twrr_dividend_and_contribution_sub_periods` case.
 
-**Benchmark XIRR (§6, verbatim):**
-```
-for each portfolio cash flow (date, amount):
-      units = amount ÷ index_level(date)
-      accumulate units
-benchmark_terminal = total_units × index_level(as_of)
-benchmark_xirr     = xirr(same dates, same amounts, benchmark_terminal)
-```
-TRI (total return) indices only — a price index excludes dividends and understates the
-benchmark. Comparing portfolio XIRR against a headline index CAGR is explicitly
-forbidden by the spec, not merely discouraged.
+**Contribution analysis — new `docs/ENGINE_SPEC.md` §10.** `gain = (end_value −
+start_value) − net_flow`, the per-holding rupee mirror of TWRR's flow adjustment,
+expressed as a rupee amount over a single period rather than an annualised rate — the
+spec is explicit that there is no "contribution IRR" and no multi-period chaining
+variant, unlike TWRR, because rupee amounts don't compound the way ratios do. Every
+open question this document originally listed is answered:
+- A holding bought or sold mid-period: `net_flow` backs the trade out of the value
+  change, so only the price-and-dividend gain counts, not the capital moved.
+- A fully-exited holding: stays in the result with `end_value = 0`, never dropped —
+  "which investments destroyed value?" per `docs/PRODUCT_VISION.md` requires it to be
+  visible.
+- Percentages exceeding 100% or going negative when holdings offset: **shown as-is,
+  never normalized** — `docs/ENGINE_SPEC.md` §10's own subsection heading is literally
+  "Percentages are shown as-is, never capped (confirmed 2026-08-20)."
 
-**Period XIRR (§4, verbatim, reused unchanged for the 1Y/3Y/5Y/FY windows):**
-```
-flow 1     : (start_date, −opening_value)      portfolio value at start_date
-flows 2..n : every transaction after start_date
-final flow : (as_of, +current market value)
-```
-Every intermediate transaction must appear as its own dated flow — the pinned failure
-mode (`period_xirr_mid_period_deposit_not_inflated` in `fixtures/engine_cases.json`) is
-what an implementation that aggregates flows into the opening/closing value produces
-instead, silently.
+Both spec additions carry a worked example, matching `docs/ENGINE_SPEC.md`'s existing
+convention (formula, worked example, explicit statement of what's still undefined) —
+for TWRR, that's the annualisation-vs-chaining boundary; for contribution, it's
+explicitly that trailing-window contribution (FY/1Y) is just a single call with a
+different `start_date`, not a new mechanism.
 
-**Dividends (§ none dedicated, but fully implied by `docs/DATA_MODEL.md`'s `txn_type`
-table and `ENGINE_SPEC.md` §4's cash-flow table):** per-ISIN, per-financial-year sum of
-`dividend_amount` across `DIVIDEND` transactions. No new formula — an aggregation over
-data the engine already correctly ingests and already includes in XIRR.
-
-**Sector allocation (§2, reused with a different grouping key):**
-```
-weight_pct = market_value ÷ Σ market_value
-```
-Identical to the existing asset_class allocation math, grouped by `security.sector`
-instead. Not a new formula — a new grouping dimension over an existing one.
-
-### Not yet specified — must be written before implementation
-
-Two Phase 2 features have **no formula in `docs/ENGINE_SPEC.md` today**. Per `CLAUDE.md`
-("Never invent financial logic... if a case is not covered there, ask, do not guess"),
-implementing either from a plausible-sounding guess is exactly the failure mode this
-project's own spec repeatedly warns about (see §4's mid-period-deposit case for what it
-looks like when caught, and note it's *always* the case that a wrong number here looks
-like a right one). Both are called out with a `STOP` instruction in the relevant
-`docs/PHASE2_PROMPTS.md` session:
-
-- **TWRR.** `docs/ENGINE_SPEC.md` §5 says only that snapshots unlock it and states its
-  purpose (it measures the adviser, not the client) — it does not specify the sub-period
-  chaining convention. Standard implementations diverge here in ways that produce
-  materially different numbers (true daily valuation vs. Modified Dietz approximation,
-  treatment of same-day flows). This must be pinned in `ENGINE_SPEC.md` §5 with a worked
-  example before `app/engine/twrr.py` is written.
-- **Contribution analysis.** Named as a Phase 2 deliverable in three separate documents
-  (`FEATURE_BACKLOG.md`, `FULL_VISION_BACKEND_ROADMAP.md`, `PRODUCT_VISION.md`) but
-  defined precisely in none of them. Open questions that need explicit, written answers
-  (not defaults): how a mid-period buy or full sell is weighted, and how contributions
-  that individually exceed 100% of the portfolio's total return (a real, correct
-  possibility when gains and losses partially offset) should be presented. This needs a
-  new `docs/ENGINE_SPEC.md` §10 with a worked example before `app/engine/contribution.py`
-  is written.
+All previously-specified formulas (snapshot, period XIRR, dividends aggregation,
+sector `weight_pct`) were implemented verbatim against `docs/ENGINE_SPEC.md` as
+originally planned — no reinterpretation, confirmed by reading each implementation
+against its section.
 
 ---
 
 ## 5. API Router Contracts
 
-**Already anticipated by the contract, not yet implemented** — the clearest case of the
-contract being ahead of the code in this codebase:
+Every endpoint this phase's original plan proposed now exists in `contracts/
+openapi.yaml`, checked directly against the file's current path list:
 
-```yaml
-# contracts/openapi.yaml, GET /investors/{investor_id}/performance
-parameters:
-  - { name: benchmark, in: query, schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] } }
-```
-```json
-// schema/performance.schema.json — benchmark object, already defined
-"benchmark": {
-  "type": ["object", "null"],
-  "properties": {
-    "name": { "type": "string", "enum": ["NIFTY50_TRI", "SENSEX_TRI"] },
-    "xirr": { "type": ["number", "null"] },
-    "terminal_value": { "$ref": "transaction.schema.json#/$defs/decimal" }
-  }
-}
-```
-`app/schemas/analytical.py`'s `BenchmarkOut` and `trackr-frontend/lib/api-types.ts`'s
-`BenchmarkOut` interface both already exist, unused. Session 3 in
-`docs/PHASE2_PROMPTS.md` wires the query param through to a real computation — no
-contract change needed for benchmark comparison itself, only implementation.
-
-**New endpoints this phase needs to add to `contracts/openapi.yaml`** (exact shapes to
-be finalized in each session's Plan Mode step, not decided here):
-
-| Endpoint (proposed) | Purpose | Session |
+| Endpoint | Purpose | Status |
 |---|---|---|
-| `GET /investors/{investor_id}/snapshots?start=&end=` | Range read of persisted daily snapshots, for the historical value chart | 2 |
-| `POST /ops/snapshots/run` | Daily/backfill snapshot job, mirroring the existing `POST /ops/prices/refresh` auth/notifier pattern | 1 |
-| `GET /investors/{investor_id}/performance` (extended) | Add `xirr_1y` / `xirr_3y` / `xirr_5y` fields or a unified `trailing_xirr` map (decide in Session 4's Plan Mode step — this is a breaking-shape decision, not additive) and a `twrr` field | 4, 5 |
-| `GET /investors/{investor_id}/dividends` | Per-ISIN, per-FY dividend summary | 6 |
-| `GET /investors/{investor_id}/holdings` (extended) or a new endpoint | Sector-grouped allocation alongside the existing asset_class grouping | 7 |
-| `GET /investors/{investor_id}/contribution` | Ranked per-holding contribution to total return | 8 |
+| `GET /investors/{investor_id}/snapshots?start=&end=` | Range read of persisted daily snapshots | ✅ Implemented, in contract, schema-backed |
+| `POST /ops/snapshots/run` | Daily/backfill snapshot job | ✅ Implemented, in contract |
+| `GET /investors/{investor_id}/performance` | Extended: `benchmark` param now wired (was declared, unused, at the start of this phase); `xirr_1y`/`xirr_3y`/`xirr_5y` and `fy_twrr`/`twrr_1y`/`twrr_3y`/`twrr_5y` added as flat fields | ✅ Implemented, in contract and `schema/performance.schema.json` |
+| `GET /investors/{investor_id}/dividends` | Per-ISIN, per-FY dividend summary | ✅ Implemented, in contract, `schema/dividend.schema.json` |
+| `GET /investors/{investor_id}/holdings` | Extended with sector-grouped allocation alongside asset_class | ✅ Implemented, in contract |
+| `GET /investors/{investor_id}/contribution?period_start=&as_of=` | Ranked per-holding contribution to total return | ✅ Implemented, in contract, `schema/contribution.schema.json` — **but this endpoint's own commit is still pending, see §3/§7** |
 
-Every row above needs a corresponding `schema/*.schema.json` file or extension,
-following `schema/performance.schema.json`'s existing conventions
-(`additionalProperties: false`, explicit `required`, money via the shared
-`transaction.schema.json#/$defs/decimal` `$ref`, rates as bare JSON numbers). None of
-these are finalized contracts — they are the shape each session's own Plan Mode step
-should confirm or revise before writing code, per `docs/ARCHITECTURE.md`'s "contracts
-are the product" rule.
+`schema/contribution.schema.json` and `schema/dividend.schema.json` both follow the
+established convention exactly: `additionalProperties: false`, explicit `required`,
+money via `transaction.schema.json#/$defs/decimal`, rates as bare numbers.
+`tests/test_types_match_schema.py` now includes `Contribution` in its
+`TYPE_TO_SCHEMA` map and passes, confirming the Pydantic model and the JSON Schema
+agree.
 
 ---
 
 ## 6. Frontend & UI Specifications
 
-| Surface | Change | Depends on |
+| Surface | Change | Status |
 |---|---|---|
-| Dashboard (`app/page.tsx`) | `HistoricalChartPlaceholder.tsx`'s honest disabled state replaced with a real line chart (market value, optionally invested/cost-basis) over a selectable range | Session 1 (data), Session 2 (endpoint + component); **no charting library is in `trackr-frontend/package.json` today** — Session 2 adds one deliberately, see §7 |
-| Performance (`app/performance/page.tsx`, `components/DualXirrCard.tsx`) | A period selector (FY / 1Y / 3Y / 5Y) beside the existing dual-XIRR pair; a benchmark comparison card/row, never showing a bare index CAGR; TWRR shown beside XIRR, never replacing it | Sessions 3, 4, 5 |
-| Holdings detail (`app/holdings/[isin]/page.tsx`) | A dividend history section, alongside the existing FIFO-lots and realised-history sections already on that page | Session 6 |
-| Holdings / Dashboard | A ranked contribution list (best/worst contributors to overall return) | Session 8 |
-| Allocation (`components/AllocationDonut.tsx`) | Extended past today's documented single-slice Phase 1 state to group by sector, with an honest "unclassified" slice for anything not yet backfilled — never a fabricated or silently-merged "Other" bucket | Session 7 |
+| Dashboard (`app/page.tsx`) | Real `HistoricalValueChart.tsx` (recharts), range presets 1M/6M/1Y/3Y/Max, honest gap rendering | ✅ Wired in |
+| Performance (`app/performance/page.tsx`, `DualXirrCard.tsx`) | All four XIRR windows + all four TWRR windows + onboarding period XIRR shown together; benchmark card with NIFTY50_TRI selectable, SENSEX_TRI visibly disabled, not hidden | ✅ Wired in |
+| Holdings detail (`app/holdings/[isin]/page.tsx`) | Dividend history section, fourth call alongside lots/realised/transactions | ✅ Wired in |
+| Contribution (new `app/contribution/page.tsx`, linked from `Sidebar.tsx`) | Ranked contribution table with period presets (This FY / 1Y / 3Y) and custom date range | ✅ Wired in, uncommitted (see §3) |
+| Allocation (`AllocationDonut.tsx`) | Grouping-agnostic, renders sector allocation with an honest "Unclassified" slice — never a fabricated "Other" bucket | ✅ Wired in. **No market-cap grouping exists to render — see §7.** |
 
-Existing frontend conventions Phase 2 must keep using rather than inventing new ones:
-`trackr-frontend/lib/format.ts` (`formatMoney`, `formatPercent`, `formatDate`,
-`signClass`) for all display formatting — never raw JS `Number` math on a money string;
-`trackr-frontend/lib/api-client.ts` / `use-fetch.ts` for API calls; the existing
-null-handling pattern used by `UnpricedBanner.tsx` / `MissingPriceNotice.tsx` for any
-metric that can legitimately come back absent (every new metric in this phase can: a
-period XIRR window with no reachable snapshot, a benchmark with no configured index
-source, a TWRR with an incomplete snapshot series).
+All existing conventions were kept, not reinvented — confirmed directly: every new
+component uses `formatMoney`/`formatPercent`/`formatDate`/`signClass` from `lib/
+format.ts`, and every new data-fetching call goes through `use-fetch.ts`.
 
 ---
 
 ## 7. Known Gaps & Risks (Honesty Section)
 
+This section replaces the original plan's speculative risk list with what's actually
+still open, checked directly rather than assumed:
+
+- **Contribution analysis (Session 8) is fully built and tested but sitting
+  uncommitted.** `trackr-backend/app/engine/contribution.py`, `schema/
+  contribution.schema.json`, `tests/test_contribution.py`, `trackr-frontend/app/
+  components/ContributionTable.tsx`, and `trackr-frontend/app/contribution/` are
+  untracked; eight other files carry uncommitted modifications that wire it in. All
+  tests pass (`tests/test_contribution.py`: 7/7; the new `fixtures/engine_cases.json`
+  case: passing) and `make test`/`make lint` are clean against the current tree. This
+  is the single highest-priority remaining item precisely because it's the cheapest —
+  nothing needs to be written, only reviewed and committed as its own commit, per
+  `CLAUDE.md`'s "one feature per session, one commit per feature."
+- **Market-cap bucketing was never built.** `docs/FEATURE_BACKLOG.md`'s Phase 2 table
+  now names this as its own line ("market-cap bucketing is a separate, still-unbuilt
+  security-master field") distinct from sector, which is done. No `market_cap` column
+  exists on `security` (checked directly against `migrations/001_core.sql`), and no
+  loader, engine grouping, or frontend code references it anywhere in the tree — this
+  is a clean, well-scoped gap, not a partially-started one.
+- **The DB-backed half of this phase's own test suite has never actually run.**
+  `tests/test_db_snapshots.py`, `tests/test_db_index_levels.py`,
+  `tests/test_db_analytical.py`, `tests/test_holdings_router.py`, and the DB-dependent
+  cases inside `tests/test_benchmark.py`/`tests/test_dividends.py`/
+  `tests/test_sector_sources.py` all skip on this machine — `tests/conftest_db.py`
+  looks for local `initdb`/`pg_ctl` binaries (its skip message says "brew install
+  postgresql@17," which is a macOS-authored message on what is actually this session's
+  Linux box) and finds none. Every Phase 2 feature that touches a persisted table —
+  which is most of them — has therefore been verified at the pure-function level
+  (`fixtures/engine_cases.json`) but never against a real database round-trip. This is
+  a materially bigger gap than it looks: it is the one thing standing between "the
+  formula is right" and "the formula is right *and* it's actually being written and
+  read back correctly."
 - **The golden fixture is still not on this machine.** `fixtures/golden_portfolio.json`
-  remains the one gate that actually matters for calling anything in this phase
-  "verified," not just "built" — see `docs/FULL_VISION_BACKEND_ROADMAP.md`'s "Decision
-  (2026-08-16)" section. Asking the client for it directly is still the correct fix, and
-  still not a blocker to any session in `docs/PHASE2_PROMPTS.md`.
-- **Two formulas genuinely don't exist yet** — TWRR and contribution analysis (§4). This
-  is not a documentation oversight to patch quickly; both need a real, worked-example-
-  backed decision from whoever owns the product spec before either session can start
-  safely. Treat these two sessions as higher-risk and higher-latency than the other six
-  for that reason alone.
-- **Two external data dependencies are undecided.** A TRI index-level source for
-  benchmark comparison, and a sector/industry classification source for the allocation
-  breakdown. Neither is a code problem — both are "does a suitable, reliably fetchable
-  source actually exist and is it acceptable to depend on" questions that belong in each
-  session's Plan Mode step, not assumed away. If a source turns out not to exist or not
-  to be reliable enough, that is a legitimate reason to report a session as blocked
-  rather than build against something fragile.
-- **Historical bhavcopy backfill range is unknown.** Daily snapshot backfill (Session 1)
-  and, downstream, the 5Y period-XIRR window and TWRR's usefulness, are all bounded by
-  how far back `app/prices/sources.py`'s NSE/BSE sources actually serve data — this has
-  not been checked against the live sources as part of scoping this document and should
-  be one of the first things Session 1 confirms, before committing to a specific
-  backfill range in its plan.
-- **No charting library exists in the frontend today.** `trackr-frontend/package.json`
-  has only `next`/`react`/`react-dom` as runtime dependencies. Session 2 is the first
-  session in this project to add a new frontend runtime dependency — pick deliberately
-  and note the reasoning in the commit, since nothing today constrains the choice.
-- **This is the first persisted-derivation table in the system's history.** Every
-  previous derived object (`Holding`, `Lot`, `Realised`) has been computed-on-read only.
-  Daily snapshots are the first thing that breaks that pattern, deliberately and with
-  the spec's own blessing (§8, §1 above) — but it is exactly the kind of schema change
-  `CLAUDE.md` requires Plan Mode for, and exactly the kind of change a future session
-  could misread as license to start persisting *other* derived data (per-ISIN holdings,
-  say) without the same care. Treat Session 1 as setting the precedent for what "a cache
-  of a derivation" is allowed to look like in this codebase, not just shipping one table.
-- **CAS adapter and capital-gains work are explicitly parked, not silently dropped** —
-  see `docs/PHASE2_PROMPTS.md`'s "Not included on purpose" section for why each is
-  excluded from this phase's scope despite appearing in other planning documents.
-- **Concurrent sessions.** This repository has previously had multiple simultaneous
-  Claude Code sessions active against the same working tree (see
-  `docs/FULL_VISION_BACKEND_ROADMAP.md`'s callout from 2026-08-16). Before starting any
-  session in `docs/PHASE2_PROMPTS.md`, re-check `git status` and `git log` rather than
-  assuming this document's snapshot of the codebase is still current — the same
-  discipline that document itself recommends.
+  remains the one gate that actually matters for calling anything in Phase 1 *or*
+  Phase 2 "verified" rather than "built," per `CLAUDE.md`'s own definition. Unchanged
+  from the original plan — still worth asking the client for directly.
+- **A field test of Phase 1's ingestion paths, run this same day, found two
+  regressions that block every Phase 2 feature above from ever seeing a real user's
+  data.** `PHASE1_FIELD_TEST_REPORT.md` (new this session, committed in `c4d12af`)
+  documents, with a reproduced stack trace: (1) manual transaction entry — one of
+  Phase 1's two ingestion paths — throws an unhandled `ForeignKeyViolation` for *any*
+  ISIN not already in the `security` table, which for a brand-new investor is every
+  security; confirmed still present by reading `app/routers/transactions.py`'s
+  `create_transactions` directly — it has no security-row-creation step, unlike `app/
+  db/imports.py`'s CSV path, which does this deliberately. (2) a malformed CSV/XLSX
+  upload can crash the tradebook parser with an unhandled `csv.Error` instead of the
+  same adapter's own graceful rejection path, and the resulting 500 arrives without a
+  CORS header, which reads in-browser as a CORS failure — a genuinely misleading
+  symptom. Neither is Phase 2 scope to fix, but both are directly blocking: no matter
+  how correct the benchmark, TWRR, or contribution math is, a new investor cannot get
+  a single manually-entered trade into the ledger today. Treat this as a
+  higher-priority fix than any remaining Phase 2 polish — see `docs/PHASE2_PROMPTS.md`.
+- **`c4d12af` bundled five of the eight sessions (2, 3, 5, 6, 7) into one commit.**
+  `docs/PHASE2_PROMPTS.md`'s own instructions were explicit — "don't bundle two of
+  these into one session even though it's tempting" — and this bundling happened
+  anyway, evidently across whatever sessions actually did the work. Not a code defect;
+  every bundled feature passes its own tests. Worth naming plainly so it isn't repeated
+  finishing the two remaining items (commit contribution separately; don't fold
+  market-cap into that same commit either).
+- **`make test`/`make lint` require the project's venv on `PATH`.** Running `make test`
+  with the system `pytest` (no venv activated) fails immediately on `ModuleNotFoundError:
+  No module named 'app'` — not a code problem, but worth documenting since it looks
+  like a real failure at first glance. `source .venv/bin/activate` before `make test`
+  or `make lint` resolves it; ruff itself is present and clean once that's done.
+- **SENSEX_TRI has no source and this is permanent, not pending.** Restated from §2b
+  because it's easy to misread the contract's still-present `SENSEX_TRI` enum value as
+  an in-progress gap. It isn't — `app/prices/index_sources.py`'s docstring documents
+  why no reliable, machine-fetchable, free source exists, and the router 400s on
+  request rather than guessing. Nothing in `docs/PHASE2_PROMPTS.md` should ask a future
+  session to "finish" this.
+- **Concurrent sessions.** Unchanged risk from the original plan — this repository has
+  had multiple simultaneous Claude Code sessions against the same working tree before.
+  Re-check `git status` and `git log` before starting any closeout session in `docs/
+  PHASE2_PROMPTS.md`; this document's snapshot will go stale the moment another session
+  commits.

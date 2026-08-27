@@ -28,14 +28,19 @@ ZERO = Decimal("0")
 class TxnType(StrEnum):
     """Every ledger event. Quantity and cash effects are tabulated in DATA_MODEL.md.
 
-    The three groups that matter to the cost pool:
+    The groups that matter to the cost pool:
       - acquiring for cash: BUY, IPO_ALLOT, TRANSFER_IN  -> quantity up, pool up
       - disposing:          SELL, TRANSFER_OUT, BUYBACK  -> quantity down, pool down
                                                             PROPORTIONALLY
       - free shares:        BONUS, SPLIT_ADJ, DEMERGER_IN -> quantity up, pool UNCHANGED
 
     That third group is the whole mechanism by which cost basis self-corrects after a
-    corporate action. No ratio arithmetic is needed anywhere in the code.
+    corporate action, and needs no ratio arithmetic -- EXCEPT a demerger's cost ratio,
+    which the depository does not apply automatically (see docs/TAX_ENGINE.md "Corporate
+    action tax nuances"). DEMERGER_COST_OUT / DEMERGER_COST_IN are the pair of later,
+    paired adjustment rows that move cost basis from the original security to the
+    demerged one once the scheme document's cost ratio is known -- quantity unchanged on
+    both sides, ENGINE_SPEC.md section 11, produced by engine/demerger.py.
     """
 
     BUY = "BUY"
@@ -43,6 +48,8 @@ class TxnType(StrEnum):
     BONUS = "BONUS"
     SPLIT_ADJ = "SPLIT_ADJ"
     DEMERGER_IN = "DEMERGER_IN"
+    DEMERGER_COST_OUT = "DEMERGER_COST_OUT"
+    DEMERGER_COST_IN = "DEMERGER_COST_IN"
     TRANSFER_IN = "TRANSFER_IN"
     TRANSFER_OUT = "TRANSFER_OUT"
     IPO_ALLOT = "IPO_ALLOT"
@@ -145,7 +152,9 @@ class Transaction:
     quantity: Decimal
     price: Decimal
     charges: Decimal = ZERO
+    stt: Decimal = ZERO
     dividend_amount: Decimal = ZERO
+    cost_transfer: Decimal = ZERO
     id: str | None = None
     account_id: str | None = None
     source: Source | None = None
@@ -224,6 +233,14 @@ class Realised:
     isin: str | None = None
     sell_date: date | None = None
     holding_days: int | None = None
+    # Section 48 (Income Tax Act) disallows STT as a deductible expense for capital
+    # gains, unlike `cost`/`proceeds` above which stay net of ALL charges including STT
+    # for Phase 1's real-cash display. app.engine.realised.tax_cost/tax_proceeds use
+    # these to exclude it. Zero for every disposal except one drawing on
+    # contract-note-derived charges (app.ingest.zerodha_contract_note is the only
+    # adapter that ever populates Transaction.stt).
+    cost_stt: Decimal = ZERO
+    proceeds_stt: Decimal = ZERO
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +285,33 @@ class DividendSummary:
     isin: str
     total: Decimal
     by_year: list[DividendYear]
+
+
+@dataclass(frozen=True, slots=True)
+class Contribution:
+    """One ISIN's rupee contribution to the portfolio's total gain over a period.
+    DERIVED, NEVER STORED -- ENGINE_SPEC section 10.
+
+    ``gain = (end_value - start_value) - net_flow``, the per-holding mirror of section
+    5's TWRR flow adjustment, expressed as a rupee amount rather than a ratio and not
+    annualised. ``net_flow`` is BUY/IPO_ALLOT/TRANSFER_IN minus SELL/TRANSFER_OUT/
+    BUYBACK minus DIVIDEND, dated within the window -- so a mid-period buy or a full
+    mid-period exit counts only the gain earned while the position existed inside the
+    window, never the whole lifetime figure.
+
+    ``pct_of_total`` is ``gain / total_gain`` (``total_gain`` = the sum of every
+    ``Contribution.gain`` in the result). ``None`` only when ``total_gain`` is exactly
+    zero; shown uncapped otherwise, including negative and above-100% values when
+    holdings offset -- that is correct, not a bug, per section 10.
+    """
+
+    isin: str
+    start_value: Decimal
+    end_value: Decimal
+    net_flow: Decimal
+    gain: Decimal
+    pct_of_total: Decimal | None = None
+    symbol: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

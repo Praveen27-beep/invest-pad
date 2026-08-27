@@ -238,7 +238,7 @@ incident, and keep the URL builder in one small, obviously-editable function.
 | adapter | note |
 |---|---|
 | CAS PDF | multi-broker holdings; reconciliation gold. No equity cost basis. |
-| Account Aggregator | the correct long-term rail; needs FIU registration |
+| Account Aggregator | the correct long-term rail; needs FIU registration. Sandbox findings and open questions: `docs/ACCOUNT_AGGREGATOR.md` |
 | Broker API | daily client re-login, order-capable token, single broker — deliberately excluded |
 
 All three produce `Transaction[]` or `holding_snapshot` rows and change nothing
@@ -368,12 +368,16 @@ ledger** — before the decision, rather than reporting it afterwards.
 
 | Layer | Catches |
 |---|---|
-| `import_batch.sha256` UNIQUE | the identical file uploaded twice |
+| `import_batch (account_id, sha256)` UNIQUE | the identical file staged twice **for the same account** — never across investors or accounts, which are distinct ledgers |
 | `transaction.dedupe_key` UNIQUE | the same trades in a *byte-different* file — a re-export, a renamed copy, an overlapping date range |
 | `review_batch` | tells a human the count before they commit to it |
 
 The middle one is the real defence. A client who re-exports the same period gets a file
 with different bytes and identical trades; only the dedupe key sees through that.
+
+The first layer is scoped to the destination account on purpose: matched globally, one
+investor's upload would be blocked by — and pointed at — another tenant's batch, an id
+the ownership guard then refuses to serve. A file hash identifies bytes, not a tenant.
 
 ### `trade_id` is not optional
 

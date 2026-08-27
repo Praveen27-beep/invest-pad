@@ -37,6 +37,37 @@ REQUIRED_COLUMNS = {"isin", "trade_date", "trade_type", "quantity", "price", "tr
 #: notices until a tax return.
 SUPPORTED_SEGMENT = "EQ"
 
+#: How far down the file to hunt for the header row. A tradebook pasted through Google
+#: Sheets carries blank rows and a title block above it -- the real upload that motivated
+#: this had its header on line 15. Real Console exports have it on line 1, so a bounded
+#: scan costs nothing there and keeps a wrong file from being read to the bottom.
+MAX_HEADER_SCAN_LINES = 50
+
+
+def _norm_key(k: str | None) -> str:
+    return (k or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _split_line(line: str) -> tuple[str, list[str]]:
+    """Split one physical line into (delimiter, cells). Tabs win because a tab inside
+    a comma-separated cell is data, while comma-separated exports never contain tabs."""
+    delimiter = "\t" if "\t" in line else ","
+    try:
+        return delimiter, next(csv.reader([line], delimiter=delimiter))
+    except (csv.Error, StopIteration):
+        return delimiter, []
+
+
+def _locate_header(lines: list[str]) -> tuple[int | None, str]:
+    """Return (0-based index of the header line, its delimiter), or (None, ",")."""
+    for idx, line in enumerate(lines[:MAX_HEADER_SCAN_LINES]):
+        if not line.strip():
+            continue
+        delimiter, cells = _split_line(line)
+        if REQUIRED_COLUMNS <= {_norm_key(c) for c in cells}:
+            return idx, delimiter
+    return None, ","
+
 
 class ZerodhaTradebookAdapter:
     name = "zerodha_tradebook"
@@ -51,24 +82,34 @@ class ZerodhaTradebookAdapter:
         ]
 
         text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-
-        if reader.fieldnames is None:
+        lines = text.splitlines()
+        if not any(line.strip() for line in lines):
             return ParseResult(rejections=[Rejection(0, "file is empty")], notes=notes)
 
-        missing = REQUIRED_COLUMNS - {(f or "").strip() for f in reader.fieldnames}
-        if missing:
+        header_idx, delimiter = _locate_header(lines)
+        if header_idx is None:
+            # Report against the first non-empty line so the message names what the
+            # file actually opens with, exactly as the row-0 check used to.
+            probe = next(line for line in lines if line.strip())
+            _, cells = _split_line(probe)
+            missing = sorted(REQUIRED_COLUMNS - {_norm_key(c) for c in cells})
             return ParseResult(
                 rejections=[
-                    Rejection(0, f"not a Zerodha tradebook: missing {sorted(missing)}")
+                    Rejection(0, f"not a Zerodha tradebook: missing {missing}")
                 ],
                 notes=notes,
             )
 
-        # Row 1 is the header, so data starts at 2 -- which is what a person sees when they
-        # open the file to find the row a rejection names.
-        for row_number, raw in enumerate(reader, start=2):
-            parsed = self._parse_row(raw, account_id, row_number)
+        reader = csv.DictReader(
+            io.StringIO("\n".join(lines[header_idx:]) + "\n"), delimiter=delimiter
+        )
+
+        # The header sits on physical line ``header_idx + 1``, so data starts at
+        # ``header_idx + 2`` -- which is what a person sees when they open the file to
+        # find the row a rejection names.
+        for row_number, raw in enumerate(reader, start=header_idx + 2):
+            norm_raw = {_norm_key(k): v for k, v in raw.items() if k is not None}
+            parsed = self._parse_row(norm_raw, account_id, row_number)
             if isinstance(parsed, Rejection):
                 rejections.append(parsed)
             else:

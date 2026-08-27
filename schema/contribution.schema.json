@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/contribution.schema.json",
+  "title": "Contribution",
+  "description": "One ISIN's rupee contribution to the portfolio's total gain over a period. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md section 10.\n\ngain = (end_value - start_value) - net_flow, the per-holding mirror of section 5's TWRR flow adjustment, expressed as a rupee amount rather than a ratio and not annualised. Dividends count toward gain (total-return convention, matching TWRR's Candidate B decision). A holding fully exited during the period is included, with end_value 0 -- dropping it would hide the 'which investments destroyed value?' answer docs/PRODUCT_VISION.md's intelligence layer asks for.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["isin", "start_value", "end_value", "net_flow", "gain"],
+  "properties": {
+    "isin": {
+      "type": "string",
+      "description": "Securities are keyed by ISIN, never by ticker -- CLAUDE.md."
+    },
+    "symbol": {
+      "type": ["string", "null"]
+    },
+    "start_value": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "market_value at period start. 0 when the ISIN was not held then, never omitted."
+    },
+    "end_value": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "market_value at as_of. 0 when the ISIN is no longer held, never omitted -- a fully exited position stays in the result with this at 0."
+    },
+    "net_flow": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "BUY/IPO_ALLOT/TRANSFER_IN positive, SELL/TRANSFER_OUT/BUYBACK negative, DIVIDEND negative, dated within the period. Backed out of the value change so a mid-period purchase or sale is never counted as gain."
+    },
+    "gain": {
+      "$ref": "transaction.schema.json#/$defs/decimal",
+      "description": "(end_value - start_value) - net_flow. The rupee contribution to the portfolio's total gain over the period."
+    },
+    "pct_of_total": {
+      "type": ["number", "null"],
+      "description": "gain / total_gain across every Contribution in the same response. Null only when total_gain is exactly zero. Shown uncapped otherwise -- including negative and above-100% values when holdings offset -- never normalised or clipped."
+    }
+  }
+}

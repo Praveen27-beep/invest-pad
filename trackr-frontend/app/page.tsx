@@ -15,7 +15,7 @@ import { HistoricalValueChart } from "./components/HistoricalValueChart";
 import { HoldingsTable } from "./components/HoldingsTable";
 import { UnpricedBanner } from "./components/UnpricedBanner";
 
-type AllocationGroupBy = "asset_class" | "sector";
+type AllocationGroupBy = "asset_class" | "sector" | "market_cap_bucket";
 
 export default function DashboardPage() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
@@ -63,7 +63,7 @@ export default function DashboardPage() {
     .slice(0, 6);
   const topHoldings = (holdings.data?.holdings ?? []).slice(0, 5);
 
-  // AllocationDonut is grouping-agnostic (AllocationSlice); adapt whichever of the two
+  // AllocationDonut is grouping-agnostic (AllocationSlice); adapt whichever of the three
   // /summary arrays is currently selected into that shape here, at the call site.
   const allocationSlices: AllocationSlice[] =
     allocationGroupBy === "sector"
@@ -72,11 +72,17 @@ export default function DashboardPage() {
           label: g.label,
           weight_pct: g.weight_pct,
         }))
-      : (s?.allocation ?? []).map((g) => ({
-          key: g.asset_class,
-          label: g.label,
-          weight_pct: g.weight_pct,
-        }));
+      : allocationGroupBy === "market_cap_bucket"
+        ? (s?.allocation_by_market_cap ?? []).map((g) => ({
+            key: g.market_cap_bucket,
+            label: g.label,
+            weight_pct: g.weight_pct,
+          }))
+        : (s?.allocation ?? []).map((g) => ({
+            key: g.asset_class,
+            label: g.label,
+            weight_pct: g.weight_pct,
+          }));
 
   return (
     <div className="space-y-6">
@@ -154,6 +160,17 @@ export default function DashboardPage() {
                 }`}
               >
                 By sector
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllocationGroupBy("market_cap_bucket")}
+                className={`press-scale rounded-md px-2 py-1 font-medium transition-colors ${
+                  allocationGroupBy === "market_cap_bucket"
+                    ? "bg-navy-700 text-cream-50"
+                    : "text-navy-500 hover:bg-cream-200"
+                }`}
+              >
+                By market cap
               </button>
             </div>
           }

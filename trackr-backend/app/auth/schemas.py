@@ -52,3 +52,9 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserResponse
+    # The login's oldest owned investor. Register always has one (registration
+    # provisions it); login returns None for a user whose investors were all erased or
+    # who predates ownership. Clients must take the id from HERE, not from localStorage
+    # or a build-time default -- that shared fallback is exactly how two accounts ended
+    # up reading one portfolio.
+    investor_id: str | None = None

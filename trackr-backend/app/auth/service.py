@@ -8,6 +8,7 @@ and keeps a future change (rotating ``JWT_SECRET``, tightening password rules) t
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -73,14 +74,23 @@ def issue_token(settings: Settings, conn: Any, user_id: str) -> tuple[str, int]:
     up by that hash (see ``current_user``) rather than trusting the signature alone. That
     lookup is what makes revocation possible for something that would otherwise stay
     valid, unrevocably, until it simply expires.
+
+    The SESSION outlives the TOKEN: it lives ``session_ttl_seconds``, not
+    ``jwt_expiry_seconds``. The short JWT is what travels on every request; the session
+    row is what ``refresh`` renews. With both at one hour there is nothing to renew --
+    an expired token meant logging in again, every hour.
     """
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=settings.jwt_expiry_seconds)
+    session_expires_at = now + timedelta(seconds=settings.session_ttl_seconds)
 
-    payload = {"sub": str(user_id), "exp": expires_at, "iat": now}
+    # jti makes every issued token unique even for two logins inside the same wall-clock
+    # second: without it, iat/exp round to seconds and two rapid logins hash to the SAME
+    # session_token_hash -- the UNIQUE index then refuses the second login outright.
+    payload = {"sub": str(user_id), "exp": expires_at, "iat": now, "jti": uuid.uuid4().hex}
     token = jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
-    repository.create_session(conn, user_id, _hash_token(token), expires_at)
+    repository.create_session(conn, user_id, _hash_token(token), session_expires_at)
     return token, settings.jwt_expiry_seconds
 
 
@@ -106,6 +116,51 @@ def login(
 
     token, expires_in = issue_token(settings, conn, str(user["id"]))
     return token, expires_in, user
+
+
+def refresh(
+    conn: Any, settings: Settings, token: str
+) -> tuple[str, int, dict[str, Any]]:
+    """Exchange a token for a fresh one, renewing the session it was issued under.
+
+    Returns ``(token, expires_in, user)``, shaped like ``login``'s return so callers
+    treat both identically.
+
+    The signature is always verified; only ``exp`` is relaxed. That is safe here because
+    the JWT alone authorises nothing -- the SESSION row (looked up by this exact token's
+    hash) is what authorises the exchange, and its own ``expires_at`` and ``revoked_at``
+    are enforced untouched. An expired token whose session is still live is precisely the
+    case refresh exists for; an expired one whose session is gone gets the same
+    collapsed error as everywhere else.
+
+    The old session is revoked as part of the exchange: one live session per chain of
+    refreshes, so a stolen-and-refreshed token invalidates the copy it was stolen from.
+
+    Raises:
+        InvalidTokenError: malformed or wrongly signed, no matching live session,
+            or the user has vanished or been deactivated.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            options={"verify_exp": False},
+        )
+    except jwt.PyJWTError as exc:
+        raise InvalidTokenError("invalid or expired token") from exc
+
+    session = repository.get_active_session_by_token_hash(conn, _hash_token(token))
+    if session is None:
+        raise InvalidTokenError("session revoked or expired")
+
+    user = repository.get_user_by_id(conn, payload["sub"])
+    if user is None or not user["is_active"]:
+        raise InvalidTokenError("no such user")
+
+    repository.revoke_session(conn, str(session["id"]))
+    new_token, expires_in = issue_token(settings, conn, str(user["id"]))
+    return new_token, expires_in, user
 
 
 def current_user(conn: Any, settings: Settings, token: str) -> dict[str, Any]:

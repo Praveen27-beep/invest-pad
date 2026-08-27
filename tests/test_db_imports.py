@@ -141,6 +141,78 @@ def test_reuploading_the_identical_file_is_caught_before_parsing(db, adapter, in
         stage(db, adapter, investor)
 
 
+def _investor_with_account(db: object, code: str) -> tuple[str, str]:
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO investor (code, display_name) VALUES (%s, 'Test') RETURNING id",
+            (code,),
+        )
+        investor_id = str(cur.fetchone()[0])
+        cur.execute(
+            "INSERT INTO account (investor_id, broker, is_advised) "
+            "VALUES (%s, 'ZERODHA', true) RETURNING id",
+            (investor_id,),
+        )
+        account_id = str(cur.fetchone()[0])
+    db.commit()
+    return investor_id, account_id
+
+
+def test_the_same_file_stages_independently_for_another_investor(
+    db, adapter, investor
+) -> None:
+    """Regression: the sha256 short-circuit used to match GLOBALLY, so another tenant's
+    identical upload blocked this one and named a batch id the ownership guard then
+    refused to serve -- 'this investor belongs to another account'. A file hash identifies
+    bytes, not a tenant."""
+    other_investor, other_account = _investor_with_account(db, "C002")
+
+    mine = stage(db, adapter, investor)
+    theirs = imports.stage_batch(
+        db, adapter, CSV.encode(), investor_id=other_investor,
+        account_id=other_account, filename="tradebook.csv",
+    )
+
+    assert theirs["parsed"] == 1
+    assert theirs["batch_id"] != mine["batch_id"]
+
+    # Each investor's own re-upload is still the cheap no-op -- and still names their
+    # own batch, never the other's.
+    with pytest.raises(imports.DuplicateUploadError) as mine_again:
+        stage(db, adapter, investor)
+    assert str(mine_again.value.batch_id) == mine["batch_id"]
+    with pytest.raises(imports.DuplicateUploadError) as theirs_again:
+        imports.stage_batch(
+            db, adapter, CSV.encode(), investor_id=other_investor,
+            account_id=other_account, filename="tradebook.csv",
+        )
+    assert str(theirs_again.value.batch_id) == theirs["batch_id"]
+
+
+def test_reuploading_to_another_account_of_the_same_investor_stages(
+    db, adapter, investor
+) -> None:
+    """dedupe_key begins with account_id: two accounts are two ledgers, so one account's
+    staged file must not answer for the other's."""
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO account (investor_id, broker, is_advised) "
+            "VALUES (%s, 'ZERODHA', true) RETURNING id",
+            (investor,),
+        )
+        other_account = str(cur.fetchone()[0])
+    db.commit()
+
+    first = stage(db, adapter, investor)
+    second = imports.stage_batch(
+        db, adapter, CSV.encode(), investor_id=investor,
+        account_id=other_account, filename="tradebook.csv",
+    )
+
+    assert second["parsed"] == 1
+    assert second["batch_id"] != first["batch_id"]
+
+
 # --- review --------------------------------------------------------------------
 
 

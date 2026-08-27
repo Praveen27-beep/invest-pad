@@ -52,16 +52,48 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
+def _existing_server_admin_url() -> str | None:
+    """Opt-in fallback for sandboxed environments with no root and therefore no
+    initdb/pg_ctl on PATH (e.g. this project's own dev container has no sudo), but which
+    do have an already-running Postgres server available -- this project's own
+    docker-compose dev database, most commonly. Set TEST_PG_ADMIN_URL to that server's
+    admin connection (a URL that can CREATE/DROP DATABASE), e.g.
+    postgresql://trackr:trackr_dev@localhost:5433/postgres -- unset by default, so this
+    changes nothing for any machine or CI runner that already has real binaries."""
+    return os.environ.get("TEST_PG_ADMIN_URL")
+
+
 @pytest.fixture(scope="session")
 def pg_cluster() -> Iterator[str]:
     """Yield a libpq URL for a running throwaway cluster."""
     pg_bin = find_pg_bin()
-    if pg_bin is None:
+    admin_url = _existing_server_admin_url()
+    if pg_bin is None and not admin_url:
         pytest.skip("Postgres binaries not found (brew install postgresql@17)")
     try:
         import psycopg  # noqa: F401
     except ImportError:
         pytest.skip("psycopg not installed (pip install -e '.[db]')")
+
+    if pg_bin is None:
+        # Fall back to an existing server rather than booting a private cluster --
+        # see _existing_server_admin_url. Still isolated: a dedicated TEST_DB database,
+        # dropped and recreated fresh for this session, never the app's own `portfolio`.
+        import psycopg
+
+        with psycopg.connect(admin_url, autocommit=True) as conn:
+            conn.execute(f"DROP DATABASE IF EXISTS {TEST_DB}")
+            conn.execute(f"CREATE DATABASE {TEST_DB}")
+        base = admin_url.rsplit("/", 1)[0]
+        url = f"{base}/{TEST_DB}"
+        try:
+            yield url
+        finally:
+            with psycopg.connect(admin_url, autocommit=True) as conn:
+                conn.execute(
+                    f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"
+                )
+        return
 
     data_dir = Path(tempfile.mkdtemp(prefix="portfolio-pgdata-"))
     sock_dir = Path(tempfile.mkdtemp(prefix="portfolio-pgsock-"))

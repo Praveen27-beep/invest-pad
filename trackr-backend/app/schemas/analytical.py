@@ -1,5 +1,5 @@
-"""DTOs for GET /investors/{id}/performance, POST /ops/prices/refresh, and
-POST /ops/snapshots/run."""
+"""DTOs for GET /investors/{id}/performance, GET /investors/{id}/contribution,
+POST /ops/prices/refresh, and POST /ops/snapshots/run."""
 
 from __future__ import annotations
 
@@ -54,6 +54,26 @@ class PerformanceResponse(BaseModel):
     realised_to_date: str | None = None
     benchmark: BenchmarkOut | None = None
     warning: str | None = None
+
+
+class ContributionOut(BaseModel):
+    """One ISIN's rupee contribution -- app.engine.types.Contribution, ENGINE_SPEC
+    section 10. A fully-exited holding still appears here, with end_value "0"."""
+
+    isin: str
+    symbol: str | None = None
+    start_value: str
+    end_value: str
+    net_flow: str
+    gain: str
+    pct_of_total: float | None = None
+
+
+class ContributionResponse(BaseModel):
+    as_of: date
+    period_start: date
+    total_gain: str
+    contributions: list[ContributionOut]
 
 
 class PriceRefreshResponse(BaseModel):

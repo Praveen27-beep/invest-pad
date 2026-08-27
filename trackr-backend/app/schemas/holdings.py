@@ -60,6 +60,14 @@ class SectorAllocationGroupOut(BaseModel):
     children: list[HoldingOut]
 
 
+class MarketCapAllocationGroupOut(BaseModel):
+    market_cap_bucket: str | None
+    label: str
+    market_value: str | None
+    weight_pct: float | None = None
+    children: list[HoldingOut]
+
+
 class HoldingsResponse(BaseModel):
     as_of: date
     holdings: list[HoldingOut]
@@ -77,3 +85,4 @@ class SummaryResponse(BaseModel):
     unpriced: UnpricedOut
     allocation: list[AllocationGroupOut]
     allocation_by_sector: list[SectorAllocationGroupOut]
+    allocation_by_market_cap: list[MarketCapAllocationGroupOut]

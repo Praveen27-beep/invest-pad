@@ -41,7 +41,7 @@ class BatchAlreadyResolvedError(ValueError):
 
 
 class DuplicateUploadError(ValueError):
-    """This exact file has been uploaded before."""
+    """This exact file has already been staged for this account."""
 
     def __init__(self, sha256: str, batch_id: str) -> None:
         self.sha256 = sha256
@@ -57,6 +57,7 @@ def _txn_to_payload(txn: Transaction) -> dict[str, Any]:
         "quantity": str(txn.quantity),
         "price": str(txn.price),
         "charges": str(txn.charges),
+        "stt": str(txn.stt),
         "account_id": txn.account_id,
         "source": str(txn.source) if txn.source else None,
         "source_ref": txn.source_ref,
@@ -71,6 +72,7 @@ def _payload_to_txn(payload: dict[str, Any]) -> Transaction:
         quantity=Decimal(payload["quantity"]),
         price=Decimal(payload["price"]),
         charges=Decimal(payload.get("charges", "0")),
+        stt=Decimal(payload.get("stt", "0")),
         account_id=payload.get("account_id"),
         source=Source(payload["source"]) if payload.get("source") else Source.TRADEBOOK,
         source_ref=payload.get("source_ref"),
@@ -91,14 +93,24 @@ def stage_batch(
     """Parse a file into staged rows. Writes NOTHING to ``transaction``.
 
     Raises:
-        DuplicateUploadError: this exact file was uploaded before. Caught on the hash,
-            before parsing, because re-parsing a known file to discover it is known is
-            wasted work on the common path -- clients send overlapping exports routinely.
+        DuplicateUploadError: this exact file was staged before, for this account.
+            Caught on the hash, before parsing, because re-parsing a known file to
+            discover it is known is wasted work on the common path -- clients send
+            overlapping exports routinely.
+
+            Scoped to the destination account, matching dedupe_key's account_id term:
+            matched globally instead, another tenant's identical upload blocked this one
+            and named a batch the ownership guard would refuse to serve -- a cross-tenant
+            dead end that leaked someone else's batch id. A file hash identifies bytes,
+            not a tenant.
     """
     digest = content_hash(content)
 
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM import_batch WHERE sha256 = %s", (digest,))
+        cur.execute(
+            "SELECT id FROM import_batch WHERE sha256 = %s AND account_id = %s",
+            (digest, account_id),
+        )
         existing = cur.fetchone()
     if existing:
         raise DuplicateUploadError(digest, str(existing[0]))
@@ -113,7 +125,7 @@ def stage_batch(
             filename=filename, content_type="text/csv", account_id=account_id,
             actor_uid=actor_uid,
         )
-        document_id = stored["id"]
+        document_id = str(stored["id"])
 
     with conn.cursor() as cur:
         cur.execute(
@@ -158,6 +170,39 @@ def stage_batch(
         "batch_id": batch_id, "parsed": result.parsed, "rejected": result.rejected,
         "sha256": digest, "document_id": document_id, "notes": result.notes,
     }
+
+
+def list_batches(
+    conn: Any, investor_id: str, batch_status: str | None = "STAGED"
+) -> list[dict[str, Any]]:
+    """The batches one investor can see, newest first -- the answer to "where is that
+    batch id?" that does not require keeping the upload response around. ``None`` lists
+    every status; anything else filters on ``import_batch_status`` (invalid values are a
+    caller bug and surface as a Postgres error)."""
+    query = (
+        "SELECT id, filename, adapter, status::text, row_count, rejected_count, uploaded_at "
+        "FROM import_batch WHERE investor_id = %s"
+    )
+    params: list[Any] = [investor_id]
+    if batch_status is not None:
+        query += " AND status = %s"
+        params.append(batch_status)
+    query += " ORDER BY uploaded_at DESC, id"
+
+    with conn.cursor() as cur:
+        cur.execute(query, params)
+        return [
+            {
+                "batch_id": str(row[0]),
+                "filename": row[1],
+                "adapter": row[2],
+                "status": row[3],
+                "row_count": row[4],
+                "rejected_count": row[5],
+                "uploaded_at": row[6],
+            }
+            for row in cur.fetchall()
+        ]
 
 
 def review_batch(conn: Any, batch_id: str) -> dict[str, Any]:
@@ -367,7 +412,7 @@ def _reversals_for(conn: Any, transaction_ids: list[str]) -> list[Transaction]:
     reversals: list[Transaction] = []
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT account_id, isin, txn_date, txn_type, quantity, price, charges, "
+            "SELECT account_id, isin, txn_date, txn_type, quantity, price, charges, stt, "
             "source, source_ref FROM transaction WHERE id = ANY(%s)",
             (transaction_ids,),
         )
@@ -379,13 +424,17 @@ def _reversals_for(conn: Any, transaction_ids: list[str]) -> list[Transaction]:
                 Transaction(
                     isin=row[1], txn_date=row[2], txn_type=opposite[original],
                     quantity=row[4], price=row[5], charges=row[6],
+                    # stt is a SUBSET of charges (never zeroed independently) --
+                    # carrying it through the same way charges is carried through keeps
+                    # the "stt <= charges" invariant true on this synthetic row too.
+                    stt=row[7],
                     account_id=str(row[0]), source=Source.MANUAL,
-                    source_ref=f"REVERSAL-{row[8]}",
+                    source_ref=f"REVERSAL-{row[9]}",
                     raw_payload={
                         "correction": "reversing entry",
                         "reason": (
                             f"superseded by a higher-precedence source; the original was "
-                            f"{row[7]} and carried no charges"
+                            f"{row[8]} and carried no charges"
                         ),
                     },
                 )

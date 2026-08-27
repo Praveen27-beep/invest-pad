@@ -20,6 +20,7 @@ security ──< price            │
 | `code` | text unique | `C001`. Use this in files and logs, **never the name or PAN.** |
 | `display_name` | text | |
 | `family_group_id` | uuid null | HNI portfolios are family units: self, spouse, HUF, kids. Model it now; retrofitting is a migration. |
+| `owner_user_id` | uuid null FK→`app_user` | The login authorised to read this ledger (015). Every `/investors/{id}` scope checks it: another login gets 403; unowned rows are unreachable until claimed via `app.db.assign_owner`. |
 | `created_at` | timestamptz | |
 
 **Do not store PAN in this table.** If you need it (contract-note passwords), store a
@@ -53,7 +54,9 @@ only, cleanly, without arguing later about which trades were theirs.
 | `name` | text | |
 | `exchange` | text | `NSE`, `BSE`, `BOTH` |
 | `asset_class` | enum | `EQ` in MVP. The extension point. Codes come from `schema/asset_classes.json`. |
-| `sector` | text null | |
+| `sector` | text null | NSE Industry classification, refreshed by `app/db/load_sectors.py` |
+| `market_cap_bucket` | text null | `Large Cap`/`Mid Cap`/`Small Cap`, AMFI/SEBI classification, refreshed by `app/db/load_market_cap.py` (migration `012_market_cap.sql`) |
+| `fmv_31jan2018` | numeric(20,6) null | Equity grandfathering constant (`docs/TAX_ENGINE.md` §Grandfathering), migration `013_grandfathering_indexation.sql`. Sourced once from exchange archives; NULL for anything listed after 31 Jan 2018 or not yet sourced. Loader is `app/db/load_fmv_31jan2018.py` (reads a locally-sourced CSV — see `app/prices/fmv_31jan2018_source.py` for why this one is file-based, not a live URL like `sector`/`market_cap_bucket`'s); no real values are seeded yet, that remains data-acquisition work. |
 
 `asset_class` is the discriminator that lets mutual funds, bonds and SGBs join later
 without a schema change. Every engine function must switch on it rather than assume
@@ -77,6 +80,7 @@ and change with the annual budget, so they live in data, never in code.
 | `quantity` | numeric(20,6) | always positive; sign comes from `txn_type` |
 | `price` | numeric(20,6) | per unit, excluding charges |
 | `charges` | numeric(20,6) | brokerage + STT + GST + stamp, default 0 |
+| `stt` | numeric(20,6) | Securities Transaction Tax, ALREADY INCLUDED inside `charges` (a subset, not additive), default 0. Tracked separately because Income Tax Act Section 48 disallows STT as a deductible expense for capital gains, on both the buy and sell leg — see `docs/TAX_ENGINE.md`'s Session 10 status note. Populated only by the contract-note adapter. |
 | `source` | enum | `MANUAL`, `CSV`, `TRADEBOOK`, `CONTRACT_NOTE`, `EMAIL`, `CORP_ACTION` |
 | `source_ref` | text | contract-note number, trade id |
 | `dedupe_key` | text unique | **enforced at DB level** |
@@ -91,7 +95,9 @@ and change with the annual budget, so they live in data, never in code.
 | `SELL` | − | + (qty×price − charges) | |
 | `BONUS` | + | 0 | free shares; dilutes average cost |
 | `SPLIT_ADJ` | + | 0 | the *additional* shares from a split |
-| `DEMERGER_IN` | + | 0 | new ISIN appears; see `ENGINE_SPEC` for cost ratio |
+| `DEMERGER_IN` | + | 0 | new ISIN appears; see `ENGINE_SPEC` §11 for the cost ratio |
+| `DEMERGER_COST_OUT` | 0 | 0 | cost basis leaving the original security; `ENGINE_SPEC` §11 |
+| `DEMERGER_COST_IN` | 0 | 0 | cost basis arriving on the demerged security; `ENGINE_SPEC` §11 |
 | `TRANSFER_IN` | + | 0 | **must carry the original cost** or the position looks free |
 | `TRANSFER_OUT` | − | 0 | |
 | `IPO_ALLOT` | + | − | |
@@ -100,6 +106,13 @@ and change with the annual budget, so they live in data, never in code.
 
 For `DIVIDEND`, add a `dividend_amount numeric(20,6)` column rather than overloading
 `price` — dividends are per-holding cash events, not per-unit trades.
+
+For `DEMERGER_COST_OUT`/`DEMERGER_COST_IN`, add a `cost_transfer numeric(20,6)` column
+for the same reason: the amount moving between the original and demerged security is a
+capital-basis movement, not a per-unit trade, on a row whose `quantity` and `price` are
+both zero. The two rows always arrive as a pair — same `cost_transfer`, same `txn_date`
+(the demerger's ex-date, not whenever the scheme document is confirmed) — produced by
+`engine/demerger.py`'s `demerger_cost_split`. See `ENGINE_SPEC` §11.
 
 ### `dedupe_key`
 
@@ -213,6 +226,22 @@ for display.
 The reconciliation job compares this against `compute_holdings()`. A mismatch means
 exactly one of: a corporate action, an off-market transfer, a missed contract note, or
 a bug. All four need a human; all four are invisible without this check.
+
+## `cost_inflation_index`
+
+Static CBDT reference table for indexation (`docs/TAX_ENGINE.md` §Indexation), added by
+migration `013_grandfathering_indexation.sql`. One row per Indian financial year.
+
+| column | type | notes |
+|---|---|---|
+| `financial_year` | text PK | `"YYYY-YY"`, e.g. `"2023-24"` — same string convention as `app/routers/transactions.py`'s `_financial_year_bounds` and `schema/dividend.schema.json`'s `by_fy` keys |
+| `cii_value` | numeric(10,2) | CBDT-published index number for the year, e.g. `348` for FY2023-24 |
+| `source` | text | provenance, e.g. `CBDT` |
+
+Modelled on `index_level`, not on `price`: a CII value has no ISIN and is never
+joinable against `security`. Schema only as of this migration — no real CBDT values are
+seeded and no loader exists yet; that is sourcing work for a later Phase 3 session
+(`docs/PHASE3_PROMPTS.md` §4).
 
 ## Derived — computed, never stored
 

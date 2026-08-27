@@ -155,6 +155,28 @@ def test_apportionment_sums_to_exactly_the_stated_total(adapter) -> None:
     assert sum(r.transaction.charges for r in rows) == Decimal("7.39")
 
 
+def test_stt_is_apportioned_by_turnover_alongside_charges(adapter) -> None:
+    """stt is a labelled SUBSET of charges (Income Tax Act Section 48 needs it tracked
+    separately so app.engine.realised.tax_cost/tax_proceeds can exclude it) -- it gets
+    the identical pro-rata-by-turnover treatment as charges, but ties to its own note
+    total independently of charges' own allocation."""
+    second = (
+        "1786505400085603081 12:20:00 1089301 12:20:00 BLS-A/INE153T01027 B NSE 6 "
+        "0.0000 2663.95 (15983.70)\n"
+    )
+    charges_with_stt = (
+        "Taxable value of Supply (Brokerage) (Rs)2 (1.00)\n"
+        "Securities transaction tax (Rs) (9.00)\n"
+        "Stamp duty (Rs) (2.00)\n"
+    )
+    rows = parse(adapter, TRADE + second, charges=charges_with_stt).rows
+    big, small = rows[0].transaction, rows[1].transaction
+
+    assert big.charges == Decimal("9.00") and small.charges == Decimal("3.00")
+    assert big.stt == Decimal("6.75") and small.stt == Decimal("2.25")
+    assert big.stt + small.stt == Decimal("9.00"), "apportionment loses nothing"
+
+
 def test_rows_are_derived_not_certain(adapter) -> None:
     """Charges were apportioned, not read per trade. The score has to say so."""
     (staged,) = parse(adapter).rows

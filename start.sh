@@ -200,6 +200,34 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+# STEP 3.5 — DAILY SNAPSHOTS
+# ─────────────────────────────────────────────────────────────────────────────
+section "Step 3.5 — Daily snapshots"
+
+(cd "$BACKEND_DIR" && python - <<'PYEOF'
+import sys, os, psycopg
+from datetime import date
+from app.config import get_settings
+from app.prices.alerts import LoggingNotifier
+from app.routers.analytical import _run_snapshots
+
+url = os.environ["DATABASE_URL"]
+try:
+    conn = psycopg.connect(url)
+    settings = get_settings()
+    res = _run_snapshots(conn, date(2024, 1, 1), date.today(), LoggingNotifier())
+    conn.commit()
+    conn.close()
+    written = res.get("snapshots_written", 0)
+    fetched = res.get("price_dates_fetched", 0)
+    print(f"  snapshots written: {written}, price dates fetched: {fetched}")
+except Exception as exc:
+    print(f"  snapshots step note: {exc}", file=sys.stderr)
+PYEOF
+)
+ok "daily snapshots processing complete"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # STEP 4 — FRONTEND (Next.js)
 # ─────────────────────────────────────────────────────────────────────────────
 section "Step 4 — Frontend"

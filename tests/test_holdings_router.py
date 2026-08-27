@@ -3,10 +3,11 @@ needed. Same split ``tests/test_analytical_router.py`` uses for ``_snapshot_row`
 build the exact ``book`` dict ``_portfolio`` produces, feed it straight to the private
 shaping functions.
 
-``_allocation`` (by asset_class) and ``_sector_allocation`` (by security.sector) share
-one mechanism, ``_group_holdings`` -- these tests pin that the weight_pct arithmetic
-(ENGINE_SPEC section 2) agrees between the two, and that an unclassified sector groups
-under its own honest entry rather than vanishing or crashing.
+``_allocation`` (by asset_class), ``_sector_allocation`` (by security.sector) and
+``_market_cap_allocation`` (by security.market_cap_bucket) share one mechanism,
+``_group_holdings`` -- these tests pin that the weight_pct arithmetic (ENGINE_SPEC
+section 2) agrees across all three, and that an unclassified sector/bucket groups under
+its own honest entry rather than vanishing or crashing.
 """
 
 from __future__ import annotations
@@ -16,8 +17,10 @@ from typing import Any
 
 from app.engine.types import Holding
 from app.routers.holdings import (
+    UNCLASSIFIED_MARKET_CAP_LABEL,
     UNCLASSIFIED_SECTOR_LABEL,
     _allocation,
+    _market_cap_allocation,
     _sector_allocation,
 )
 
@@ -45,12 +48,26 @@ def a_book(holdings: list[Holding], meta: dict[str, dict[str, Any]]) -> dict[str
 
 META = {
     "INE1": {
-        "symbol": "AAA", "name": "Alpha Ltd", "asset_class": "EQ", "sector": "Financial Services"
+        "symbol": "AAA",
+        "name": "Alpha Ltd",
+        "asset_class": "EQ",
+        "sector": "Financial Services",
+        "market_cap_bucket": "Large Cap",
     },
     "INE2": {
-        "symbol": "BBB", "name": "Beta Ltd", "asset_class": "EQ", "sector": "Information Technology"
+        "symbol": "BBB",
+        "name": "Beta Ltd",
+        "asset_class": "EQ",
+        "sector": "Information Technology",
+        "market_cap_bucket": "Mid Cap",
     },
-    "INE3": {"symbol": "CCC", "name": "Gamma Ltd", "asset_class": "EQ", "sector": None},
+    "INE3": {
+        "symbol": "CCC",
+        "name": "Gamma Ltd",
+        "asset_class": "EQ",
+        "sector": None,
+        "market_cap_bucket": None,
+    },
 }
 
 
@@ -109,4 +126,47 @@ def test_sector_allocation_does_not_merge_unclassified_into_a_real_sector() -> N
     labels = {g["label"] for g in groups}
     assert "Financial Services" in labels
     assert UNCLASSIFIED_SECTOR_LABEL in labels
+    assert len(groups) == 2
+
+
+def test_market_cap_allocation_groups_and_weights_correctly() -> None:
+    holdings = [a_holding("INE1", "6000"), a_holding("INE2", "4000")]
+    book = a_book(holdings, META)
+
+    groups = _market_cap_allocation(book)
+
+    by_bucket = {g["market_cap_bucket"]: g for g in groups}
+    assert set(by_bucket) == {"Large Cap", "Mid Cap"}
+    assert by_bucket["Large Cap"]["weight_pct"] == 0.6
+    assert by_bucket["Mid Cap"]["weight_pct"] == 0.4
+    # Same market_value/Sigma(market_value) formula as asset_class/sector grouping -- not
+    # a separately reimplemented calculation.
+    assert Decimal(by_bucket["Large Cap"]["market_value"]) == Decimal("6000")
+
+
+def test_market_cap_allocation_surfaces_null_bucket_as_unclassified() -> None:
+    holdings = [a_holding("INE1", "6000"), a_holding("INE3", "4000")]
+    book = a_book(holdings, META)
+
+    groups = _market_cap_allocation(book)
+
+    by_bucket = {g["market_cap_bucket"]: g for g in groups}
+    assert None in by_bucket, "the null-bucket holding must appear, not vanish"
+    unclassified = by_bucket[None]
+    assert unclassified["label"] == UNCLASSIFIED_MARKET_CAP_LABEL
+    assert unclassified["weight_pct"] == 0.4
+    assert [c["isin"] for c in unclassified["children"]] == ["INE3"]
+    # It must not have been folded into some other bucket.
+    assert len(groups) == 2
+
+
+def test_market_cap_allocation_does_not_merge_unclassified_into_a_real_bucket() -> None:
+    holdings = [a_holding("INE1", "5000"), a_holding("INE3", "5000")]
+    book = a_book(holdings, META)
+
+    groups = _market_cap_allocation(book)
+
+    labels = {g["label"] for g in groups}
+    assert "Large Cap" in labels
+    assert UNCLASSIFIED_MARKET_CAP_LABEL in labels
     assert len(groups) == 2

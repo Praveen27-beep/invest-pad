@@ -25,6 +25,16 @@ pytestmark = pytest.mark.db
 ISIN = "INE153T01027"
 
 
+@pytest.fixture(autouse=True)
+def _consent(db, investor) -> None:
+    """Seeding here goes through the real create_transactions, which require_consent
+    now gates -- this file is about reconciliation logic, not the consent gate itself
+    (that's tests/test_db_consent_router.py's job)."""
+    from app.db import consent
+
+    consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
+
+
 def seed_a_buy(db, investor: str, quantity: str = "200") -> None:
     txn = TransactionIn(
         account_id=os.environ["_TEST_ACCOUNT_ID"],
@@ -51,10 +61,16 @@ def test_a_doubled_declared_quantity_reads_as_a_bonus(db, investor) -> None:
 
     (discrepancy,) = reconcile_holdings(investor, body, connection=db)
 
+    # money() (app/database.py) crosses Decimal as str(value), deliberately never
+    # normalized -- a value round-tripped through Postgres NUMERIC(20,6) carries its
+    # full stored scale, "200.000000", not the compact "200" a value never written to
+    # the database would str() to. This only surfaces once a test actually round-trips
+    # through a real database, which this file could not do until Postgres was
+    # available in this environment.
     assert discrepancy["isin"] == ISIN
-    assert discrepancy["computed_qty"] == "200"
+    assert discrepancy["computed_qty"] == "200.000000"
     assert discrepancy["declared_qty"] == "400"
-    assert discrepancy["difference"] == "200"
+    assert discrepancy["difference"] == "200.000000"
     assert discrepancy["ratio"] == 2.0
     assert "bonus" in discrepancy["likely_cause"].lower()
 

@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_owned_investor
 from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db import privacy
@@ -22,7 +22,7 @@ from app.storage.factory import get_store
 router = APIRouter(prefix="/privacy", tags=["privacy"])
 
 
-@router.get("/export")
+@router.get("/export", dependencies=[Depends(require_owned_investor)])
 def export_investor(
     investor_id: str = Query(...),
     include_identifiers: bool = Query(default=False),
@@ -36,7 +36,7 @@ def export_investor(
     )
 
 
-@router.post("/erase")
+@router.post("/erase", dependencies=[Depends(require_owned_investor)])
 def erase_investor(
     investor_id: str = Query(...),
     conn: Any = Depends(get_conn),

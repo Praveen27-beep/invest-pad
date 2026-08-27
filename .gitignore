@@ -39,13 +39,15 @@ scratch/
 
 # Synthetic and public fixtures are safe and DO belong in the repo -- re-admitted
 # below, deliberately and one at a time rather than with a blanket !fixtures/** :
-#   engine_cases.json      hand-computed unit cases, no real data
-#   bhavcopy/*.csv         public end-of-day exchange prices
-#   nse_sector_sample.csv  trimmed real rows from NSE's public Industry classification
+#   engine_cases.json           hand-computed unit cases, no real data
+#   bhavcopy/*.csv               public end-of-day exchange prices
+#   nse_sector_sample.csv        trimmed real rows from NSE's public Industry classification
+#   amfi_market_cap_sample.xlsx  trimmed real rows from AMFI's public large/mid/small-cap list
 !fixtures/engine_cases.json
 !fixtures/bhavcopy/
 !fixtures/bhavcopy/*.csv
 !fixtures/nse_sector_sample.csv
+!fixtures/amfi_market_cap_sample.xlsx
 
 # Connection strings with real credentials. DATABASE_URL is read from the environment
 # (db/connection.py refuses to guess one), and a .env holding a production URL is the

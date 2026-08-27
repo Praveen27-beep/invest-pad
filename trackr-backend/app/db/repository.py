@@ -21,9 +21,9 @@ UNIQUE_VIOLATION = "23505"
 
 _INSERT = """
 INSERT INTO transaction (
-    account_id, isin, txn_date, txn_type, quantity, price, charges,
-    dividend_amount, source, source_ref, dedupe_key, raw_payload
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    account_id, isin, txn_date, txn_type, quantity, price, charges, stt,
+    dividend_amount, cost_transfer, source, source_ref, dedupe_key, raw_payload
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (dedupe_key) DO NOTHING
 RETURNING id
 """
@@ -62,12 +62,26 @@ def save_transactions(
     rather than in a prior SELECT. A check-then-insert would race: two concurrent imports
     of the same file could both find nothing and both insert.
 
+    ``transaction.isin`` is a foreign key into ``security``, so every ISIN this batch
+    references must exist there first -- a bare, symbol-less upsert here is the backstop
+    for any caller that has not already done the richer version itself (``app.db.imports``
+    upserts with a real ``symbol`` from the parsed row before calling this; manual entry
+    via ``routers/transactions.py`` has no symbol to offer at all). ``ON CONFLICT DO
+    NOTHING`` means a caller that already inserted a richer row keeps it -- this can only
+    add a bare placeholder, never overwrite one.
+
     The audit row shares this transaction. If it fails, the inserts roll back with it.
     """
     inserted = 0
     skipped = 0
 
     with conn.cursor() as cur:
+        isins = sorted({txn.isin for txn in transactions})
+        for isin in isins:
+            cur.execute(
+                "INSERT INTO security (isin) VALUES (%s) ON CONFLICT (isin) DO NOTHING",
+                (isin,),
+            )
         for txn in transactions:
             key = txn.dedupe_key or make_dedupe_key(txn)
             cur.execute(
@@ -80,7 +94,9 @@ def save_transactions(
                     txn.quantity,
                     txn.price,
                     txn.charges,
+                    txn.stt,
                     txn.dividend_amount,
+                    txn.cost_transfer,
                     str(txn.source) if txn.source else Source.MANUAL.value,
                     txn.source_ref,
                     key,
@@ -158,8 +174,8 @@ def load_transactions(
         cur.execute(
             f"""
             SELECT t.id, t.account_id, t.isin, t.txn_date, t.txn_type, t.quantity,
-                   t.price, t.charges, t.dividend_amount, t.source, t.source_ref,
-                   t.dedupe_key, t.raw_payload, t.created_at
+                   t.price, t.charges, t.stt, t.dividend_amount, t.cost_transfer,
+                   t.source, t.source_ref, t.dedupe_key, t.raw_payload, t.created_at
             FROM transaction t
             JOIN account a ON a.id = t.account_id
             {where}
@@ -177,12 +193,14 @@ def load_transactions(
                 quantity=row[5],
                 price=row[6],
                 charges=row[7],
-                dividend_amount=row[8],
-                source=Source(row[9]),
-                source_ref=row[10],
-                dedupe_key=row[11],
-                raw_payload=row[12],
-                created_at=row[13],
+                stt=row[8],
+                dividend_amount=row[9],
+                cost_transfer=row[10],
+                source=Source(row[11]),
+                source_ref=row[12],
+                dedupe_key=row[13],
+                raw_payload=row[14],
+                created_at=row[15],
             )
             for row in cur.fetchall()
         ]
@@ -195,6 +213,7 @@ def create_investor(
     family_group_id: str | None = None,
     pan: str | None = None,
     onboarding_date: date | None = None,
+    owner_user_id: str | None = None,
     actor_uid: str | None = None,
 ) -> dict[str, Any]:
     """Onboard a new investor. The only way an investor row is created outside
@@ -222,11 +241,12 @@ def create_investor(
         try:
             cur.execute(
                 """
-                INSERT INTO investor (code, display_name, family_group_id, onboarding_date)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO investor (code, display_name, family_group_id,
+                                      onboarding_date, owner_user_id)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id, code, display_name, family_group_id, onboarding_date, created_at
                 """,
-                (code, display_name, family_group_id, onboarding_date),
+                (code, display_name, family_group_id, onboarding_date, owner_user_id),
             )
         except psycopg.errors.UniqueViolation as exc:
             raise DuplicateInvestorCodeError(code) from exc
@@ -278,6 +298,67 @@ def list_investor_ids(conn: Any) -> list[str]:
         return [str(row[0]) for row in cur.fetchall()]
 
 
+def create_personal_investor(
+    conn: Any, owner_user_id: str, display_name: str | None = None
+) -> dict[str, Any]:
+    """The investor a fresh registration lands in. Code is derived from the owner's
+    identity plus a random suffix -- uniqueness comes from retrying against the UNIQUE
+    index, never from a pre-SELECT (same race-condition discipline as app_user.email).
+
+    Returns the created investor dict with ``id`` stringified.
+    """
+    import secrets
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT email FROM app_user WHERE id = %s", (owner_user_id,))
+        row = cur.fetchone()
+    if row is None:
+        raise ValueError(f"no such user: {owner_user_id}")
+
+    stem = "".join(c for c in row[0].split("@", 1)[0].upper() if c.isalnum())[:8] or "INVESTOR"
+    for _ in range(5):
+        code = f"{stem}-{secrets.token_hex(2).upper()}"
+        try:
+            return create_investor(
+                conn,
+                code=code,
+                display_name=display_name or row[0].split("@", 1)[0],
+                owner_user_id=owner_user_id,
+                actor_uid=owner_user_id,
+            )
+        except DuplicateInvestorCodeError:
+            continue
+    raise DuplicateInvestorCodeError(f"{stem}-* (five random suffixes collided)")
+
+
+def get_investor_owner(conn: Any, investor_id: str) -> str | None:
+    """``investor.owner_user_id`` for this investor, stringified; ``None`` when the row
+    exists but nobody owns it yet, and ``None`` when it does not exist at all --
+    callers that must distinguish those two check existence separately."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT owner_user_id FROM investor WHERE id = %s", (investor_id,))
+        row = cur.fetchone()
+    return str(row[0]) if row and row[0] else None
+
+
+def investor_exists(conn: Any, investor_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM investor WHERE id = %s", (investor_id,))
+        return cur.fetchone() is not None
+
+
+def first_investor_id_for_user(conn: Any, user_id: str) -> str | None:
+    """The login's oldest owned investor -- what /auth/login echoes back so a client
+    stops carrying its own notion of "my investor" around."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM investor WHERE owner_user_id = %s ORDER BY created_at, id LIMIT 1",
+            (user_id,),
+        )
+        row = cur.fetchone()
+    return str(row[0]) if row else None
+
+
 def get_investor_onboarding_date(conn: Any, investor_id: str) -> date | None:
     """The investor's adviser-onboarding date -- ``compute_period_xirr``'s
     ``start_date``, via ``app.routers.analytical._period_xirr``. ``None`` both when the
@@ -289,6 +370,51 @@ def get_investor_onboarding_date(conn: Any, investor_id: str) -> date | None:
         cur.execute("SELECT onboarding_date FROM investor WHERE id = %s", (investor_id,))
         row = cur.fetchone()
     return row[0] if row else None
+
+
+def get_investor_code(conn: Any, investor_id: str) -> str | None:
+    """``investor.code`` -- what file names and forwarding addresses are built from."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT code FROM investor WHERE id = %s", (investor_id,))
+        row = cur.fetchone()
+    return row[0] if row else None
+
+
+def list_accounts(conn: Any, investor_id: str) -> list[dict[str, Any]]:
+    """Every account under one investor -- what the Import screen's account selector
+    offers instead of asking for a raw UUID nobody remembers. Ordered by broker then
+    id: ``account`` has no created_at column to sort on, and this is at least stable."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, broker, dp_id, client_id, is_advised, label
+            FROM account WHERE investor_id = %s ORDER BY broker, id
+            """,
+            (investor_id,),
+        )
+        return [
+            {
+                "id": str(row[0]),
+                "broker": row[1],
+                "dp_id": row[2],
+                "client_id": row[3],
+                "is_advised": row[4],
+                "label": row[5],
+            }
+            for row in cur.fetchall()
+        ]
+
+
+def account_belongs_to(conn: Any, account_id: str, investor_id: str) -> bool:
+    """True only when ``account_id`` is one of ``investor_id``'s own accounts. The
+    ingest path checks this explicitly so a mistyped or foreign account id is a clean
+    404 rather than a ForeignKeyViolation surfacing as a 500 mid-request."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM account WHERE id = %s AND investor_id = %s",
+            (account_id, investor_id),
+        )
+        return cur.fetchone() is not None
 
 
 def create_account(

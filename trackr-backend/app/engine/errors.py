@@ -55,6 +55,29 @@ class MissingIndexLevelError(EngineError):
         super().__init__(f"No usable {index_name} level for: {detail}")
 
 
+class MissingCIIError(EngineError):
+    """A pre-cutoff MF_DEBT lot's indexed cost of acquisition needs a CBDT Cost
+    Inflation Index value for its purchase and/or sale financial year
+    (``docs/TAX_ENGINE.md`` "Indexation"), and one or both years are absent from the
+    reference table.
+
+    RAISE, same posture as ``MissingPriceError`` and ``MissingIndexLevelError``: a
+    missing CII value silently defaulted to 1.0 would leave the cost unindexed while
+    looking computed, and skipping indexation for the lot would understate the cost of
+    acquisition -- both produce a confidently wrong (inflated) capital gain. CLAUDE.md
+    rule 4 ("a missing price raises, never defaults to zero") applies here to the CII
+    table exactly as it does to ``price``.
+
+    The financial years actually missing are carried on the exception (one or both of
+    the purchase/sale year) so the caller can name exactly what needs sourcing.
+    """
+
+    def __init__(self, financial_years: list[str] | None = None) -> None:
+        self.financial_years = sorted(financial_years or [])
+        detail = ", ".join(self.financial_years) if self.financial_years else "unknown FY"
+        super().__init__(f"No CII value for financial year(s): {detail}")
+
+
 class DuplicateTransactionError(EngineError):
     """A dedupe_key collision.
 
@@ -79,6 +102,44 @@ class UnparseableRowError(EngineError):
         self.row = row
         self.reason = reason
         super().__init__(f"Row {row}: {reason}" if row is not None else reason)
+
+
+class CapitalGainsNotApplicableError(EngineError):
+    """The asset class has no capital-gains holding-period threshold.
+
+    RAISE. ``schema/asset_classes.json`` marks ``long_term_days: null`` for classes
+    like FD (interest income, not a capital gain), PPF_EPF (tax-exempt), and
+    gold/jewellery/art (no threshold sourced yet) -- see
+    ``docs/TAX_ENGINE.md`` "Holding-period thresholds". Returning SHORT or LONG for
+    one of these would assert a capital-gains distinction that class's tax treatment
+    does not have, which is worse than refusing to answer.
+    """
+
+    def __init__(self, asset_class: str) -> None:
+        self.asset_class = asset_class
+        super().__init__(
+            f"{asset_class} has no capital-gains holding-period threshold "
+            "(long_term_days is null in schema/asset_classes.json) -- "
+            "SHORT/LONG classification does not apply"
+        )
+
+
+class DemergerAdjustmentError(EngineError):
+    """A ``DEMERGER_COST_OUT``/``DEMERGER_COST_IN`` row (``docs/ENGINE_SPEC.md`` section
+    11) replayed against an ISIN with no current position to adjust.
+
+    RAISE. It means the paired ``DEMERGER_IN``/``BUY`` history for that ISIN is missing,
+    or the two adjustment rows are dated or ordered wrong relative to it -- silently
+    dropping the cost transfer would leave a confidently wrong pool, the same failure
+    mode ``NegativeHoldingError`` guards against on the quantity side.
+    """
+
+    def __init__(self, isin: str | None = None) -> None:
+        self.isin = isin
+        super().__init__(
+            f"Demerger cost adjustment for {isin} has no open position to adjust -- "
+            "the paired DEMERGER_IN/BUY history is missing or the rows are mis-ordered"
+        )
 
 
 class NegativeHoldingError(EngineError):

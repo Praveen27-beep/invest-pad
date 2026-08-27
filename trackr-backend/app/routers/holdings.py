@@ -8,7 +8,8 @@ architectural rule.
 
 ``_sector_allocation`` groups the same valued holdings by ``security.sector`` instead of
 ``asset_class``, sharing ``_group_holdings``'s weight_pct arithmetic (ENGINE_SPEC section
-2) so the two groupings can never drift apart mathematically.
+2) so the two groupings can never drift apart mathematically. ``_market_cap_allocation``
+is the same mechanism again, keyed by ``security.market_cap_bucket``.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from app import securities
+from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money, rate
 from app.db.prices import latest_prices
 from app.db.repository import load_transactions
@@ -33,6 +35,11 @@ from app.schemas.holdings import HoldingsResponse, SummaryResponse
 #: NSE's classification source (app.prices.sector_sources) does not cover -- shown as
 #: its own honest group, never merged into a real sector or silently dropped.
 UNCLASSIFIED_SECTOR_LABEL = "Unclassified"
+
+#: What an unclassified market-cap group is labelled. security.market_cap_bucket is NULL
+#: for any ISIN AMFI's classification (app.prices.market_cap_sources) does not cover --
+#: shown as its own honest group, never merged into a real bucket or silently dropped.
+UNCLASSIFIED_MARKET_CAP_LABEL = "Unclassified"
 
 router = APIRouter(prefix="/investors", tags=["derived"])
 
@@ -209,7 +216,35 @@ def _sector_allocation(book: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-@router.get("/{investor_id}/summary", response_model=SummaryResponse)
+def _market_cap_allocation(book: dict[str, Any]) -> list[dict[str, Any]]:
+    """Market value grouped by security.market_cap_bucket -- ENGINE_SPEC section 2's
+    weight_pct formula, reused verbatim via ``_group_holdings``, just keyed differently.
+
+    A holding whose bucket is NULL (docs/DATA_MODEL.md -- AMFI's classification source
+    does not cover every ISIN) groups under its own ``market_cap_bucket: None`` entry
+    rather than being merged into a real bucket or excluded from the response.
+    """
+    total = book["market_value"]
+    groups = _group_holdings(
+        book, lambda h: securities.describe(book["meta"], h.isin)["market_cap_bucket"]
+    )
+    return [
+        {
+            "market_cap_bucket": bucket,
+            "label": bucket or UNCLASSIFIED_MARKET_CAP_LABEL,
+            "market_value": money(group_value),
+            "weight_pct": rate(group_value / total) if total != ZERO else None,
+            "children": children,
+        }
+        for bucket, group_value, children in groups
+    ]
+
+
+@router.get(
+    "/{investor_id}/summary",
+    response_model=SummaryResponse,
+    dependencies=[Depends(require_owned_investor)],
+)
 def summary(
     investor_id: str, as_of: date | None = None, connection: Any = Depends(get_conn)
 ) -> dict[str, Any]:
@@ -220,10 +255,15 @@ def summary(
         "unpriced": _unpriced(book),
         "allocation": _allocation(book),
         "allocation_by_sector": _sector_allocation(book),
+        "allocation_by_market_cap": _market_cap_allocation(book),
     }
 
 
-@router.get("/{investor_id}/holdings", response_model=HoldingsResponse)
+@router.get(
+    "/{investor_id}/holdings",
+    response_model=HoldingsResponse,
+    dependencies=[Depends(require_owned_investor)],
+)
 def holdings(
     investor_id: str,
     as_of: date | None = None,

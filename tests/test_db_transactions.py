@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import os
 from datetime import date
+from decimal import Decimal
 
 import pytest
+from app.db.repository import load_transactions
 from app.engine.types import TxnType
 from app.routers.transactions import create_transactions
 from app.schemas.transactions import TransactionIn
@@ -61,11 +63,19 @@ def test_reposting_the_same_row_is_idempotent(db, consented_investor) -> None:
     assert txn_count(db) == 1
 
 
-def test_all_ten_txn_types_are_accepted_and_written(db, consented_investor) -> None:
+def test_every_txn_type_is_accepted_and_written(db, consented_investor) -> None:
+    """Every TxnType, not a hardcoded count -- DEMERGER_COST_OUT/DEMERGER_COST_IN
+    (migration 017) grew this enum from 10 to 12 after this test was first written with
+    a literal ``10``, which silently stopped meaning "every type" the moment a new one
+    was added. len(TxnType) can't go stale the same way."""
     rows = [row(txn_type=t, source_ref=f"ref-{t.value}") for t in TxnType]
     summary = create_transactions(consented_investor, rows, connection=db)
-    assert summary == {"inserted": 10, "skipped_duplicates": 0, "rejected": []}
-    assert txn_count(db) == 10
+    assert summary == {
+        "inserted": len(TxnType),
+        "skipped_duplicates": 0,
+        "rejected": [],
+    }
+    assert txn_count(db) == len(TxnType)
 
 
 def test_a_batch_with_a_within_batch_duplicate_inserts_once(db, consented_investor) -> None:
@@ -73,6 +83,54 @@ def test_a_batch_with_a_within_batch_duplicate_inserts_once(db, consented_invest
     summary = create_transactions(consented_investor, duplicate_pair, connection=db)
     assert summary == {"inserted": 1, "skipped_duplicates": 1, "rejected": []}
     assert txn_count(db) == 1
+
+
+def test_an_isin_never_seen_before_is_accepted_not_a_foreign_key_violation(
+    db, consented_investor
+) -> None:
+    """PHASE1_FIELD_TEST_REPORT.md Finding 1: manual entry referencing a brand-new ISIN
+    (the normal case for any new investor -- every ISIN is new) used to fail with an
+    unhandled ForeignKeyViolation because nothing on this path created the `security` row
+    first, unlike app.db.imports's CSV path. `INE153T01027` (this file's `row()` default)
+    is pre-seeded by the `investor` fixture, which is exactly why no existing test here
+    caught this -- this one deliberately uses an ISIN nothing has inserted yet."""
+    never_seen = TransactionIn(
+        account_id=os.environ["_TEST_ACCOUNT_ID"],
+        isin="INE040A01034",
+        txn_date=date(2024, 1, 10),
+        txn_type="BUY",
+        quantity="10",
+        price="100",
+        source="MANUAL",
+        source_ref="new-isin",
+    )
+    summary = create_transactions(consented_investor, [never_seen], connection=db)
+    assert summary == {"inserted": 1, "skipped_duplicates": 0, "rejected": []}
+    with db.cursor() as cur:
+        cur.execute("SELECT isin FROM security WHERE isin = 'INE040A01034'")
+        assert cur.fetchone() is not None
+
+
+def test_cost_transfer_survives_a_save_and_load_round_trip(db, consented_investor) -> None:
+    """docs/trackr_plus_phase3_overview.md section 7: a DEMERGER_COST_OUT/IN pair used to
+    write every field except cost_transfer -- the one field that makes the correction
+    meaningful -- and reload as a silent no-op. Pins the fix at the same layer the bug
+    lived in: save_transactions -> load_transactions, not just the pure engine function."""
+    demerger_out = TransactionIn(
+        account_id=os.environ["_TEST_ACCOUNT_ID"],
+        isin="INE153T01027",
+        txn_date=date(2024, 6, 1),
+        txn_type="DEMERGER_COST_OUT",
+        quantity="0",
+        price="0",
+        cost_transfer="1234.567890",
+        source="MANUAL",
+        source_ref="demerger-out",
+    )
+    create_transactions(consented_investor, [demerger_out], connection=db)
+    loaded = load_transactions(db, investor_id=consented_investor)
+    reloaded = next(t for t in loaded if t.source_ref == "demerger-out")
+    assert reloaded.cost_transfer == Decimal("1234.567890")
 
 
 def test_an_unknown_account_id_is_refused_by_the_database(db, consented_investor) -> None:

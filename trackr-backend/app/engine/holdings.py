@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
-from app.engine.errors import NegativeHoldingError
+from app.engine.errors import DemergerAdjustmentError, NegativeHoldingError
 from app.engine.ledger import ordered
 from app.engine.lots import compute_lots
 from app.engine.types import (
@@ -19,6 +19,7 @@ from app.engine.types import (
     ZERO,
     Holding,
     Transaction,
+    TxnType,
 )
 
 #: A price older than this many days is not a current price. Carrying one forward
@@ -57,8 +58,14 @@ def compute_holdings(
     BUY, IPO_ALLOT, TRANSFER_IN                 +qty        + (qty * price) + charges
     SELL, TRANSFER_OUT, BUYBACK                 -qty        - pool * (qty / held)
     BONUS, SPLIT_ADJ, DEMERGER_IN               +qty        unchanged
+    DEMERGER_COST_OUT                           0           - cost_transfer
+    DEMERGER_COST_IN                            0           + cost_transfer
     DIVIDEND                                    0           unchanged
     ==========================================  ==========  =========================
+
+    ``DEMERGER_COST_OUT``/``DEMERGER_COST_IN`` are the later, paired correction to
+    ``DEMERGER_IN``'s zero-cost placeholder above, once a scheme document's cost ratio
+    is known -- see ENGINE_SPEC section 11 and ``engine/demerger.py``.
 
     ``avg_cost = pool / quantity``.
 
@@ -129,6 +136,23 @@ def compute_holdings(
             # what must stay put here; that is the invariant the bonus case checks.
             quantities[isin] = held + txn.quantity
             pools.setdefault(isin, ZERO)
+
+        elif txn.txn_type is TxnType.DEMERGER_COST_OUT:
+            # ENGINE_SPEC section 11. Quantity is untouched -- a demerger's cost ratio
+            # moves cost basis, not shares. Requires a current position: this row
+            # correcting DEMERGER_IN's zero-cost placeholder with nothing to correct
+            # means the paired DEMERGER_IN/BUY history is missing or mis-ordered.
+            if held <= ZERO:
+                raise DemergerAdjustmentError(isin)
+            pools[isin] = pool - txn.cost_transfer
+
+        elif txn.txn_type is TxnType.DEMERGER_COST_IN:
+            # The other half of the same pair, on the demerged security. Must follow the
+            # DEMERGER_IN row that created this position -- see ENGINE_SPEC section 11's
+            # ordering note.
+            if held <= ZERO:
+                raise DemergerAdjustmentError(isin)
+            pools[isin] = pool + txn.cost_transfer
 
         # DIVIDEND moves neither quantity nor pool. It is a cash event, and shows up in
         # the XIRR series rather than here.

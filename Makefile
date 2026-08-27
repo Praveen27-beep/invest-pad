@@ -1,4 +1,4 @@
-.PHONY: test test-engine test-golden test-demo-fixture lint fmt install dev seed-demo
+.PHONY: test test-engine test-contribution test-tax test-golden test-demo-fixture lint fmt install dev seed-demo
 
 # Runtime code lives under trackr-backend/app/ (see docs/structure_revamp_plan.md).
 # trackr-backend is installed editable into the same venv as this root package's dev
@@ -8,10 +8,20 @@ install:
 	pip install -e ".[dev]"
 	pip install -e "trackr-backend[dev,db,storage,pdf]"
 
-test: test-engine test-golden test-demo-fixture lint
+test: test-engine test-contribution test-tax test-golden test-demo-fixture lint
 
 test-engine:          ## hand-computed cases from ENGINE_SPEC.md
 	pytest tests/test_engine_cases.py -v
+
+test-contribution:    ## per-open-question assertions for ENGINE_SPEC.md section 10
+	pytest tests/test_contribution.py -v
+
+test-tax:              ## Phase 3 tax engine -- hand-computed cases, docs/TAX_ENGINE.md
+	pytest tests/test_tax_classification.py tests/test_grandfathering.py \
+	       tests/test_indexation.py tests/test_demerger.py tests/test_schedule_112a.py \
+	       tests/test_itr_capital_gains.py tests/test_cii_source.py \
+	       tests/test_fmv_31jan2018_source.py tests/test_market_cap_sources.py \
+	       tests/test_import_staging.py -v
 
 test-golden:          ## the real 324-trade portfolio
 	pytest tests/test_golden_portfolio.py -v

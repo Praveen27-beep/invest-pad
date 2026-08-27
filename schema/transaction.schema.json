@@ -34,6 +34,8 @@
         "BONUS",
         "SPLIT_ADJ",
         "DEMERGER_IN",
+        "DEMERGER_COST_OUT",
+        "DEMERGER_COST_IN",
         "TRANSFER_IN",
         "TRANSFER_OUT",
         "IPO_ALLOT",
@@ -54,9 +56,17 @@
       "$ref": "#/$defs/decimal",
       "description": "Brokerage + STT + GST + stamp, combined. Defaults to 0."
     },
+    "stt": {
+      "$ref": "#/$defs/decimal",
+      "description": "Securities Transaction Tax -- ALREADY INCLUDED inside `charges` (a subset, not additive). Tracked separately only because Income Tax Act Section 48 disallows STT specifically as a deductible expense for capital-gains computation, on both the buy and sell leg, while brokerage/GST/stamp remain allowable. Defaults to 0 -- absence of data (every adapter except zerodha_contract_note.py, which apportions it the same pro-rata-by-turnover way as charges), never evidence no STT was paid. Never subtract this a second time from `charges` -- it is already counted there. See docs/TAX_ENGINE.md's Session 10 status note."
+    },
     "dividend_amount": {
       "$ref": "#/$defs/decimal",
       "description": "Used only when txn_type is DIVIDEND, where quantity and price are 0. A separate field rather than overloading `price`, because a dividend is a per-holding cash event, not a per-unit trade."
+    },
+    "cost_transfer": {
+      "$ref": "#/$defs/decimal",
+      "description": "Used only when txn_type is DEMERGER_COST_OUT or DEMERGER_COST_IN, where quantity and price are 0. The absolute cost-basis amount moving between the original and demerged security per the scheme document's cost ratio (docs/ENGINE_SPEC.md section 11) -- a separate field rather than overloading `price`, for the same reason as `dividend_amount`: this is a capital-basis movement, not a per-unit trade."
     },
     "source": {
       "type": "string",

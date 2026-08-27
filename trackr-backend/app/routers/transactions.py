@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money
 from app.db.consent import require_consent
 from app.db.repository import load_transactions, save_transactions
@@ -27,7 +28,11 @@ from app.schemas.transactions import (
 router = APIRouter(prefix="/investors", tags=["transactions", "derived"])
 
 
-@router.get("/{investor_id}/transactions", response_model=list[TransactionOut])
+@router.get(
+    "/{investor_id}/transactions",
+    response_model=list[TransactionOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def transactions(
     investor_id: str,
     isin: str | None = None,
@@ -56,7 +61,9 @@ def transactions(
             "quantity": money(t.quantity),
             "price": money(t.price),
             "charges": money(t.charges),
+            "stt": money(t.stt),
             "dividend_amount": money(t.dividend_amount),
+            "cost_transfer": money(t.cost_transfer),
             "source": str(t.source) if t.source else None,
             "source_ref": t.source_ref,
             "created_at": t.created_at,
@@ -65,7 +72,11 @@ def transactions(
     ]
 
 
-@router.post("/{investor_id}/transactions", response_model=ImportSummaryOut)
+@router.post(
+    "/{investor_id}/transactions",
+    response_model=ImportSummaryOut,
+    dependencies=[Depends(require_owned_investor)],
+)
 def create_transactions(
     investor_id: str,
     body: list[TransactionIn],
@@ -92,7 +103,9 @@ def create_transactions(
             quantity=t.quantity,
             price=t.price,
             charges=t.charges,
+            stt=t.stt,
             dividend_amount=t.dividend_amount,
+            cost_transfer=t.cost_transfer,
             account_id=t.account_id,
             source=t.source,
             source_ref=t.source_ref,
@@ -108,7 +121,11 @@ def create_transactions(
     }
 
 
-@router.get("/{investor_id}/lots", response_model=list[LotOut])
+@router.get(
+    "/{investor_id}/lots",
+    response_model=list[LotOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def lots(
     investor_id: str, as_of: date | None = None, connection: Any = Depends(get_conn)
 ) -> list[dict[str, Any]]:
@@ -149,7 +166,11 @@ def _financial_year_bounds(fy: str) -> tuple[date, date]:
     return date(start_year, 4, 1), date(end_year, 3, 31)
 
 
-@router.get("/{investor_id}/realised", response_model=list[RealisedOut])
+@router.get(
+    "/{investor_id}/realised",
+    response_model=list[RealisedOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def realised(
     investor_id: str, fy: str | None = None, connection: Any = Depends(get_conn)
 ) -> list[dict[str, Any]]:
@@ -177,7 +198,11 @@ def realised(
     ]
 
 
-@router.get("/{investor_id}/dividends", response_model=list[DividendSummaryOut])
+@router.get(
+    "/{investor_id}/dividends",
+    response_model=list[DividendSummaryOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def dividends(investor_id: str, connection: Any = Depends(get_conn)) -> list[dict[str, Any]]:
     """Dividend income, per ISIN and per financial year (app.engine.dividends).
 

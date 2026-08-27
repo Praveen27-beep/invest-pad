@@ -111,3 +111,14 @@ def get_active_session_by_token_hash(conn: Any, token_hash: str) -> dict[str, An
         if row is None:
             return None
         return dict(zip([c.name for c in cur.description], row, strict=True))
+
+
+def revoke_session(conn: Any, session_id: str) -> None:
+    """Mark one session revoked. Idempotent by construction -- setting a timestamp that
+    is already set changes nothing -- because refresh rotation and logout can race."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE app_session SET revoked_at = now() "
+            "WHERE id = %s AND revoked_at IS NULL",
+            (session_id,),
+        )

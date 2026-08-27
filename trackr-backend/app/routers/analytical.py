@@ -28,7 +28,8 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.auth.dependencies import get_current_user
+from app import securities
+from app.auth.dependencies import get_current_user, require_owned_investor
 from app.config import Settings, get_settings
 from app.database import get_conn, money, rate
 from app.db import snapshots
@@ -46,12 +47,13 @@ from app.db.repository import (
     load_transactions,
 )
 from app.engine.benchmark import compute_benchmark, required_index_dates
+from app.engine.contribution import compute_contribution
 from app.engine.errors import MissingIndexLevelError, MissingPriceError
 from app.engine.holdings import MAX_PRICE_STALENESS_DAYS, compute_holdings
 from app.engine.returns import compute_absolute_return, compute_net_invested
 from app.engine.snapshot import compute_snapshot
 from app.engine.twrr import compute_twrr
-from app.engine.types import Snapshot, Transaction
+from app.engine.types import ZERO, Snapshot, Transaction
 from app.engine.xirr import (
     compute_period_xirr,
     compute_xirr,
@@ -69,6 +71,7 @@ from app.prices.index_sources import (
 )
 from app.prices.pipe import NSE_BHAVCOPY_EARLIEST, backfill_days, fetch_day, trading_days
 from app.schemas.analytical import (
+    ContributionResponse,
     PerformanceResponse,
     PriceRefreshResponse,
     SnapshotOut,
@@ -299,7 +302,11 @@ def _benchmark(
     }
 
 
-@router.get("/investors/{investor_id}/performance", response_model=PerformanceResponse)
+@router.get(
+    "/investors/{investor_id}/performance",
+    response_model=PerformanceResponse,
+    dependencies=[Depends(require_owned_investor)],
+)
 def performance(
     request: Request,
     investor_id: str,
@@ -436,6 +443,7 @@ def performance(
         "twrr_5y": rate(twrr_5y),
         "period_xirr": rate(period_xirr_value),
         "period_start": period_start,
+        "cagr": None,  # permanent, by decision -- see module docstring, section 5
         "absolute_return": rate(absolute_return),
         "invested": money(snapshot.invested),
         "market_value": money(snapshot.market_value),
@@ -459,7 +467,11 @@ def _snapshot_row(snapshot: Snapshot) -> dict[str, Any]:
     }
 
 
-@router.get("/investors/{investor_id}/snapshots", response_model=list[SnapshotOut])
+@router.get(
+    "/investors/{investor_id}/snapshots",
+    response_model=list[SnapshotOut],
+    dependencies=[Depends(require_owned_investor)],
+)
 def list_snapshots(
     investor_id: str,
     start: date,
@@ -488,6 +500,78 @@ def list_snapshots(
         )
     rows = snapshots.list_snapshots_range(connection, investor_id, advised_only, start, end)
     return [_snapshot_row(row) for row in rows]
+
+
+@router.get(
+    "/investors/{investor_id}/contribution",
+    response_model=ContributionResponse,
+    dependencies=[Depends(require_owned_investor)],
+)
+def contribution(
+    investor_id: str,
+    period_start: date,
+    as_of: date | None = None,
+    advised_only: bool = False,
+    connection: Any = Depends(get_conn),
+) -> dict[str, Any]:
+    """Per-ISIN rupee attribution of the portfolio's gain over
+    ``(period_start, as_of]`` -- docs/ENGINE_SPEC.md section 10, the first
+    Intelligence-layer feature per ``docs/PRODUCT_VISION.md``.
+
+    Unlike the XIRR/TWRR windows above, there is no persisted-snapshot fast path here
+    (``_window_xirr``'s step 2): ``portfolio_snapshot`` carries only portfolio-level
+    totals, not a per-ISIN breakdown, and this needs the latter at BOTH ``period_start``
+    and ``as_of``. So both ends are always resolved live, the same way
+    ``_window_xirr``'s step 3 fallback works -- ``compute_holdings`` at that date against
+    prices looked up for it -- via ``compute_contribution`` itself, which raises
+    ``MissingPriceError`` (caught by the global handler, 409) naming any held ISIN
+    missing a price at either end, never substituting zero.
+
+    ``period_start`` has no default the way ``fy_xirr``'s 1-April anchor does: the
+    caller states the window explicitly, same as ``/snapshots``' ``start``/``end``.
+    """
+    resolved_as_of = as_of or date.today()
+    if period_start > resolved_as_of:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "period_start must be on or before as_of"
+        )
+
+    transactions = load_transactions(
+        connection, investor_id=investor_id, advised_only=advised_only
+    )
+
+    start_isins = [h.isin for h in compute_holdings(transactions, period_start)]
+    start_prices = latest_prices(connection, start_isins, period_start)
+    end_isins = [h.isin for h in compute_holdings(transactions, resolved_as_of)]
+    end_prices = latest_prices(connection, end_isins, resolved_as_of)
+
+    results = compute_contribution(
+        transactions, start_prices, end_prices, period_start, resolved_as_of
+    )
+    meta = securities.lookup(connection, [c.isin for c in results])
+    total_gain = sum((c.gain for c in results), ZERO)
+
+    return {
+        "as_of": resolved_as_of,
+        "period_start": period_start,
+        "total_gain": money(total_gain),
+        "contributions": sorted(
+            (
+                {
+                    "isin": c.isin,
+                    "symbol": securities.describe(meta, c.isin)["symbol"],
+                    "start_value": money(c.start_value),
+                    "end_value": money(c.end_value),
+                    "net_flow": money(c.net_flow),
+                    "gain": money(c.gain),
+                    "pct_of_total": rate(c.pct_of_total),
+                }
+                for c in results
+            ),
+            key=lambda row: Decimal(row["gain"]),
+            reverse=True,
+        ),
+    }
 
 
 @router.post("/ops/prices/refresh", response_model=PriceRefreshResponse)

@@ -81,6 +81,7 @@ def _to_transaction(row: dict[str, Any], account_id: str) -> Transaction:
         quantity=_dec(row["quantity"]),
         price=_dec(row["price"]),
         charges=_dec(row.get("charges", "0")),
+        stt=_dec(row.get("stt", "0")),
         dividend_amount=_dec(row.get("dividend_amount", "0")),
         account_id=account_id,
         source=Source(row["source"]) if row.get("source") else None,

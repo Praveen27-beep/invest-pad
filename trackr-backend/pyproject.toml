@@ -24,6 +24,9 @@ dependencies = [
   # same as every other table.
   "bcrypt>=4.1",
   "pyjwt>=2.8",
+  # AMFI's market-cap classification (app/prices/market_cap_sources.py) is published as
+  # XLSX only, unlike sector's plain CSV -- this is the one dependency that adds.
+  "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]

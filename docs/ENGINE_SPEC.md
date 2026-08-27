@@ -137,7 +137,8 @@ remaining open: 50 @ 300
 ```
 
 MVP computes and displays realised gains. It does **not** produce a tax return —
-Section 112A grandfathering, bonus stripping and demerger cost ratios are Phase 2.
+Section 112A grandfathering and bonus stripping are Phase 2. Demerger cost ratios are
+specified in §11 and implemented in `engine/demerger.py`.
 
 ---
 
@@ -459,7 +460,281 @@ recomputable from the ledger.
 | `DuplicateTransactionError` | `dedupe_key` collision | skip silently, count, report in import summary |
 | `UnparseableRowError` | ingestion cannot map a row | reject that row with row number; import the rest |
 | `NegativeHoldingError` | sells exceed buys for an ISIN | flag loudly — indicates missing buy history |
+| `CapitalGainsNotApplicableError` | `classify_term` (Phase 3, `engine/tax_classification.py`) called for an asset class whose `long_term_days` is `null` | raise; never return a guessed SHORT/LONG |
+| `DemergerAdjustmentError` | `DEMERGER_COST_OUT`/`DEMERGER_COST_IN` (§11) replays against an ISIN with no current position | raise; the paired `DEMERGER_IN`/`BUY` history is missing or the rows are mis-ordered or mis-dated |
 
 `NegativeHoldingError` is the signal that a tradebook was downloaded with a date
 filter. Console caps each download at 365 days; the fix is to pull one file per
 financial year going back until a download returns empty.
+
+---
+
+## 10. Contribution analysis
+
+```
+compute_contribution(transactions, start_prices, end_prices, start_date, as_of) -> Contribution[]
+```
+
+The first Intelligence-layer feature per `docs/PRODUCT_VISION.md` — "which holdings
+contributed most?" This section did not exist before this decision (confirmed by
+product decision, 2026-08-20): three genuinely open questions had no answer anywhere in
+this file, and per this repo's own rule ("never invent financial logic... if a case is
+not covered here, ask"), they were put to the product owner rather than guessed. All
+three are pinned below.
+
+### The formula
+
+Per ISIN, over the window `(start_date, as_of]`:
+
+```
+net_flow  = + (qty * price + charges)   for BUY, IPO_ALLOT, TRANSFER_IN   dated in the window
+            - (qty * price - charges)   for SELL, TRANSFER_OUT, BUYBACK   dated in the window
+            - dividend_amount           for DIVIDEND                     dated in the window
+
+gain      = (end_value - start_value) - net_flow
+```
+
+`start_value` and `end_value` are the ISIN's `market_value` (§2) at `start_date` and
+`as_of` respectively — `0` if the ISIN was not held on that date, never omitted.
+
+This is **not a new formula invented for this feature** — it is section 5's TWRR
+flow-adjustment (`_period_flow` / `sub_return`'s numerator), applied per-holding instead
+of portfolio-wide, expressed as a rupee amount instead of a ratio, and not chained or
+annualised because contribution answers "how many rupees did this holding add," not
+"at what rate." The acquiring/disposing type grouping is `ACQUIRING_TYPES` /
+`DISPOSING_TYPES` from `engine/types.py` — the same grouping `compute_holdings` uses for
+the cost pool — **not** TWRR's `PORTFOLIO_IN_TYPES` / `PORTFOLIO_OUT_TYPES`, which
+deliberately omit transfers. That is a required divergence, not an inconsistency: a
+`TRANSFER_IN` moves `market_value_i` (shares appear) without being gain, so leaving it
+out of `net_flow` here would misattribute a transfer as if it were 100% price
+appreciation. `BONUS` / `SPLIT_ADJ` / `DEMERGER_IN` correctly stay at zero flow, matching
+every other section in this file: a bonus does not, by itself, change what the position
+is worth (quantity rises, price adjusts down), so there is nothing to back out.
+
+**Dividends count as part of a holding's contribution (confirmed 2026-08-20).** Signed
+identically to how §5's TWRR treats them: an outflow that *increases* the gain figure —
+`- dividend_amount` inside `net_flow`, which is then subtracted, so a dividend paid adds
+to `gain` the same way it inflates a TWRR sub-period's numerator. This is the
+total-return convention, matching TWRR's own Candidate B decision rather than
+`net_invested`'s capital-only one (§5): a high-yield, flat-price holding must show real
+contribution, not zero, or the feature would misreport exactly the holdings a dividend
+strategy is built around.
+
+`pct_of_total = gain_i / total_gain`, where `total_gain = Σ gain_i` over every ISIN in
+the result (not computed independently — see below). `None` only when `total_gain == 0`
+exactly; defined and shown for any nonzero `total_gain`, **including negative** — a
+portfolio-wide loss still produces meaningful percentages (see the worked example).
+
+### Which ISINs appear
+
+Every ISIN held (`quantity > 0`) at `start_date`, held at `as_of`, or carrying at least
+one transaction dated in `(start_date, as_of]` — **including a position fully exited
+during the window** (confirmed 2026-08-20). `docs/PRODUCT_VISION.md` asks "which
+investments destroyed value?" as its own headline question; a holding dumped at a large
+loss mid-period is exactly that answer, and dropping it from the list because it is no
+longer held would hide the worst offender rather than surface it. There is no
+"holdings-only" companion variant the way §4 pairs `xirr_all` with `xirr_holdings` —
+every ISIN touched in the window is already in the one list, `end_value = 0` marking the
+ones no longer held.
+
+### Percentages are shown as-is, never capped (confirmed 2026-08-20)
+
+Two holdings can have contributions bigger in magnitude than the portfolio's total gain
+when they offset — one very positive, one very negative — producing percentages like
+`+69%` / `+41%` / `−10%` (the worked example below) or, in a more extreme real
+portfolio, figures further from a tidy 0–100% range. This is mathematically correct, not
+a bug to hide: it is the same "show both, don't flatter" posture §4 already takes with
+`xirr_all` vs `xirr_holdings` — normalizing or capping the percentage would misrepresent
+which holding actually helped or hurt more, and there is no way to rescale it that
+preserves that meaning.
+
+### What this needs that §4/§5's other windows don't
+
+`start_prices` must cover every ISIN **held at `start_date`**, and `end_prices` every
+ISIN **held at `as_of`** — two separate priced-holdings valuations, not one. Both go
+through `value_holdings` (§2) exactly as any other valuation does, so a missing price at
+either end raises `MissingPriceError` naming the ISIN — never a substituted zero. This
+also means the persisted `portfolio_snapshot` row (§8) **cannot** shortcut the
+`start_date` valuation the way it does for `_window_xirr` / `_window_twrr`: a snapshot
+row carries only portfolio-level totals, not a per-ISIN breakdown, and contribution
+needs the latter. The router resolves `start_prices` the same way `_window_xirr`'s live
+fallback already does — `compute_holdings` at `start_date` against prices looked up for
+that date — every time, not only on a snapshot cache miss.
+
+### Worked example
+
+Also `fixtures/engine_cases.json`'s `contribution_mid_period_buy_sell_and_dividend`
+case. Period `2025-01-01` (`start_date`) to `2025-12-31` (`as_of`).
+
+```
+ISIN A — held throughout, pays a dividend mid-period
+  start_value  100 @ 1,000 = 100,000
+  2025-06-15   DIVIDEND 4,000
+  end_value    100 @ 1,300 = 130,000
+  net_flow  = -4,000
+  gain      = (130,000 - 100,000) - (-4,000) = 34,000
+
+ISIN B — bought mid-period, still held
+  start_value  0 (not held)
+  2025-04-01   BUY 50 @ 2,000  ->  net_flow contribution +100,000
+  end_value    50 @ 2,400 = 120,000
+  net_flow  = 100,000
+  gain      = (120,000 - 0) - 100,000 = 20,000
+
+ISIN C — held at start, fully exited mid-period
+  start_value  100 @ 500 = 50,000
+  2025-07-01   SELL 100 @ 450  ->  net_flow contribution -45,000
+  end_value    0 (no longer held)
+  net_flow  = -45,000
+  gain      = (0 - 50,000) - (-45,000) = -5,000
+
+total_gain = 34,000 + 20,000 - 5,000 = 49,000
+
+pct_A =  34,000 / 49,000 =  0.693878   (69.39%)
+pct_B =  20,000 / 49,000 =  0.408163   (40.82%)
+pct_C =  -5,000 / 49,000 = -0.102041  (-10.20%)
+                                        sum = 1.000000 exactly
+```
+
+ISIN C answers the mid-period-full-exit question: its `gain` counts only the loss from
+`start_date`'s value (`50,000`, since it was already held then) to the sale, `-5,000` —
+not the position's entire lifetime realised gain, which could include cost from a
+purchase long before `start_date` and would double-count into an earlier period's
+contribution if included here. ISIN B answers the mid-period-buy question the same way
+in the other direction: its `gain` counts only from its own purchase date, because
+`start_value = 0` naturally excludes any period before it existed.
+
+### What is still undefined, and why
+
+`compute_contribution` returns a **single-period** breakdown, not an annualised rate —
+there is no "contribution IRR." Chaining rupee contributions across multiple sub-periods
+the way §5 chains TWRR ratios has no defined meaning here (rupee amounts don't compound
+the way ratios do), so a caller wanting a trailing-window contribution (FY, 1Y) simply
+calls this once with that window's `start_date` and `as_of` — there is no multi-snapshot
+variant to build, unlike TWRR.
+
+---
+
+## 11. Demerger cost ratio
+
+```
+demerger_cost_split(original_isin, new_isin, txn_date, original_cost_basis,
+                     cost_ratio_retained, source_ref=None) -> (Transaction, Transaction)
+```
+
+This section did not exist before this decision (confirmed with the user, 2026-08-20):
+`§1` and `§3` already flagged `DEMERGER_IN`'s cost ratio as a later phase, and per this
+repo's own rule ("never invent financial logic... if a case is not covered here, ask"),
+the two open design questions below were put to the user rather than guessed. Both are
+pinned here.
+
+### The problem
+
+Per `docs/TAX_ENGINE.md` "Corporate action tax nuances": a demerger carries **two**
+ratios — a *quantity* ratio (how many new shares per old share) and a *cost* ratio (how
+much of the original cost basis moves to the new company). Brokers routinely have only
+the first. `DEMERGER_IN` (§1, §3) already records the quantity ratio's effect and — by
+design, for the common case where the cost ratio isn't yet known — leaves the cost pool
+alone: the new security enters at zero cost, 100% of cost stays with the original. That
+is a deliberate placeholder, not a rule; this section is what corrects it once the
+company's scheme document supplies the actual cost ratio, and it does so **without ever
+touching `DEMERGER_IN` or any historical `BUY`/`SELL` row** — a scheme document can
+surface months after the corporate action itself, and `docs/TAX_ENGINE.md`'s "Never
+mutate history" rule means the correction can only ever be new rows.
+
+### The mechanism — two new paired txn_types
+
+| txn_type | isin | qty effect | cash effect | cost-pool effect |
+|---|---|---|---|---|
+| `DEMERGER_COST_OUT` | original (post-demerger) security | 0 | 0 | `− cost_transfer` |
+| `DEMERGER_COST_IN` | new demerged-in security | 0 | 0 | `+ cost_transfer` |
+
+`cost_transfer` is a new `Transaction` field, carried at full precision (Rule B applies
+only at emission, same as every other pool-affecting field). It exists for the same
+reason `dividend_amount` exists rather than overloading `price`: this is a capital-basis
+movement, not a per-unit trade, on a row whose `quantity` and `price` are both zero.
+
+Both rows are always produced as a pair: same `cost_transfer`, same `txn_date`,
+`source=CORP_ACTION`, and a shared `source_ref` (the scheme-document reference) for
+audit trail.
+
+**Dating — the demerger's ex-date**, i.e. the same date as the existing `DEMERGER_IN`
+row, never the (often much later) date the scheme document is actually confirmed.
+Holdings and lots are *never stored* — every read is a full replay of the whole ledger —
+so dating the correction at the ex-date makes it retroactive for free: any `SELL` that
+happened between the ex-date and confirmation is correctly priced the next time anything
+replays the ledger, with no need to touch that `SELL` row. Dating it at the confirmation
+date instead would leave those interim sells permanently wrong. This falls directly out
+of the "recompute on every read" architecture; it is not a preference.
+
+**Ordering — `DEMERGER_COST_IN` must be inserted after the existing `DEMERGER_IN` row.**
+`engine/ledger.py`'s `ordered()` sorts by `txn_date` alone and relies on Python's stable
+sort to break same-date ties by insertion order — there is no `id` tiebreak. Since
+`DEMERGER_COST_IN` shares `DEMERGER_IN`'s date, it must come after it in the list the
+caller assembles, or the FIFO replay (below) tries to spread cost across a lot that does
+not exist yet. `demerger_cost_split` cannot enforce this itself — it is a pure function
+over two already-extracted values, not the ledger, the same shape as
+`grandfathering.grandfathered_cost_of_acquisition(lot, fmv_31jan2018, sell_price)` — so
+it is a documented precondition on the caller instead.
+
+### Weighted-average effect (§1)
+
+Quantity is untouched on both ISINs. `pools[original_isin] -= cost_transfer`,
+`pools[new_isin] += cost_transfer`. `DEMERGER_IN`'s own row is untouched — it still
+enters the new ISIN at cost 0; `DEMERGER_COST_IN` is what corrects that afterward.
+
+### FIFO effect (§3) — proportional by quantity
+
+A scheme document gives one aggregate cost-ratio number for the whole position; it does
+not say which of several open lots loses (or gains) how much. Confirmed with the user:
+spread the change **proportionally by quantity** across every lot currently open on that
+ISIN — the FIFO analogue of §1's disposal rule (`pool × qty / held`), rather than
+consuming the delta oldest-lot-first the way a `SELL` consumes quantity.
+
+Distributing `delta = ±cost_transfer` across lots weighted by each lot's own quantity,
+then re-expressing as a per-unit change, cancels the lot's own quantity out of the
+formula — every open lot moves by the same flat **per-unit** amount:
+
+```
+per_unit_shift = delta / total_open_quantity
+new_cost_per_unit = old_cost_per_unit + per_unit_shift          # for every open lot
+```
+
+### Worked example
+
+```
+2023-01-15  BUY  1000 @ 100                     -> pool 100,000 (Company A, ISIN A)
+2024-06-01  DEMERGER_IN  500 shares Company B    -> already recorded, cost_transfer=0
+                                                     (today's zero-cost placeholder)
+
+Scheme document, sourced later: A retains 70% of cost, B receives 30%.
+cost_transfer = 100,000 × (1 − 0.70) = 30,000
+
+2024-06-01  DEMERGER_COST_OUT  ISIN A  cost_transfer=30,000
+2024-06-01  DEMERGER_COST_IN   ISIN B  cost_transfer=30,000
+
+Weighted average:
+  A: qty 1000 (unchanged), pool 100,000 − 30,000 = 70,000, avg_cost 70.00
+  B: qty  500 (unchanged), pool       0 + 30,000 = 30,000, avg_cost 60.00
+  70,000 + 30,000 = 100,000  ==  original pool. Sums back exactly.
+```
+
+FIFO spread, if A's 1000 shares were instead two open lots (600 @ 100, 400 @ 100 —
+same 100,000 pool):
+
+```
+delta = −30,000, total_open_quantity = 1000
+per_unit_shift = −30,000 / 1000 = −30
+
+lot 1 (qty 600): cost_per_unit 100 -> 70    (600 x 70 = 42,000)
+lot 2 (qty 400): cost_per_unit 100 -> 70    (400 x 70 = 28,000)
+42,000 + 28,000 = 70,000  ==  pool after the cost-out.
+```
+
+### Failure mode
+
+`DEMERGER_COST_OUT`/`DEMERGER_COST_IN` replaying against an ISIN with no current
+position (§9, `DemergerAdjustmentError`) means the paired `DEMERGER_IN`/`BUY` history is
+missing, or the two adjustment rows are mis-dated or mis-ordered relative to it. Raise —
+silently dropping the cost transfer would be a confidently wrong pool, the same failure
+mode `NegativeHoldingError` guards against on the quantity side.

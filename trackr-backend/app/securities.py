@@ -17,7 +17,13 @@ from typing import Any
 
 #: What a security with no row resolves to. ISIN is the identity and is always known, so
 #: a missing name degrades to showing the ISIN rather than to showing nothing.
-UNKNOWN = {"symbol": None, "name": None, "asset_class": "EQ", "sector": None}
+UNKNOWN = {
+    "symbol": None,
+    "name": None,
+    "asset_class": "EQ",
+    "sector": None,
+    "market_cap_bucket": None,
+}
 
 #: Display labels for the asset classes actually built. Phase 1 is EQ alone -- the other
 #: 29 codes in schema/asset_classes.json are seeded so the enum never migrates, not
@@ -31,7 +37,8 @@ def lookup(conn: Any, isins: list[str]) -> dict[str, dict[str, Any]]:
         return {}
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT isin, symbol, name, asset_class, sector FROM security WHERE isin = ANY(%s)",
+            "SELECT isin, symbol, name, asset_class, sector, market_cap_bucket "
+            "FROM security WHERE isin = ANY(%s)",
             (list(isins),),
         )
         return {
@@ -40,6 +47,7 @@ def lookup(conn: Any, isins: list[str]) -> dict[str, dict[str, Any]]:
                 "name": row[2],
                 "asset_class": row[3],
                 "sector": row[4],
+                "market_cap_bucket": row[5],
             }
             for row in cur.fetchall()
         }

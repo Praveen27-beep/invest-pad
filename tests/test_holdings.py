@@ -19,6 +19,7 @@ def txn(txn_type: str, qty: str, price: str, day: str, isin: str = "INE153T01027
         quantity=Decimal(qty),
         price=Decimal(price),
         charges=Decimal(kw.get("charges", "0")),
+        stt=Decimal(kw.get("stt", "0")),
     )
 
 
@@ -60,6 +61,23 @@ def test_charges_join_the_cost_pool() -> None:
     (h,) = holdings
     assert h.invested == Decimal("1050")
     assert h.avg_cost == Decimal("105")
+
+
+def test_invested_is_identical_whether_stt_is_populated_or_zero() -> None:
+    """compute_holdings reads txn.charges only, never txn.stt -- STT is a subset of
+    charges (already counted there), so a populated stt field must not change the
+    weighted-average invested/avg_cost figure CLAUDE.md's golden-fixture numbers and
+    the tax-facing fix (docs/TAX_ENGINE.md's Session 10 status note) both depend on
+    staying isolated from each other."""
+    with_stt = [
+        txn("BUY", "10", "100", "2024-01-10", charges="25", stt="15"),
+        txn("SELL", "4", "150", "2024-06-10", charges="10", stt="6"),
+    ]
+    without_stt = [
+        txn("BUY", "10", "100", "2024-01-10", charges="25"),
+        txn("SELL", "4", "150", "2024-06-10", charges="10"),
+    ]
+    assert compute_holdings(with_stt) == compute_holdings(without_stt)
 
 
 def test_closed_position_is_excluded() -> None:

@@ -26,6 +26,19 @@ class StageResultOut(BaseModel):
     notes: list[str]
 
 
+class BatchSummaryOut(BaseModel):
+    """One row of GET /ingest/batches -- enough to find a batch again and decide what
+    to do with it; the row-level detail is review_batch's job."""
+
+    batch_id: str
+    filename: str | None
+    adapter: str
+    status: str
+    row_count: int
+    rejected_count: int
+    uploaded_at: datetime
+
+
 class RejectionOut(BaseModel):
     row_number: int
     reason: str

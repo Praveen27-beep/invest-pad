@@ -17,12 +17,20 @@ export class ApiError extends Error {
    * blocking erasure, so the privacy page can explain why self-serve delete is
    * refused instead of showing a generic failure toast. */
   reasons?: string[];
-  constructor(status: number, message: string, isins?: string[], reasons?: string[]) {
+  batchId?: string;
+  constructor(
+    status: number,
+    message: string,
+    isins?: string[],
+    reasons?: string[],
+    batchId?: string
+  ) {
     super(message);
     this.status = status;
     this.name = "ApiError";
     this.isins = isins;
     this.reasons = reasons;
+    this.batchId = batchId;
   }
 }
 
@@ -32,6 +40,23 @@ interface RequestOptions {
   json?: unknown;
   formData?: FormData;
   query?: Record<string, string | number | boolean | undefined | null>;
+  /** Internal: set when this call is already the one automatic retry after a
+   * successful token refresh, so a second 401 surfaces instead of looping. */
+  _retry?: boolean;
+}
+
+/**
+ * Registered by AuthProvider (lib/auth-context.tsx). When a request comes back 401,
+ * the client calls it once for a fresh token -- POST /auth/refresh under the hood --
+ * and retries the original request with it. Kept as an injected hook rather than an
+ * import so api-client stays dependency-free: auth-context imports this module, never
+ * the reverse.
+ */
+type UnauthorizedHandler = () => Promise<string | null>;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
@@ -69,6 +94,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     let message = res.statusText;
     let isins: string[] | undefined;
     let reasons: string[] | undefined;
+    let batchId: string | undefined;
     try {
       const payload = await res.json();
       if (typeof payload?.detail === "string") message = payload.detail;
@@ -78,10 +104,29 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       }
       if (Array.isArray(payload?.isins)) isins = payload.isins;
       if (Array.isArray(payload?.reasons)) reasons = payload.reasons;
+      if (typeof payload?.batch_id === "string") batchId = payload.batch_id;
     } catch {
       // Non-JSON error body -- fall back to statusText.
     }
-    throw new ApiError(res.status, message, isins, reasons);
+
+    // An expired hour is not an error the user should ever see: exchange the dead
+    // token for a fresh one and replay the request. The refresh call itself is exempt
+    // -- when THAT is refused, the session is truly gone and login is the only way
+    // back, so the 401 must surface.
+    if (
+      res.status === 401 &&
+      !options._retry &&
+      options.token &&
+      unauthorizedHandler &&
+      path !== "/auth/refresh"
+    ) {
+      const freshToken = await unauthorizedHandler();
+      if (freshToken) {
+        return request<T>(path, { ...options, token: freshToken, _retry: true });
+      }
+    }
+
+    throw new ApiError(res.status, message, isins, reasons, batchId);
   }
 
   if (res.status === 204) return undefined as T;

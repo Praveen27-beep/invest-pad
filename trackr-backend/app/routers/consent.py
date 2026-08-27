@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, status
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_owned_investor
 from app.database import get_conn
 from app.db import consent
 from app.schemas.consent import (
@@ -32,6 +32,7 @@ router = APIRouter(prefix="/investors", tags=["consent"])
     "/{investor_id}/consent",
     response_model=ConsentGrantOut,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_owned_investor)],
 )
 def grant_consent(
     investor_id: str,
@@ -60,7 +61,11 @@ def grant_consent(
     }
 
 
-@router.post("/{investor_id}/consent/withdraw", response_model=ConsentWithdrawOut)
+@router.post(
+    "/{investor_id}/consent/withdraw",
+    response_model=ConsentWithdrawOut,
+    dependencies=[Depends(require_owned_investor)],
+)
 def withdraw_consent(
     investor_id: str,
     purpose: str = consent.PURPOSE_PORTFOLIO_TRACKING,
@@ -75,13 +80,17 @@ def withdraw_consent(
     return {"withdrawn_count": count}
 
 
-@router.get("/{investor_id}/consent", response_model=ConsentStatusOut)
+@router.get(
+    "/{investor_id}/consent",
+    response_model=ConsentStatusOut,
+    dependencies=[Depends(require_owned_investor)],
+)
 def consent_status(
     investor_id: str,
     purpose: str = consent.PURPOSE_PORTFOLIO_TRACKING,
     conn: Any = Depends(get_conn),
 ) -> dict[str, Any]:
-    """Read-only status check -- unauthenticated like the other GET endpoints under
+    """Read-only status check, owner-gated like every other endpoint under
     ``/investors/{id}/...``. Lets the frontend show current status without the
     localStorage-cache workaround ``AccountOnboarding.tsx`` needs only because no
     equivalent GET exists for accounts."""

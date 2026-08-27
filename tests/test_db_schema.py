@@ -30,6 +30,7 @@ def txn(qty: str = "100", price: str = "200", ref: str = "T1", **kw) -> Transact
         quantity=Decimal(qty),
         price=Decimal(price),
         charges=Decimal(kw.get("charges", "0")),
+        stt=Decimal(kw.get("stt", "0")),
         account_id=os.environ["_TEST_ACCOUNT_ID"],
         source=Source.TRADEBOOK,
         source_ref=ref,
@@ -184,6 +185,18 @@ def test_numeric_round_trips_without_drift(db, investor) -> None:
     assert isinstance(loaded.quantity, Decimal)
 
 
+def test_stt_round_trips_through_save_and_load(db, investor) -> None:
+    """stt is a subset of charges (Income Tax Act Section 48), threaded through
+    save_transactions/load_transactions the same way charges is -- see
+    docs/PHASE3_SESSION10_STT_FIX.md."""
+    repository.save_transactions(
+        db, [txn(charges="15.500000", stt="12.345678", ref="STT1")]
+    )
+    (loaded,) = repository.load_transactions(db, isin="INE153T01027")
+    assert loaded.stt == Decimal("12.345678")
+    assert loaded.charges == Decimal("15.500000")
+
+
 def test_loaded_rows_are_engine_objects(db, investor) -> None:
     """The boundary is enforced by what crosses it: Transactions, not rows."""
     repository.save_transactions(db, [txn()])
@@ -213,6 +226,100 @@ def test_isin_format_is_enforced(db) -> None:
     with db.cursor() as cur, pytest.raises(psycopg.errors.CheckViolation):
         cur.execute("INSERT INTO security (isin) VALUES ('NOTANISIN')")
     db.rollback()
+
+
+# --- tax reference data (fmv_31jan2018, cost_inflation_index) ------------------
+
+
+def test_fmv_31jan2018_rejects_zero(db) -> None:
+    """A real FMV is never zero -- 0 must never stand in for 'not sourced' (NULL)."""
+    import psycopg
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING"
+        )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            cur.execute("UPDATE security SET fmv_31jan2018 = 0 WHERE isin = 'INE153T01027'")
+    db.rollback()
+
+
+def test_fmv_31jan2018_accepts_null_and_a_positive_value(db) -> None:
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING"
+        )
+        cur.execute("SELECT fmv_31jan2018 FROM security WHERE isin = 'INE153T01027'")
+        assert cur.fetchone()[0] is None
+
+        cur.execute(
+            "UPDATE security SET fmv_31jan2018 = 123.456789 WHERE isin = 'INE153T01027'"
+        )
+        cur.execute("SELECT fmv_31jan2018 FROM security WHERE isin = 'INE153T01027'")
+        assert cur.fetchone()[0] == Decimal("123.456789")
+
+
+def test_cost_inflation_index_financial_year_format_is_enforced(db) -> None:
+    import psycopg
+
+    with db.cursor() as cur, pytest.raises(psycopg.errors.CheckViolation):
+        cur.execute(
+            "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
+            "VALUES ('FY24', 348, 'CBDT')"
+        )
+    db.rollback()
+
+
+def test_cost_inflation_index_rejects_non_positive_value(db) -> None:
+    import psycopg
+
+    with db.cursor() as cur, pytest.raises(psycopg.errors.CheckViolation):
+        cur.execute(
+            "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
+            "VALUES ('2023-24', 0, 'CBDT')"
+        )
+    db.rollback()
+
+
+def test_cost_inflation_index_enforces_one_row_per_year(db) -> None:
+    import psycopg
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
+            "VALUES ('2023-24', 348, 'CBDT')"
+        )
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            cur.execute(
+                "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
+                "VALUES ('2023-24', 350, 'CBDT')"
+            )
+    db.rollback()
+
+
+def test_cost_inflation_index_round_trips_without_drift(db) -> None:
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
+            "VALUES ('2023-24', 348.00, 'CBDT')"
+        )
+        cur.execute(
+            "SELECT cii_value FROM cost_inflation_index WHERE financial_year = '2023-24'"
+        )
+        assert cur.fetchone()[0] == Decimal("348.00")
+
+
+def test_cost_inflation_index_has_no_isin_column(db) -> None:
+    """Structural proof, mirroring index_level: a CII value has no ISIN and must never
+    be joinable against `security`."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'cost_inflation_index'"
+        )
+        columns = {r[0] for r in cur.fetchall()}
+    assert "isin" not in columns
+    assert {"financial_year", "cii_value", "source"} <= columns
 
 
 # --- audit ---------------------------------------------------------------------

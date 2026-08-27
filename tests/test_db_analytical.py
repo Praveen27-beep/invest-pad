@@ -48,6 +48,18 @@ FY_START = date(2024, 4, 1)
 AS_OF = date(2024, 9, 30)
 
 
+@pytest.fixture(autouse=True)
+def _consent(db, investor) -> None:
+    """This file is about performance/XIRR math, not the consent gate (that's
+    tests/test_db_consent_router.py's job) -- but every test here seeds its ledger
+    through the real create_transactions, which require_consent now gates. Granting it
+    once, for every test, is simpler and more honest than threading consented_investor
+    through 19 call sites that all want the same thing."""
+    from app.db import consent
+
+    consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
+
+
 def fake_request() -> Request:
     """A minimal Starlette Request -- enough to exercise ``request.state`` without an
     ASGI server, the same as calling the handler directly needs no HTTP client."""

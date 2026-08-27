@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_expiry_seconds: int = 3600
+    # The server-side session's horizon, deliberately far longer than the token's:
+    # the short JWT is what travels on every request; app_session is what a refresh
+    # exchange actually renews. Without this gap there is nothing to refresh -- a
+    # session that dies with its token makes "invalid or expired token" permanent
+    # until the next full login.
+    session_ttl_seconds: int = 30 * 24 * 3600
 
     # --- web --------------------------------------------------------------------
     # Comma-separated in the environment; split into a list for CORSMiddleware.

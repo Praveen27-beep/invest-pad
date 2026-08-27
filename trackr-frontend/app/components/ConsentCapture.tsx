@@ -21,7 +21,17 @@ const NOTICE_TEXT =
  * with a 403 otherwise (CLAUDE.md rule 6 / docs/COMPLIANCE.md §1's consent-first
  * requirement). Mirrors AccountOnboarding.tsx's shape, but unlike accounts a real
  * GET endpoint exists here, so status is read fresh rather than cached client-side. */
-export function ConsentCapture({ investorId, token }: { investorId: string; token: string | null }) {
+export function ConsentCapture({
+  investorId,
+  token,
+  onStatusChange,
+}: {
+  investorId: string;
+  token: string | null;
+  /** Lets a hosting page react (e.g. hide its own "consent required" banner) the
+   * moment consent is granted or withdrawn here, without re-fetching. */
+  onStatusChange?: (hasLiveConsent: boolean) => void;
+}) {
   const [status, setStatus] = useState<ConsentStatusOut | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,11 +43,22 @@ export function ConsentCapture({ investorId, token }: { investorId: string; toke
       return;
     }
     setError(null);
+    let cancelled = false;
     api
-      .get<ConsentStatusOut>(`/investors/${investorId}/consent`)
-      .then(setStatus)
-      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load consent status"));
-  }, [investorId]);
+      .get<ConsentStatusOut>(`/investors/${investorId}/consent`, { token })
+      .then((s) => {
+        if (!cancelled) setStatus(s);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError(
+            err instanceof ApiError ? err.message : "Could not load consent status"
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [investorId, token]);
 
   async function handleGrant() {
     setBusy(true);
@@ -51,6 +72,7 @@ export function ConsentCapture({ investorId, token }: { investorId: string; toke
         },
       });
       setStatus({ has_live_consent: true });
+      onStatusChange?.(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not record consent");
     } finally {
@@ -65,6 +87,7 @@ export function ConsentCapture({ investorId, token }: { investorId: string; toke
       await api.post(`/investors/${investorId}/consent/withdraw`, { token });
       setAcknowledged(false);
       setStatus({ has_live_consent: false });
+      onStatusChange?.(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not withdraw consent");
     } finally {
@@ -77,7 +100,15 @@ export function ConsentCapture({ investorId, token }: { investorId: string; toke
   }
 
   if (status === null) {
-    return <p className="text-sm text-navy-400">Checking consent status…</p>;
+    return (
+      <div className="space-y-2">
+        {error ? (
+          <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{error}</p>
+        ) : (
+          <p className="text-sm text-navy-400">Checking consent status…</p>
+        )}
+      </div>
+    );
   }
 
   return (

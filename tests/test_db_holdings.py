@@ -29,6 +29,16 @@ ISIN_UNADVISED = "INE242A01010"
 AS_OF = date(2024, 9, 30)
 
 
+@pytest.fixture(autouse=True)
+def _consent(db, investor) -> None:
+    """Seeding here goes through the real create_transactions, which require_consent
+    now gates -- this file is about the advised_only filter, not the consent gate
+    itself (that's tests/test_db_consent_router.py's job)."""
+    from app.db import consent
+
+    consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
+
+
 def buy(
     account_id: str, isin: str, day: date, quantity: str, price: str, ref: str
 ) -> TransactionIn:

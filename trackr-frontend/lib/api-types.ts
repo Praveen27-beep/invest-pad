@@ -75,6 +75,17 @@ export interface SectorAllocationGroupOut {
   children: HoldingOut[];
 }
 
+// security.market_cap_bucket is null for any ISIN AMFI's large/mid/small-cap
+// classification (app/db/load_market_cap.py) hasn't covered -- same honest-gap shape as
+// SectorAllocationGroupOut above.
+export interface MarketCapAllocationGroupOut {
+  market_cap_bucket: string | null;
+  label: string;
+  market_value: string | null;
+  weight_pct: number | null;
+  children: HoldingOut[];
+}
+
 export interface HoldingsResponse {
   as_of: string;
   holdings: HoldingOut[];
@@ -92,6 +103,7 @@ export interface SummaryResponse {
   unpriced: UnpricedOut;
   allocation: AllocationGroupOut[];
   allocation_by_sector: SectorAllocationGroupOut[];
+  allocation_by_market_cap: MarketCapAllocationGroupOut[];
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +142,32 @@ export interface PerformanceResponse {
   realised_to_date: string | null;
   benchmark: BenchmarkOut | null;
   warning: string | null;
+}
+
+// GET /investors/{id}/contribution -- app/schemas/analytical.py's ContributionOut/
+// ContributionResponse. The first Intelligence-layer feature (docs/PRODUCT_VISION.md,
+// docs/ENGINE_SPEC.md section 10): per-ISIN rupee attribution of the portfolio's gain
+// over (period_start, as_of]. A fully-exited holding still appears, with end_value "0"
+// -- never dropped, per section 10's "which investments destroyed value?" decision.
+export interface ContributionOut {
+  isin: string;
+  symbol: string | null;
+  start_value: string;
+  end_value: string;
+  net_flow: string;
+  gain: string;
+  // gain / total_gain. Shown uncapped -- can exceed 100% or go negative when holdings
+  // offset (section 10's "show as-is, never normalise" decision). Null only when
+  // total_gain is exactly zero.
+  pct_of_total: number | null;
+}
+
+export interface ContributionResponse {
+  as_of: string;
+  period_start: string;
+  total_gain: string;
+  // Sorted by gain, descending -- best contributor first, worst last.
+  contributions: ContributionOut[];
 }
 
 export interface PriceRefreshResponse {
@@ -508,4 +546,18 @@ export interface TokenResponse {
   token_type: string;
   expires_in: number;
   user: UserResponse;
+  /** The login's oldest owned investor (app/routers/auth.py). Always present on
+   * register; null on login when the user owns no investor. Clients take the id from
+   * here -- never from localStorage or a build-time default. */
+  investor_id: string | null;
+}
+
+export interface BatchSummaryOut {
+  batch_id: string;
+  filename: string | null;
+  adapter: string;
+  status: string;
+  row_count: number;
+  rejected_count: number;
+  uploaded_at: string;
 }

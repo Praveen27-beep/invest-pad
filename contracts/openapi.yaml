@@ -14,8 +14,16 @@ info:
       2. Transactions are APPEND-ONLY. There is no PUT or DELETE on /transactions;
          corrections are new reversing rows via POST.
 
+    A third, added with investor ownership (migration 015): every /investors/{id}
+    scope authorises against investor.owner_user_id. A caller authenticated as one
+    login gets 403 for an investor owned by another and 404 for one that does not
+    exist; unowned rows are unreachable until claimed (app.db.assign_owner).
+
 servers:
   - url: https://api.example.com/v1
+
+security:
+  - bearerAuth: []
 
 tags:
   - name: onboarding
@@ -150,6 +158,41 @@ paths:
                       no adapter yet.
         '404':
           description: no investor with this id
+
+  /investors/{investor_id}/accounts:
+    get:
+      tags: [onboarding]
+      summary: List the investor's broker accounts
+      description: |
+        Owner-scoped. Same shape as the POST response, forwarding addresses included.
+        Exists so clients can offer an account PICKER instead of asking a human to
+        paste an account UUID, and so an already-onboarded account is re-fetchable
+        rather than cached client-side forever.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Ordered by broker, then id
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, format: uuid }
+                    investor_id: { type: string, format: uuid }
+                    broker: { type: string }
+                    dp_id: { type: string, nullable: true }
+                    client_id: { type: string, nullable: true }
+                    is_advised: { type: boolean }
+                    label: { type: string, nullable: true }
+                    forwarding_addresses:
+                      type: array
+                      items: { type: string }
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login }
 
   /investors/{investor_id}/consent:
     get:
@@ -410,6 +453,52 @@ paths:
                 type: array
                 items: { $ref: 'https://mei.capital/schema/dividend.schema.json' }
 
+  /investors/{investor_id}/contribution:
+    get:
+      tags: [derived]
+      summary: Which holdings contributed most to the portfolio's gain over a period
+      description: |
+        The first Intelligence-layer feature per docs/PRODUCT_VISION.md (docs/ENGINE_SPEC.md
+        section 10): per-ISIN rupee attribution of the portfolio's total gain over
+        (period_start, as_of]. Every ISIN held at period_start, held at as_of, or
+        carrying a transaction dated in the window appears -- including a position
+        fully exited during the window, so a holding dumped at a large loss mid-period
+        cannot silently disappear from the list.
+
+        gain = (end_value - start_value) - net_flow, the per-holding mirror of section
+        5's TWRR flow adjustment, expressed as a rupee amount and not annualised.
+        Dividends count toward gain (total-return convention, matching TWRR's
+        Candidate B). pct_of_total is gain / total_gain, shown uncapped -- offsetting
+        holdings can legitimately show percentages above 100% or below 0%, and this is
+        never normalised away.
+
+        period_start has no default the way fy_xirr's 1-April anchor does: the caller
+        picks the window explicitly, same as /snapshots' start/end.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: period_start, in: query, required: true, schema: { type: string, format: date } }
+        - { name: as_of, in: query, schema: { type: string, format: date }, description: Defaults to today. }
+        - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [as_of, period_start, total_gain, contributions]
+                properties:
+                  as_of: { type: string, format: date }
+                  period_start: { type: string, format: date }
+                  total_gain: { $ref: 'https://mei.capital/schema/transaction.schema.json#/$defs/decimal' }
+                  contributions:
+                    type: array
+                    items: { $ref: 'https://mei.capital/schema/contribution.schema.json' }
+        '400':
+          description: period_start is after as_of
+        '409':
+          description: MissingPriceError - a held ISIN has no usable price at period_start or as_of
+
   /ingest/csv:
     post:
       tags: [ingestion]
@@ -417,6 +506,12 @@ paths:
       description: |
         Multi-file by design. Console caps each tradebook download at 365 days, so a
         full history is several files. Merge and dedupe server-side.
+
+        Per-file, never all-or-nothing: a file whose sha256 was staged before comes
+        back as its own entry naming the existing batch_id (notes say so), and the
+        remaining files in the same request still stage. Only an investor-level refusal
+        (401/403/consent) fails the request as a whole.
+      security: [{ bearerAuth: [] }]
       requestBody:
         content:
           multipart/form-data:
@@ -430,7 +525,56 @@ paths:
                   type: array
                   items: { type: string, format: binary }
       responses:
-        '200': { description: Import summary }
+        '202':
+          description: One staging result per file, in upload order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [batch_id, parsed, rejected, sha256, document_id, notes]
+                  properties:
+                    batch_id:    { type: string, format: uuid }
+                    parsed:      { type: integer }
+                    rejected:    { type: integer }
+                    sha256:      { type: string }
+                    document_id: { type: string, format: uuid, nullable: true }
+                    notes:       { type: array, items: { type: string } }
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login }
+        '422': { description: unknown adapter }
+
+  /ingest/batches:
+    get:
+      tags: [ingestion]
+      summary: List one investor's batches -- how a batch id stays findable
+      description: |
+        Owner-scoped like every /investors/{id} scope. Defaults to STAGED because that
+        is the state a reviewer needs back; pass status=null to list everything.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: investor_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [STAGED, PROMOTED, DISCARDED], default: STAGED } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [batch_id, adapter, status, row_count, rejected_count, uploaded_at]
+                  properties:
+                    batch_id:       { type: string, format: uuid }
+                    filename:       { type: string, nullable: true }
+                    adapter:        { type: string }
+                    status:         { type: string }
+                    row_count:      { type: integer }
+                    rejected_count: { type: integer }
+                    uploaded_at:    { type: string, format: date-time }
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login }
 
   /ingest/email:
     post:
@@ -552,3 +696,14 @@ paths:
               schema:
                 type: array
                 items: { $ref: 'https://mei.capital/schema/discrepancy.schema.json' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Issued by POST /auth/register and POST /auth/login. The response's
+        `investor_id` is the caller's active investor; clients take it from there and
+        never from a shared default.

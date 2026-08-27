@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, ApiError } from "./api-client";
+import { api, ApiError, setUnauthorizedHandler } from "./api-client";
 import type { LoginRequest, RegisterRequest, TokenResponse, UserResponse } from "./api-types";
 
 const TOKEN_KEY = "trackr.token";
@@ -51,9 +51,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         /* ignore malformed cache */
       }
     }
-    setInvestorIdState(
-      localStorage.getItem(INVESTOR_KEY) ?? process.env.NEXT_PUBLIC_DEFAULT_INVESTOR_ID ?? ""
-    );
+    // The investor id is NOT restored from a shared default: two browsers (or two
+    // accounts on one machine) reading one localStorage key -- or worse, one
+    // build-time env var -- is exactly how different accounts ended up looking at the
+    // same portfolio. It arrives per-login in TokenResponse and lives only for this
+    // session.
+    setInvestorIdState(localStorage.getItem(INVESTOR_KEY) ?? "");
     setAdvisedOnlyState(localStorage.getItem(ADVISED_ONLY_KEY) === "true");
     setReady(true);
   }, []);
@@ -68,8 +71,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const applySession = useCallback((res: TokenResponse) => {
     localStorage.setItem(TOKEN_KEY, res.token);
     localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+    // The server is the only source of "which investor am I". Overwrite whatever a
+    // previous session left here -- never merge across accounts.
+    if (res.investor_id) {
+      localStorage.setItem(INVESTOR_KEY, res.investor_id);
+    } else {
+      localStorage.removeItem(INVESTOR_KEY);
+    }
     setToken(res.token);
     setUser(res.user);
+    setInvestorIdState(res.investor_id ?? "");
   }, []);
 
   const login = useCallback(
@@ -91,14 +102,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    // The investor id belongs to the session, not the browser -- leaving it behind is
+    // how the next login starts from someone else's portfolio.
+    localStorage.removeItem(INVESTOR_KEY);
     setToken(null);
     setUser(null);
+    setInvestorIdState("");
   }, []);
 
   const setInvestorId = useCallback((id: string) => {
     localStorage.setItem(INVESTOR_KEY, id);
     setInvestorIdState(id);
   }, []);
+
+  useEffect(() => {
+    // One in-flight refresh shared by every request that hits a dead token at the
+    // same moment -- N pages loading at once must not fire N refreshes. The current
+    // token is read from localStorage at call time, not from this closure's state,
+    // so a second tab that already rotated the session picks up the newer token
+    // instead of replaying the revoked one.
+    let refreshInFlight: Promise<string | null> | null = null;
+    setUnauthorizedHandler(async () => {
+      const current = localStorage.getItem(TOKEN_KEY);
+      if (!current) return null;
+      if (!refreshInFlight) {
+        const run = async (): Promise<string | null> => {
+          try {
+            const res = await api.post<TokenResponse>("/auth/refresh", { token: current });
+            applySession(res);
+            return res.token;
+          } catch {
+            logout();
+            return null;
+          }
+        };
+        refreshInFlight = run().finally(() => {
+          refreshInFlight = null;
+        });
+      }
+      return refreshInFlight;
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [applySession, logout]);
 
   const value = useMemo(
     () => ({

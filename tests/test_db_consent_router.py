@@ -57,6 +57,24 @@ def ingest_settings(tmp_path: Path) -> Settings:
     )
 
 
+def claim(db, investor) -> None:
+    """POST /ingest/csv is also ownership-gated (app.auth.dependencies.
+    assert_owned_investor, added by 015_investor_ownership.sql after this file was
+    written) -- the plain ``investor`` fixture is deliberately unowned, so the ingest
+    tests below have to claim it for STAFF first or they hit the ownership 403 before
+    ever reaching the consent gate they exist to test."""
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO app_user (id, email, password_hash) VALUES (%s, %s, 'x') "
+            "ON CONFLICT (id) DO NOTHING",
+            (STAFF["id"], STAFF["email"]),
+        )
+        cur.execute(
+            "UPDATE investor SET owner_user_id = %s WHERE id = %s", (STAFF["id"], investor)
+        )
+    db.commit()
+
+
 def grant(db, investor, notice_version="v1", evidence_ref="msg-1") -> dict:
     return grant_consent(
         investor,
@@ -156,6 +174,7 @@ def test_transactions_endpoint_succeeds_once_consent_is_granted(db, investor) ->
 def test_ingest_csv_refuses_without_a_consent_grant(db, investor, tmp_path) -> None:
     import os
 
+    claim(db, investor)
     upload = UploadFile(file=io.BytesIO(CSV_ROW.encode()), filename="tradebook.csv")
     with pytest.raises(ConsentMissingError):
         import asyncio
@@ -168,6 +187,7 @@ def test_ingest_csv_refuses_without_a_consent_grant(db, investor, tmp_path) -> N
                 files=[upload],
                 conn=db,
                 settings=ingest_settings(tmp_path),
+                current_user=STAFF,
             )
         )
     with db.cursor() as cur:
@@ -179,6 +199,7 @@ def test_ingest_csv_succeeds_once_consent_is_granted(db, investor, tmp_path) -> 
     import asyncio
     import os
 
+    claim(db, investor)
     grant(db, investor)
     upload = UploadFile(file=io.BytesIO(CSV_ROW.encode()), filename="tradebook.csv")
     (result,) = asyncio.run(
@@ -189,6 +210,7 @@ def test_ingest_csv_succeeds_once_consent_is_granted(db, investor, tmp_path) -> 
             files=[upload],
             conn=db,
             settings=ingest_settings(tmp_path),
+            current_user=STAFF,
         )
     )
     assert result["parsed"] == 1

@@ -168,6 +168,11 @@ class ZerodhaContractNoteAdapter:
         )
         charges = parse_charges(text)
         total_charges = sum(charges.values(), Decimal("0"))
+        # STT is a SUBSET of total_charges, not additive -- apportioned separately below
+        # (same pro-rata-by-turnover treatment) only so Transaction.stt can carry it
+        # through for app.engine.realised.tax_cost/tax_proceeds. See docs/TAX_ENGINE.md's
+        # Session 10 status note.
+        total_stt = charges.get("stt", Decimal("0"))
 
         candidates, rejections = self._extract_rows(text, txn_date)
 
@@ -184,7 +189,7 @@ class ZerodhaContractNoteAdapter:
                 "rather than evidence the trades were free."
             )
 
-        rows = self._apportion(candidates, total_charges, account_id, contract_number)
+        rows = self._apportion(candidates, total_charges, total_stt, account_id, contract_number)
         return ParseResult(rows=rows, rejections=rejections, notes=notes)
 
     def _extract_rows(
@@ -242,6 +247,7 @@ class ZerodhaContractNoteAdapter:
         self,
         candidates: list[dict[str, Any]],
         total_charges: Decimal,
+        total_stt: Decimal,
         account_id: str,
         contract_number: str | None,
     ) -> list[StagedRow]:
@@ -249,21 +255,19 @@ class ZerodhaContractNoteAdapter:
         total_turnover = sum(turnovers, Decimal("0"))
 
         rows: list[StagedRow] = []
-        allocated = Decimal("0")
+        allocated_charges = Decimal("0")
+        allocated_stt = Decimal("0")
         for index, candidate in enumerate(candidates):
-            if total_turnover > 0 and total_charges > 0:
-                if index == len(candidates) - 1:
-                    # The last row absorbs the rounding remainder, so the apportioned
-                    # charges sum to exactly what the note states. Otherwise a portfolio
-                    # reconciled against the note is out by a few paise for no good reason.
-                    share = total_charges - allocated
-                else:
-                    share = (total_charges * turnovers[index] / total_turnover).quantize(
-                        Decimal("0.01")
-                    )
-                    allocated += share
-            else:
-                share = Decimal("0")
+            is_last = index == len(candidates) - 1
+            charges_share, allocated_charges = self._pro_rata_share(
+                total_charges, turnovers[index], total_turnover, allocated_charges, is_last
+            )
+            # stt is a SUBSET of charges, so it gets the identical treatment -- pro rata
+            # by turnover, last row absorbs its own rounding remainder -- but ties to its
+            # own note total independently of charges' allocation.
+            stt_share, allocated_stt = self._pro_rata_share(
+                total_stt, turnovers[index], total_turnover, allocated_stt, is_last
+            )
 
             rows.append(
                 StagedRow(
@@ -274,7 +278,8 @@ class ZerodhaContractNoteAdapter:
                         txn_type=candidate["txn_type"],
                         quantity=candidate["quantity"],
                         price=candidate["price"],
-                        charges=share,
+                        charges=charges_share,
+                        stt=stt_share,
                         account_id=account_id,
                         source=Source.CONTRACT_NOTE,
                         # The TRADE number, matching the tradebook's trade_id, so the same
@@ -292,3 +297,26 @@ class ZerodhaContractNoteAdapter:
                 )
             )
         return rows
+
+    @staticmethod
+    def _pro_rata_share(
+        total: Decimal,
+        turnover: Decimal,
+        total_turnover: Decimal,
+        allocated_so_far: Decimal,
+        is_last: bool,
+    ) -> tuple[Decimal, Decimal]:
+        """One row's share of ``total``, apportioned by turnover -- the same rule for
+        ``charges`` and ``stt`` alike, since ``stt`` is just a labelled subset of
+        ``charges`` and gets an identical, independent apportionment.
+
+        The last row absorbs the rounding remainder so the apportioned shares sum to
+        exactly what the note states, rather than being out by a few paise. Returns
+        ``(this row's share, the updated running allocation)``.
+        """
+        if total_turnover <= 0 or total <= 0:
+            return Decimal("0"), allocated_so_far
+        if is_last:
+            return total - allocated_so_far, total
+        share = (total * turnover / total_turnover).quantize(Decimal("0.01"))
+        return share, allocated_so_far + share

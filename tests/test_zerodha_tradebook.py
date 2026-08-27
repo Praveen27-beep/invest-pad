@@ -195,3 +195,65 @@ def test_real_exports_parse_without_rejections(adapter) -> None:
         result = adapter.parse(open(path, "rb").read(), account_id=ACCOUNT)
         assert result.parsed == expected
         assert result.rejected == 0
+
+
+def test_title_case_and_tab_separated_headers(adapter) -> None:
+    """Ensure Title Case headers and tab separation parse cleanly."""
+    content = (
+        "Symbol\tISIN\tTrade Date\tExchange\tSegment\tSeries\tTrade Type"
+        "\tAuction\tQuantity\tPrice\tTrade ID\tOrder ID\tOrder Execution Time\n"
+        "WAAREEINDO\tINE866K01023\t2026-04-08\tNSE\tEQ\tEQ\tbuy\tFALSE\t1\t423"
+        "\t606629394\t1300000058842635\t2026-04-08T12:41:39\n"
+    )
+    result = adapter.parse(content.encode("utf-8"), account_id=ACCOUNT)
+    assert result.rejected == 0
+    assert result.parsed == 1
+    (staged,) = result.rows
+    txn = staged.transaction
+    assert txn.isin == "INE866K01023"
+    assert txn.txn_type is TxnType.BUY
+    assert txn.quantity == Decimal("1")
+    assert txn.price == Decimal("423")
+
+
+# --- header below preamble rows (Google Sheets round-trip) ----------------------
+
+#: What a tradebook looks like after being pasted into Google Sheets and exported
+#: back to CSV: blank rows, a Client ID row and a title row above the header, plus a
+#: leading empty column on every line.
+SHEETS_PREAMBLE = (
+    ",,,,,,,,,,,,,\n" * 6
+    + ",Client ID,YSL473,,,,,,,,,,,\n"
+    + ",,,,,,,,,,,,,\n" * 4
+    + ",Tradebook for Equity from 2026-04-01 to 2026-08-09,,,,,,,,,,,,\n"
+    + ",,,,,,,,,,,,,\n" * 3
+)
+SHEETS_HEADER = (
+    ",Symbol,ISIN,Trade Date,Exchange,Segment,Series,Trade Type,Auction,"
+    "Quantity,Price,Trade ID,Order ID,Order Execution Time\n"
+)
+#: Every sheet-exported row carries the same leading empty cell as the header.
+SHEETS_GOOD = "," + GOOD
+
+
+def test_header_below_preamble_is_found_and_used(adapter) -> None:
+    """The header may sit anywhere near the top; row 0 must not be assumed."""
+    content = SHEETS_PREAMBLE + SHEETS_HEADER + SHEETS_GOOD
+    result = adapter.parse(content.encode(), account_id=ACCOUNT)
+    assert result.rejected == 0
+    assert result.parsed == 1
+    (staged,) = result.rows
+    assert staged.transaction.isin == "INE153T01027"
+    assert staged.transaction.source_ref == "12345"
+
+
+def test_rejection_row_numbers_count_preamble_lines(adapter) -> None:
+    """A row number is only useful if it matches the line a person counts in the file."""
+    content = (
+        SHEETS_PREAMBLE + SHEETS_HEADER + SHEETS_GOOD + SHEETS_GOOD.replace(",buy,", ",transfer,")
+    )
+    result = adapter.parse(content.encode(), account_id=ACCOUNT)
+    (rejection,) = result.rejections
+    expected = len(SHEETS_PREAMBLE.splitlines()) + 3  # header line + two data rows
+    assert rejection.row_number == expected
+

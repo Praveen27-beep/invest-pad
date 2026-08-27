@@ -6,6 +6,7 @@ One view of the FIFO replay in ``engine/lots.py``; see that module for the trave
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from app.engine.lots import DEFAULT_LONG_TERM_DAYS, _replay
 from app.engine.types import Realised, Transaction
@@ -42,3 +43,24 @@ def compute_realised(
     """
     _, realised = _replay(transactions, as_of, long_term_days)
     return realised
+
+
+def tax_cost(realised: Realised) -> Decimal:
+    """Cost of acquisition for capital-gains purposes. Income Tax Act Section 48
+    disallows STT as a deductible expense, so this excludes the buy-side STT that
+    ``realised.cost`` -- Phase 1's real-cash figure -- still includes.
+
+    Equal to ``realised.cost`` whenever ``cost_stt`` is 0, which is every lot except
+    one built from a contract-note-derived BUY (``app.ingest.zerodha_contract_note``
+    is the only adapter that ever populates ``Transaction.stt``).
+    """
+    return realised.cost - realised.cost_stt
+
+
+def tax_proceeds(realised: Realised) -> Decimal:
+    """Full value of consideration for capital-gains purposes -- the mirror of
+    ``tax_cost``. ``realised.proceeds`` already has ALL sale-side charges netted out,
+    STT included (see ``lots.py``'s ``proceeds_per_unit``); Section 48 forbids netting
+    STT specifically, so this adds it back.
+    """
+    return realised.proceeds + realised.proceeds_stt

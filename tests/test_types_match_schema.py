@@ -31,6 +31,7 @@ TYPE_TO_SCHEMA = {
     "Discrepancy": "discrepancy.schema.json",
     "Performance": "performance.schema.json",
     "DividendSummary": "dividend.schema.json",
+    "Contribution": "contribution.schema.json",
 }
 
 
