@@ -24,6 +24,11 @@ class StageResultOut(BaseModel):
     sha256: str
     document_id: str | None
     notes: list[str]
+    #: Rows written to holding_snapshot (app.db.holdings.record_snapshot), 0 for every
+    #: adapter except cas_pdf -- see app.db.imports.stage_batch. Not a ledger count and
+    #: not gated on review/promote: holding_snapshot is a checking dataset, not the
+    #: transaction ledger.
+    declared_holdings: int = 0
 
 
 class BatchSummaryOut(BaseModel):

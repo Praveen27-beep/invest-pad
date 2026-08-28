@@ -16,7 +16,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from app.db import audit, documents, precedence, repository
+from app.db import audit, documents, holdings, precedence, repository
 from app.engine.dedupe import make_dedupe_key
 from app.engine.types import ImportSummary, Source, Transaction, TxnType
 from app.ingest.base import REVIEW_THRESHOLD, ParseResult
@@ -25,6 +25,7 @@ from app.storage.keys import content_hash
 ACTION_BATCH_STAGED = "IMPORT_BATCH_STAGED"
 ACTION_BATCH_PROMOTED = "IMPORT_BATCH_PROMOTED"
 ACTION_BATCH_DISCARDED = "IMPORT_BATCH_DISCARDED"
+ACTION_BATCH_REPARSED = "IMPORT_BATCH_REPARSED"
 ACTION_ROWS_EXCLUDED = "IMPORT_ROWS_EXCLUDED"
 
 STATUS_STAGED = "STAGED"
@@ -89,8 +90,25 @@ def stage_batch(
     store: Any = None,
     investor_code: str = "",
     actor_uid: str | None = None,
+    doctype: str = "TRADEBOOK",
+    content_type: str = "text/csv",
 ) -> dict[str, Any]:
     """Parse a file into staged rows. Writes NOTHING to ``transaction``.
+
+    ``doctype``/``content_type`` default to the values every caller used before these
+    parameters existed (CSV/tradebook adapters) -- existing behaviour is unchanged.
+    A caller staging a PDF (contract note, CAS) should pass ``doctype="CONTRACT_NOTE"``
+    or ``"CAS"`` and ``content_type="application/pdf"``; passing neither previously
+    meant every PDF this system has ever staged was recorded in ``document`` as a
+    TRADEBOOK/text-csv, which is wrong metadata on an otherwise-correctly-stored object.
+
+    If ``adapter`` defines ``parse_declared_holdings`` (currently only
+    app.ingest.cas_pdf.CasPdfAdapter), its result is written to ``holding_snapshot`` via
+    app.db.holdings.record_snapshot after staging succeeds -- centralized here so every
+    caller (email and upload) gets it without duplicating the glue. This is separate
+    from the staged-rows-and-review flow: holding_snapshot carries no promote gate (see
+    app.db.holdings' docstring), so this write happens unconditionally, not gated on
+    review.
 
     Raises:
         DuplicateUploadError: this exact file was staged before, for this account.
@@ -121,8 +139,8 @@ def stage_batch(
     if store is not None:
         stored = documents.store_document(
             conn, store, investor_id=investor_id, investor_code=investor_code or "UNKNOWN",
-            doctype="TRADEBOOK", content=content, received=date.today(),
-            filename=filename, content_type="text/csv", account_id=account_id,
+            doctype=doctype, content=content, received=date.today(),
+            filename=filename, content_type=content_type, account_id=account_id,
             actor_uid=actor_uid,
         )
         document_id = str(stored["id"])
@@ -166,9 +184,121 @@ def stage_batch(
         {"adapter": adapter.name, "filename": filename,
          "parsed": result.parsed, "rejected": result.rejected},
     )
+
+    declared_holdings = 0
+    parse_declared_holdings = getattr(adapter, "parse_declared_holdings", None)
+    if parse_declared_holdings is not None:
+        declared = parse_declared_holdings(content, account_id)
+        declared_holdings = holdings.record_snapshot(conn, declared)
+
     return {
         "batch_id": batch_id, "parsed": result.parsed, "rejected": result.rejected,
         "sha256": digest, "document_id": document_id, "notes": result.notes,
+        "declared_holdings": declared_holdings,
+    }
+
+
+def reparse_batch(
+    conn: Any, store: Any, batch_id: str, adapter: Any, actor_uid: str | None = None
+) -> dict[str, Any]:
+    """Re-run ``adapter.parse()`` against a STAGED batch's ORIGINALLY STORED bytes,
+    replacing its staged/rejected rows with the fresh result.
+
+    This is the recovery path docs/INGESTION.md's "Where documents land" section
+    promises but nothing implemented until now: "storing before parsing is what
+    makes a parser bug survivable... the fix is to reparse the originals." Without
+    it, the only way to retry a document is re-uploading it -- and ``stage_batch``'s
+    duplicate check is a permanent per-account sha256 lookup with no status filter,
+    so re-uploading identical bytes returns the SAME batch, forever, no matter what
+    changed since (a PAN added after the fact, a parser bug fixed after the fact).
+    Real case this was built for: a CAS PDF staged before the investor's PAN was on
+    file rejects with "could not unlock" -- adding the PAN afterward does nothing
+    until something actually re-parses the stored original against it.
+
+    Only a STAGED batch may be reparsed, matching promote_batch/discard_batch's own
+    guard: a promoted batch's rows are the ledger's provenance record and must not
+    change under it; a discarded batch is deliberately final.
+
+    Raises:
+        BatchNotFoundError: no such batch.
+        BatchAlreadyResolvedError: already promoted or discarded.
+        ValueError: the batch has no stored document (only possible if it was staged
+            without a ``store``, which no real caller does).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT status, account_id, filename, document_id, adapter, sha256 "
+            "FROM import_batch WHERE id = %s",
+            (batch_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise BatchNotFoundError(batch_id)
+        batch_status, account_id, filename, document_id, adapter_name, sha256 = row
+        if batch_status != STATUS_STAGED:
+            raise BatchAlreadyResolvedError(f"batch {batch_id} is {batch_status}")
+        if document_id is None:
+            raise ValueError(f"batch {batch_id} has no stored document to reparse")
+        if adapter.name != adapter_name:
+            raise ValueError(
+                f"batch {batch_id} was staged with adapter {adapter_name!r}, "
+                f"not {adapter.name!r}"
+            )
+
+        cur.execute("SELECT storage_key FROM document WHERE id = %s", (document_id,))
+        (storage_key,) = cur.fetchone()
+
+    content = store.get(storage_key)
+    result: ParseResult = adapter.parse(
+        content, account_id=str(account_id), filename=filename or ""
+    )
+
+    with conn.cursor() as cur:
+        # REPLACED, not appended: a reparse answers "what would this document produce
+        # now", not "union of every attempt". Safe to delete unconditionally -- the
+        # STAGED-only guard above means nothing here has been promoted, so no row
+        # being removed is the ledger's provenance record for anything live.
+        cur.execute("DELETE FROM import_row WHERE batch_id = %s", (batch_id,))
+        for staged in result.rows:
+            cur.execute(
+                """
+                INSERT INTO import_row (batch_id, row_number, confidence, dedupe_key, payload)
+                VALUES (%s,%s,%s,%s,%s)
+                """,
+                (batch_id, staged.row_number, staged.confidence,
+                 make_dedupe_key(staged.transaction),
+                 json.dumps({"transaction": _txn_to_payload(staged.transaction),
+                             "raw": staged.raw})),
+            )
+        for rejection in result.rejections:
+            cur.execute(
+                """
+                INSERT INTO import_row (batch_id, row_number, status, payload, reason)
+                VALUES (%s,%s,'REJECTED',%s,%s)
+                """,
+                (batch_id, rejection.row_number, json.dumps({"raw": rejection.raw}),
+                 rejection.reason),
+            )
+        cur.execute(
+            "UPDATE import_batch SET row_count = %s, rejected_count = %s, notes = %s "
+            "WHERE id = %s",
+            (result.parsed, result.rejected, json.dumps(result.notes), batch_id),
+        )
+
+    declared_holdings = 0
+    parse_declared_holdings = getattr(adapter, "parse_declared_holdings", None)
+    if parse_declared_holdings is not None:
+        declared = parse_declared_holdings(content, str(account_id))
+        declared_holdings = holdings.record_snapshot(conn, declared)
+
+    audit.record(
+        conn, ACTION_BATCH_REPARSED, "import_batch", batch_id, actor_uid,
+        {"adapter": adapter.name, "parsed": result.parsed, "rejected": result.rejected},
+    )
+    return {
+        "batch_id": batch_id, "parsed": result.parsed, "rejected": result.rejected,
+        "sha256": sha256, "document_id": str(document_id), "notes": result.notes,
+        "declared_holdings": declared_holdings,
     }
 
 

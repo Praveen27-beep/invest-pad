@@ -36,6 +36,7 @@ from app.db import consent, imports, repository
 from app.db.imports import DuplicateUploadError
 from app.ingest import webhook, webhook_providers
 from app.ingest.webhook_providers import WebhookNotConfiguredError
+from app.ingest.zerodha_contract_note_xlsx import ZerodhaContractNoteXlsxAdapter
 from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 from app.schemas.ingest import (
     BatchSummaryOut,
@@ -52,6 +53,24 @@ router = APIRouter(prefix="/ingest", tags=["ingestion"])
 #: openapi.yaml contract also lists "generic_csv", which does not exist yet -- CLAUDE.md:
 #: never invent a parser to fill a contract slot.
 _CSV_ADAPTERS = {"zerodha_tradebook": ZerodhaTradebookAdapter}
+
+#: adapter query param -> factory for the XLSX upload path. Contract notes exported
+#: from Console as a spreadsheet -- see app.ingest.zerodha_contract_note_xlsx's module
+#: docstring for the two real shapes this parses and why "custom date range" is
+#: something Console does when the file is downloaded, not a control in this app.
+_XLSX_ADAPTERS = {"zerodha_contract_note_xlsx": ZerodhaContractNoteXlsxAdapter}
+
+
+def _build_adapter(name: str) -> Any:
+    """One adapter instance by name, across every registry (CSV/XLSX) -- the same
+    construction every upload endpoint already does, factored out so reparse_stage can
+    build the exact adapter a fresh upload would.
+    """
+    if name in _CSV_ADAPTERS:
+        return _CSV_ADAPTERS[name]()
+    if name in _XLSX_ADAPTERS:
+        return _XLSX_ADAPTERS[name]()
+    raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"no adapter for {name!r}")
 
 
 def _investor_code(conn: Any, investor_id: str) -> str:
@@ -130,6 +149,71 @@ async def ingest_csv(
                     store=store,
                     investor_code=investor_code,
                     actor_uid=str(current_user["id"]),
+                )
+            )
+        except DuplicateUploadError as exc:
+            results.append(_duplicate_result(exc))
+    return results
+
+
+@router.post(
+    "/xlsx",
+    response_model=list[StageResultOut],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def ingest_xlsx(
+    investor_id: str = Form(...),
+    account_id: str = Form(...),
+    adapter: str = Form(...),
+    files: list[UploadFile] = File(...),
+    conn: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """A client's own contract-note spreadsheet, uploaded directly -- the historical-
+    backfill path: Console's bulk contract-note export covers a chosen date range,
+    which is how "upload my last three financial years" actually works here (there is
+    no in-app date-range picker, and none is needed -- the range is whatever was
+    downloaded). Same multi-file, per-file-duplicate-handling shape as /ingest/csv and
+    /ingest/pdf. No password handling: these workbooks aren't encrypted.
+    """
+    factory = _XLSX_ADAPTERS.get(adapter)
+    if factory is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"no adapter for {adapter!r}; supported: {sorted(_XLSX_ADAPTERS)}",
+        )
+
+    assert_owned_investor(conn, current_user, investor_id)
+    if not repository.account_belongs_to(conn, account_id, investor_id):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"no such account for this investor: {account_id}",
+        )
+    investor_code = _investor_code(conn, investor_id)
+    consent.require_consent(conn, investor_id)
+
+    instance = factory()
+    store = get_store(settings)
+    results = []
+    for upload in files:
+        content = await upload.read()
+        try:
+            results.append(
+                imports.stage_batch(
+                    conn,
+                    instance,
+                    content,
+                    investor_id=investor_id,
+                    account_id=account_id,
+                    filename=upload.filename or "",
+                    store=store,
+                    investor_code=investor_code,
+                    actor_uid=str(current_user["id"]),
+                    doctype="CONTRACT_NOTE",
+                    content_type=(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ),
                 )
             )
         except DuplicateUploadError as exc:
@@ -228,6 +312,36 @@ def promote_stage(
         "skipped_duplicates": summary.skipped_duplicates,
         "rejected": summary.rejected,
     }
+
+
+@router.post(
+    "/stage/{batch_id}/reparse",
+    response_model=StageResultOut,
+    dependencies=[Depends(require_owned_batch)],
+)
+def reparse_stage(
+    batch_id: str,
+    conn: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Re-run the original adapter against a STAGED batch's stored bytes, replacing
+    its rows -- the retry path for a document that failed for a reason since fixed.
+    Re-uploading the same file cannot do this -- stage_batch's duplicate check is a
+    permanent per-account sha256 lookup that just points back at this same batch
+    forever. See app.db.imports.reparse_batch.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT adapter FROM import_batch WHERE id = %s", (batch_id,))
+        row = cur.fetchone()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such batch: {batch_id}")
+    instance = _build_adapter(row[0])
+
+    store = get_store(settings)
+    return imports.reparse_batch(
+        conn, store, batch_id, instance, actor_uid=str(current_user["id"])
+    )
 
 
 @router.post(

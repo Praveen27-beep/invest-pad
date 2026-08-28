@@ -44,9 +44,15 @@ def test_rejects_too_few_segments() -> None:
         parse_to_address("c001-zerodha@ingest.example.com")
 
 
-def test_rejects_too_many_segments() -> None:
-    with pytest.raises(UnroutableAddressError):
-        parse_to_address("c001-zerodha-contractnote-extra@ingest.example.com")
+def test_extra_hyphens_fold_into_the_investor_code() -> None:
+    """parse_to_address splits from the right (rsplit("-", 2)) so broker/doctype stay
+    the last two segments and everything before them -- however many hyphens it has --
+    becomes the investor code. Real seeded codes contain hyphens (e.g. TEST-FE54), so
+    a 4th hyphen-separated segment is not an error, it is just more code."""
+    routed = parse_to_address("c001-extra-zerodha-contractnote@ingest.example.com")
+    assert routed.investor_code == "c001-extra"
+    assert routed.broker == "zerodha"
+    assert routed.doctype == "contractnote"
 
 
 def test_rejects_an_empty_segment() -> None:

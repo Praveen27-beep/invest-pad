@@ -23,9 +23,9 @@ from app.auth.dependencies import get_current_user, require_owned_investor
 from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db import repository
-from app.db.repository import create_account, create_investor
+from app.db.repository import create_account, create_investor, set_investor_pan
 from app.ingest.addresses import forwarding_addresses
-from app.schemas.investors import AccountIn, AccountOut, InvestorIn, InvestorOut
+from app.schemas.investors import AccountIn, AccountOut, InvestorIn, InvestorOut, SetPanIn
 
 router = APIRouter(prefix="/investors", tags=["onboarding"])
 
@@ -72,6 +72,28 @@ def list_accounts(
         )
         account["investor_id"] = investor_id
     return accounts
+
+
+@router.put(
+    "/{investor_id}/pan",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_owned_investor)],
+)
+def set_pan(
+    investor_id: str,
+    body: SetPanIn,
+    connection: Any = Depends(get_conn),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> None:
+    """Set or replace this investor's PAN after onboarding.
+
+    ``POST /investors`` only ever accepted a PAN at creation time, so an investor
+    onboarded before this system needed one had no way to add it afterwards -- the
+    Zerodha/Groww/Upstox contract-note password lookup depends on it being on file.
+    Same encryption path as onboarding (app.db.crypto), same investor_secret row.
+    Never echoed back -- 204, no body, matching InvestorOut's write-only PAN.
+    """
+    set_investor_pan(connection, investor_id, body.pan, actor_uid=str(current_user["id"]))
 
 
 @router.post(

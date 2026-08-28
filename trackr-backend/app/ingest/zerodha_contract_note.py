@@ -189,7 +189,7 @@ class ZerodhaContractNoteAdapter:
                 "rather than evidence the trades were free."
             )
 
-        rows = self._apportion(candidates, total_charges, total_stt, account_id, contract_number)
+        rows = apportion_charges(candidates, total_charges, total_stt, account_id, contract_number)
         return ParseResult(rows=rows, rejections=rejections, notes=notes)
 
     def _extract_rows(
@@ -243,80 +243,86 @@ class ZerodhaContractNoteAdapter:
             )
         return candidates, rejections
 
-    def _apportion(
-        self,
-        candidates: list[dict[str, Any]],
-        total_charges: Decimal,
-        total_stt: Decimal,
-        account_id: str,
-        contract_number: str | None,
-    ) -> list[StagedRow]:
-        turnovers = [c["quantity"] * c["price"] for c in candidates]
-        total_turnover = sum(turnovers, Decimal("0"))
 
-        rows: list[StagedRow] = []
-        allocated_charges = Decimal("0")
-        allocated_stt = Decimal("0")
-        for index, candidate in enumerate(candidates):
-            is_last = index == len(candidates) - 1
-            charges_share, allocated_charges = self._pro_rata_share(
-                total_charges, turnovers[index], total_turnover, allocated_charges, is_last
+#: Module-level, not a method: app.ingest.zerodha_contract_note_xlsx parses the same
+#: document (a contract note), just from XLSX cells instead of PDF text, and needs the
+#: identical turnover apportionment -- one implementation, not two that could drift.
+#: `candidates` is a plain list of dicts (row_number/isin/symbol/txn_type/quantity/
+#: price/trade_id/order_id/exchange/txn_date), the same shape both parsers build.
+def apportion_charges(
+    candidates: list[dict[str, Any]],
+    total_charges: Decimal,
+    total_stt: Decimal,
+    account_id: str,
+    contract_number: str | None,
+) -> list[StagedRow]:
+    turnovers = [c["quantity"] * c["price"] for c in candidates]
+    total_turnover = sum(turnovers, Decimal("0"))
+
+    rows: list[StagedRow] = []
+    allocated_charges = Decimal("0")
+    allocated_stt = Decimal("0")
+    for index, candidate in enumerate(candidates):
+        is_last = index == len(candidates) - 1
+        charges_share, allocated_charges = pro_rata_share(
+            total_charges, turnovers[index], total_turnover, allocated_charges, is_last
+        )
+        # stt is a SUBSET of charges, so it gets the identical treatment -- pro rata
+        # by turnover, last row absorbs its own rounding remainder -- but ties to its
+        # own note total independently of charges' allocation.
+        stt_share, allocated_stt = pro_rata_share(
+            total_stt, turnovers[index], total_turnover, allocated_stt, is_last
+        )
+
+        rows.append(
+            StagedRow(
+                row_number=candidate["row_number"],
+                transaction=Transaction(
+                    isin=candidate["isin"],
+                    txn_date=candidate["txn_date"],
+                    txn_type=candidate["txn_type"],
+                    quantity=candidate["quantity"],
+                    price=candidate["price"],
+                    charges=charges_share,
+                    stt=stt_share,
+                    account_id=account_id,
+                    source=Source.CONTRACT_NOTE,
+                    # The TRADE number, matching the tradebook's trade_id, so the same
+                    # trade from either source has the same identity.
+                    source_ref=candidate["trade_id"],
+                ),
+                # Never CERTAIN: the charge figure is apportioned, not read.
+                confidence=CONFIDENCE_DERIVED,
+                raw={
+                    "symbol": candidate["symbol"],
+                    "exchange": candidate["exchange"],
+                    "order_id": candidate["order_id"],
+                    "contract_number": contract_number,
+                },
             )
-            # stt is a SUBSET of charges, so it gets the identical treatment -- pro rata
-            # by turnover, last row absorbs its own rounding remainder -- but ties to its
-            # own note total independently of charges' allocation.
-            stt_share, allocated_stt = self._pro_rata_share(
-                total_stt, turnovers[index], total_turnover, allocated_stt, is_last
-            )
+        )
+    return rows
 
-            rows.append(
-                StagedRow(
-                    row_number=candidate["row_number"],
-                    transaction=Transaction(
-                        isin=candidate["isin"],
-                        txn_date=candidate["txn_date"],
-                        txn_type=candidate["txn_type"],
-                        quantity=candidate["quantity"],
-                        price=candidate["price"],
-                        charges=charges_share,
-                        stt=stt_share,
-                        account_id=account_id,
-                        source=Source.CONTRACT_NOTE,
-                        # The TRADE number, matching the tradebook's trade_id, so the same
-                        # trade from either source has the same identity.
-                        source_ref=candidate["trade_id"],
-                    ),
-                    # Never CERTAIN: the charge figure is apportioned, not read.
-                    confidence=CONFIDENCE_DERIVED,
-                    raw={
-                        "symbol": candidate["symbol"],
-                        "exchange": candidate["exchange"],
-                        "order_id": candidate["order_id"],
-                        "contract_number": contract_number,
-                    },
-                )
-            )
-        return rows
 
-    @staticmethod
-    def _pro_rata_share(
-        total: Decimal,
-        turnover: Decimal,
-        total_turnover: Decimal,
-        allocated_so_far: Decimal,
-        is_last: bool,
-    ) -> tuple[Decimal, Decimal]:
-        """One row's share of ``total``, apportioned by turnover -- the same rule for
-        ``charges`` and ``stt`` alike, since ``stt`` is just a labelled subset of
-        ``charges`` and gets an identical, independent apportionment.
+def pro_rata_share(
+    total: Decimal,
+    turnover: Decimal,
+    total_turnover: Decimal,
+    allocated_so_far: Decimal,
+    is_last: bool,
+) -> tuple[Decimal, Decimal]:
+    """One row's share of ``total``, apportioned by turnover -- the same rule for
+    ``charges`` and ``stt`` alike, since ``stt`` is just a labelled subset of
+    ``charges`` and gets an identical, independent apportionment.
 
-        The last row absorbs the rounding remainder so the apportioned shares sum to
-        exactly what the note states, rather than being out by a few paise. Returns
-        ``(this row's share, the updated running allocation)``.
-        """
-        if total_turnover <= 0 or total <= 0:
-            return Decimal("0"), allocated_so_far
-        if is_last:
-            return total - allocated_so_far, total
-        share = (total * turnover / total_turnover).quantize(Decimal("0.01"))
-        return share, allocated_so_far + share
+    The last row absorbs the rounding remainder so the apportioned shares sum to
+    exactly what the note states, rather than being out by a few paise. Returns
+    ``(this row's share, the updated running allocation)``.
+    """
+    if total_turnover <= 0 or total <= 0:
+        return Decimal("0"), allocated_so_far
+    if is_last:
+        return total - allocated_so_far, total
+    share = (total * turnover / total_turnover).quantize(Decimal("0.01"))
+    return share, allocated_so_far + share
+

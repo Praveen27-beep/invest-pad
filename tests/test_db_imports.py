@@ -129,6 +129,114 @@ def test_a_discarded_batch_cannot_be_promoted(db, adapter, investor) -> None:
     assert txn_count(db) == 0
 
 
+# --- reparse: the retry path for a document that failed for a reason since fixed -----
+
+
+def test_reparsing_a_staged_batch_replaces_its_rows_not_duplicates_them(
+    db, adapter, investor, store
+) -> None:
+    """The mechanics this exists to get right: DELETE-then-INSERT against the SAME
+    stored bytes, not an accumulation. Reparsing twice must not double the row count."""
+    batch = stage(db, adapter, investor, store=store)
+    assert batch["parsed"] == 1
+
+    result = imports.reparse_batch(db, store, batch["batch_id"], adapter, actor_uid=ACTOR)
+    assert result["parsed"] == 1
+
+    with db.cursor() as cur:
+        cur.execute("SELECT count(*) FROM import_row WHERE batch_id = %s", (batch["batch_id"],))
+        assert cur.fetchone()[0] == 1
+
+
+def test_reparse_actually_picks_up_a_state_change(db, investor, store) -> None:
+    """The real scenario this was built for: a CAS PDF staged before the investor's
+    PAN was on file rejects; adding the PAN afterward does nothing until something
+    reparses against it. Simulated here with a fake adapter whose behaviour depends
+    on external state read fresh on each parse() call, the same shape
+    CasPdfAdapter(pan=...) has -- no real encrypted PDF needed to prove the mechanism."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.engine.types import Source, Transaction, TxnType
+    from app.ingest.base import CONFIDENCE_CERTAIN, ParseResult, Rejection, StagedRow
+
+    class FlakyAdapter:
+        name = "flaky"
+        unlocked = False  # mutated between the two parse() calls, like a PAN being added
+
+        def parse(self, content, account_id, filename=""):
+            if not FlakyAdapter.unlocked:
+                return ParseResult(rejections=[Rejection(0, "could not unlock")])
+            return ParseResult(
+                rows=[
+                    StagedRow(
+                        row_number=1,
+                        transaction=Transaction(
+                            isin="INE153T01027", txn_date=date(2024, 1, 1),
+                            txn_type=TxnType.BUY, quantity=Decimal("1"), price=Decimal("1"),
+                            account_id=account_id, source=Source.CSV,
+                        ),
+                        confidence=CONFIDENCE_CERTAIN,
+                    )
+                ]
+            )
+
+    flaky = FlakyAdapter()
+    batch = stage(db, flaky, investor, store=store)
+    assert batch["parsed"] == 0
+    assert batch["rejected"] == 1
+
+    FlakyAdapter.unlocked = True  # the PAN "got saved"
+    result = imports.reparse_batch(db, store, batch["batch_id"], flaky, actor_uid=ACTOR)
+    assert result["parsed"] == 1
+    assert result["rejected"] == 0
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT row_count, rejected_count FROM import_batch WHERE id = %s",
+            (batch["batch_id"],),
+        )
+        row_count, rejected_count = cur.fetchone()
+    assert (row_count, rejected_count) == (1, 0)
+
+
+def test_a_promoted_batch_cannot_be_reparsed(db, adapter, investor, store) -> None:
+    """A promoted batch's rows are the ledger's provenance record and must not
+    change under it."""
+    batch = stage(db, adapter, investor, store=store)
+    imports.promote_batch(db, batch["batch_id"], actor_uid=ACTOR)
+    with pytest.raises(imports.BatchAlreadyResolvedError):
+        imports.reparse_batch(db, store, batch["batch_id"], adapter, actor_uid=ACTOR)
+
+
+def test_a_discarded_batch_cannot_be_reparsed(db, adapter, investor, store) -> None:
+    batch = stage(db, adapter, investor, store=store)
+    imports.discard_batch(db, batch["batch_id"], reason="wrong client")
+    with pytest.raises(imports.BatchAlreadyResolvedError):
+        imports.reparse_batch(db, store, batch["batch_id"], adapter, actor_uid=ACTOR)
+
+
+def test_reparsing_an_unknown_batch_is_refused(db, adapter, store) -> None:
+    with pytest.raises(imports.BatchNotFoundError):
+        imports.reparse_batch(db, store, "00000000-0000-0000-0000-000000000000", adapter,
+                              actor_uid=ACTOR)
+
+
+def test_reparsing_with_a_mismatched_adapter_is_refused(db, adapter, investor, store) -> None:
+    """Reparse must use the SAME adapter the batch was staged with -- passing the
+    wrong one would silently reinterpret one document type's bytes as another's."""
+    batch = stage(db, adapter, investor, store=store)
+
+    class OtherAdapter:
+        name = "something_else"
+
+        def parse(self, content, account_id, filename=""):
+            raise AssertionError("should never be called")
+
+    with pytest.raises(ValueError, match="staged with adapter"):
+        imports.reparse_batch(db, store, batch["batch_id"], OtherAdapter(), actor_uid=ACTOR)
+
+
 def test_discarding_requires_a_reason(db, adapter, investor) -> None:
     batch = stage(db, adapter, investor)
     with pytest.raises(ValueError, match="requires a reason"):

@@ -287,6 +287,46 @@ def create_investor(
     return investor
 
 
+def set_investor_pan(conn: Any, investor_id: str, pan: str, actor_uid: str | None = None) -> None:
+    """Set or replace an investor's PAN after onboarding.
+
+    ``create_investor`` only ever writes a PAN at creation time -- most investors are
+    onboarded before this system needs their PAN at all (it exists to auto-unlock a
+    password-protected Zerodha/Groww/Upstox contract-note PDF), so there was no path
+    to add one later until this. Same encryption (``app.db.crypto``), same
+    ``investor_secret`` row every other PAN-consuming path already reads
+    (``app.ingest.webhook.raw_pan``).
+
+    Upserts rather than requiring the row to already exist: an investor onboarded
+    without a PAN has no ``investor_secret`` row at all (``create_investor`` only
+    inserts one ``if normalised_pan``), so ``ON CONFLICT`` alone would silently do
+    nothing for the common case this function exists to handle.
+
+    Raises:
+        app.db.crypto.InvalidPANError: ``pan`` does not match the mandated PAN format.
+            Raised before any write, same as ``create_investor``.
+    """
+    normalised_pan = crypto.normalise_pan(pan)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO investor_secret (investor_id, pan_hash, pan_enc)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (investor_id) DO UPDATE
+            SET pan_hash = EXCLUDED.pan_hash, pan_enc = EXCLUDED.pan_enc, updated_at = now()
+            """,
+            (investor_id, crypto.hash_pan(normalised_pan), crypto.encrypt(normalised_pan)),
+        )
+    audit.record(
+        conn,
+        action=audit.ACTION_SECRET_WRITTEN,
+        entity_type="investor",
+        entity_id=investor_id,
+        actor_uid=actor_uid,
+    )
+
+
 def list_investor_ids(conn: Any) -> list[str]:
     """Every investor id -- what ``POST /ops/snapshots/run`` iterates over.
 

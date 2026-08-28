@@ -105,6 +105,35 @@ paths:
         '409':
           description: code is already in use
 
+  /investors/{investor_id}/pan:
+    put:
+      tags: [onboarding]
+      summary: Set or replace this investor's PAN after onboarding
+      description: |
+        POST /investors only accepts a PAN at creation time. This is the path for an
+        investor who was onboarded before one was needed -- the Zerodha/Groww/Upstox
+        contract-note password lookup depends on investor_secret carrying one.
+        Write-only: never echoed back, same as InvestorIn.pan.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pan]
+              properties:
+                pan: { type: string }
+      responses:
+        '204':
+          description: PAN stored (encrypted; never returned by any endpoint)
+        '400':
+          description: pan does not match the mandated PAN format
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login }
+
   /investors/{investor_id}/accounts:
     post:
       tags: [onboarding]

@@ -41,6 +41,13 @@ class InvestorOut(BaseModel):
     created_at: datetime
 
 
+class SetPanIn(BaseModel):
+    """PUT /investors/{id}/pan request body. Write-only, same as InvestorIn.pan --
+    never echoed back in any response."""
+
+    pan: str
+
+
 class AccountIn(BaseModel):
     """POST /investors/{id}/accounts request body."""
 

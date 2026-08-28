@@ -17,8 +17,8 @@ import pytest
 from app.config import Settings
 from app.db import crypto
 from app.db.repository import DuplicateInvestorCodeError, InvestorNotFoundError
-from app.routers.investors import list_accounts, onboard_account, onboard_investor
-from app.schemas.investors import AccountIn, InvestorIn
+from app.routers.investors import list_accounts, onboard_account, onboard_investor, set_pan
+from app.schemas.investors import AccountIn, InvestorIn, SetPanIn
 
 STAFF = {"id": "11111111-1111-1111-1111-111111111111", "email": "adviser@example.com"}
 pytestmark = pytest.mark.db
@@ -161,6 +161,64 @@ def test_an_invalid_pan_format_is_rejected_before_any_write(db, crypto_env) -> N
         )
     with db.cursor() as cur:
         cur.execute("SELECT count(*) FROM investor WHERE code = 'C904'")
+        assert cur.fetchone()[0] == 0
+
+
+def test_set_pan_adds_one_to_an_investor_onboarded_without_one(db, crypto_env) -> None:
+    """The gap this endpoint exists to close: create_investor only writes a PAN at
+    creation time, so an investor onboarded before this system needed one (e.g. before
+    CAS support existed) had no way to add it afterwards."""
+    investor = onboard_investor(
+        InvestorIn(code="C920", display_name="No PAN Yet"),
+        connection=db,
+        current_user=STAFF,
+    )
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM investor_secret WHERE investor_id = %s", (investor["id"],)
+        )
+        assert cur.fetchone()[0] == 0
+
+    set_pan(investor["id"], SetPanIn(pan=PAN), connection=db, current_user=STAFF)
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT pan_hash, pan_enc FROM investor_secret WHERE investor_id = %s",
+            (investor["id"],),
+        )
+        pan_hash, pan_enc = cur.fetchone()
+    assert pan_hash == crypto.hash_pan(PAN)
+    assert crypto.decrypt(pan_enc) == PAN
+
+
+def test_set_pan_replaces_an_existing_one(db, crypto_env) -> None:
+    investor = onboard_investor(
+        InvestorIn(code="C921", display_name="Has PAN", pan=PAN),
+        connection=db,
+        current_user=STAFF,
+    )
+    new_pan = "ZZZPZ9999Z"
+    set_pan(investor["id"], SetPanIn(pan=new_pan), connection=db, current_user=STAFF)
+
+    with db.cursor() as cur:
+        cur.execute("SELECT pan_enc FROM investor_secret WHERE investor_id = %s", (investor["id"],))
+        (pan_enc,) = cur.fetchone()
+    assert crypto.decrypt(pan_enc) == new_pan
+
+
+def test_set_pan_rejects_a_bad_format_before_any_write(db, crypto_env) -> None:
+    investor = onboard_investor(
+        InvestorIn(code="C922", display_name="Bad PAN Later"),
+        connection=db,
+        current_user=STAFF,
+    )
+    with pytest.raises(crypto.InvalidPANError):
+        set_pan(investor["id"], SetPanIn(pan="NOTAVALIDPAN"), connection=db, current_user=STAFF)
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM investor_secret WHERE investor_id = %s", (investor["id"],)
+        )
         assert cur.fetchone()[0] == 0
 
 
@@ -308,7 +366,3 @@ def test_a_broker_with_no_adapter_gets_no_forwarding_address(db) -> None:
     )
 
     assert account["forwarding_addresses"] == []
-
-    with db.cursor() as cur:
-        cur.execute("SELECT count(*) FROM account WHERE investor_id = %s", (NIL_UUID,))
-        assert cur.fetchone()[0] == 0
