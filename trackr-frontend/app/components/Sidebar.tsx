@@ -26,14 +26,7 @@ const ICONS: Record<string, React.ReactNode> = {
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: "dashboard" },
-  { href: "/holdings", label: "Holdings", icon: "holdings" },
-  { href: "/performance", label: "Performance", icon: "performance" },
-  { href: "/contribution", label: "Contribution", icon: "contribution" },
-  { href: "/transactions", label: "Transactions", icon: "transactions" },
-  { href: "/import", label: "Import", icon: "import" },
-  { href: "/reconcile", label: "Reconcile", icon: "reconcile" },
-  { href: "/settings", label: "Settings", icon: "settings" },
-  { href: "/privacy", label: "Privacy", icon: "privacy" },
+  { href: "/portfolio", label: "Portfolio", icon: "transactions" },
 ];
 
 export function Sidebar() {
@@ -61,7 +54,7 @@ export function Sidebar() {
       } ${ready ? "" : "duration-0"}`}
     >
       <div className={`mb-8 flex items-center gap-2 px-2 ${collapsed ? "justify-center px-0" : ""}`}>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy-700 text-cream-50 font-heading text-sm shadow-sm">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy-700 text-cream-50 font-heading text-sm">
           T+
         </span>
         <div
@@ -90,8 +83,8 @@ export function Sidebar() {
                 collapsed ? "justify-center px-0" : ""
               } ${
                 active
-                  ? "bg-brass-500 text-white font-medium shadow-sm"
-                  : "text-navy-600 hover:bg-cream-200/70 hover:text-navy-900"
+                  ? "bg-cream-50 text-navy-900 font-medium"
+                  : "text-navy-600 hover:bg-cream-50/60 hover:text-navy-900"
               }`}
             >
               <svg

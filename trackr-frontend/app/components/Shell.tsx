@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { OnboardingWizard } from "./onboarding/OnboardingWizard";
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
@@ -35,6 +36,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+      <OnboardingWizard />
     </div>
   );
 }

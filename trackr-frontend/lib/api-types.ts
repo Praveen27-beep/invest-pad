@@ -293,6 +293,9 @@ export interface StageResultOut {
   sha256: string;
   document_id: string | null;
   notes: string[];
+  // Rows written to holding_snapshot -- 0 for every current adapter (app.db.imports
+  // .stage_batch's optional parse_declared_holdings hook has no active caller yet).
+  declared_holdings?: number;
 }
 
 export interface RejectionOut {

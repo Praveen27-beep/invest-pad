@@ -35,7 +35,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   token?: string | null;
   json?: unknown;
   formData?: FormData;
@@ -138,4 +138,6 @@ export const api = {
     request<T>(path, { ...opts, method: "GET" }),
   post: <T>(path: string, opts?: Omit<RequestOptions, "method">) =>
     request<T>(path, { ...opts, method: "POST" }),
+  put: <T>(path: string, opts?: Omit<RequestOptions, "method">) =>
+    request<T>(path, { ...opts, method: "PUT" }),
 };
