@@ -14,15 +14,31 @@ That boundary is enforced by the router, not here; this module is a dumb HTTP cl
 from __future__ import annotations
 
 import json
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
 
 _ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
-_DEFAULT_MODEL = "gemini-2.5-flash"
+_DEFAULT_MODEL = "gemini-3.6-flash"
 _TIMEOUT_SECONDS = 20
+
+
+@lru_cache(maxsize=1)
+def _ssl_context() -> ssl.SSLContext:
+    """Same fix, same reason, as app/prices/sources.py's ``_ssl_context``: Python does
+    not use the OS trust store, so a fresh install (or a minimal container) fails
+    CERTIFICATE_VERIFY_FAILED against a host curl reaches fine. Verification is never
+    disabled -- only the CA bundle is made explicit, via certifi."""
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 #: Gemini's roles are "user" and "model" -- this app's chat history uses "assistant"
 #: like every other chat API, so the router-facing shape stays consistent and this is
@@ -74,7 +90,9 @@ def generate_reply(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=_TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(
+            request, timeout=_TIMEOUT_SECONDS, context=_ssl_context()
+        ) as response:
             payload = json.loads(response.read())
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")

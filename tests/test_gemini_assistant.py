@@ -38,7 +38,7 @@ def _patch_urlopen(monkeypatch: pytest.MonkeyPatch, fn) -> None:
 def test_success_extracts_text_and_maps_roles(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict = {}
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         captured["body"] = json.loads(request.data)
         captured["url"] = request.full_url
         return _FakeResponse(
@@ -71,7 +71,7 @@ def test_empty_turns_raises_without_a_network_call(monkeypatch: pytest.MonkeyPat
 
 
 def test_http_error_is_wrapped_not_leaked(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         raise HTTPError(request.full_url, 429, "quota exceeded", None, BytesIO(b'{"error":"quota"}'))
 
     _patch_urlopen(monkeypatch, fake_urlopen)
@@ -81,7 +81,7 @@ def test_http_error_is_wrapped_not_leaked(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_network_error_is_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         raise URLError("timed out")
 
     _patch_urlopen(monkeypatch, fake_urlopen)
@@ -93,7 +93,7 @@ def test_network_error_is_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_safety_blocked_response_raises_instead_of_returning_empty_string(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         return _FakeResponse({"candidates": [{"finishReason": "SAFETY", "content": {}}]})
 
     _patch_urlopen(monkeypatch, fake_urlopen)
