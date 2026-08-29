@@ -115,10 +115,13 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
 
 @app.exception_handler(NegativeHoldingError)
 async def negative_holding_handler(request: Request, exc: NegativeHoldingError) -> JSONResponse:
+    deficit = -exc.quantity if exc.quantity is not None else None
     return _error(
         request, 409,
         f"holding for {exc.isin} went negative; buy history is incomplete",
         isin=exc.isin,
+        deficit=str(deficit) if deficit is not None else None,
+        as_of=str(exc.as_of) if exc.as_of is not None else None,
     )
 
 

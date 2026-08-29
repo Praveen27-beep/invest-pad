@@ -122,7 +122,7 @@ def compute_holdings(
 
         elif txn.txn_type in DISPOSING_TYPES:
             if txn.quantity > held:
-                raise NegativeHoldingError(isin, held - txn.quantity)
+                raise NegativeHoldingError(isin, held - txn.quantity, txn.txn_date)
             if txn.quantity > ZERO:
                 # Multiply before dividing, and divide by the quantity held BEFORE this
                 # row. One division instead of a division followed by a multiplication

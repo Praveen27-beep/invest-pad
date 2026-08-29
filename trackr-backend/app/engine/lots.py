@@ -145,7 +145,7 @@ def _consume(
 
     available = sum((lot.quantity for lot in queue), ZERO)
     if remaining > available:
-        raise NegativeHoldingError(txn.isin, available - remaining)
+        raise NegativeHoldingError(txn.isin, available - remaining, txn.txn_date)
 
     # Charges reduce proceeds, spread across the disposal rather than charged to the
     # first lot consumed.

@@ -148,12 +148,27 @@ class NegativeHoldingError(EngineError):
     Flag loudly: this means buy history is missing, not that the investor is short.
     The usual cause is a tradebook downloaded with a date filter -- Console caps each
     download at 365 days. The fix is one file per financial year, going back until a
-    download returns empty.
+    download returns empty. A less common cause is a corporate action (merger, demerger,
+    symbol change) that changed the ISIN's quantity without a matching ledger row.
+
+    ``as_of`` -- the date of the disposal that first ran short -- is carried
+    specifically so the caller can say "as of THIS date" rather than leaving the
+    investor to guess which of possibly years of transactions is the culprit.
     """
 
-    def __init__(self, isin: str | None = None, quantity: object = None) -> None:
+    def __init__(
+        self,
+        isin: str | None = None,
+        quantity: object = None,
+        as_of: object = None,
+    ) -> None:
         self.isin = isin
         self.quantity = quantity
+        self.as_of = as_of
+        # quantity arrives as (held - disposed) -- negative -- so this reports the
+        # shortfall as a positive number rather than the raw negative balance.
+        deficit = -quantity if quantity is not None else None
+        when = f" as of {as_of}" if as_of is not None else ""
         super().__init__(
-            f"Holding for {isin} went negative ({quantity}); buy history is incomplete"
+            f"Holding for {isin} went negative ({deficit} short){when}; buy history is incomplete"
         )
