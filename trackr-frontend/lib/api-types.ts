@@ -564,3 +564,17 @@ export interface BatchSummaryOut {
   rejected_count: number;
   uploaded_at: string;
 }
+
+export interface ChatMessageIn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AskAIRequest {
+  messages: ChatMessageIn[];
+  context?: string;
+}
+
+export interface AskAIResponse {
+  reply: string;
+}

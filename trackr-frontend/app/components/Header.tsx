@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { useAIChat } from "@/lib/ai-chat-context";
 import { ThemeToggle } from "./ThemeToggle";
 import { WizardShell } from "./onboarding/WizardShell";
 import { HistoricalImportStep } from "./onboarding/HistoricalImportStep";
@@ -16,6 +17,7 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function Header({ pathname }: { pathname: string }) {
   const { user, logout, asOf, setAsOf, advisedOnly, setAdvisedOnly } = useAuth();
+  const { openChat } = useAIChat();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,6 +103,23 @@ export function Header({ pathname }: { pathname: string }) {
                 <path d="M3 6.5 10 11l7-4.5M3.5 5h13a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5Z" />
               </svg>
             </button>
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={() => openChat()}
+                aria-label="Ask AI"
+                className="press-scale flex h-9 w-9 items-center justify-center rounded-lg border border-navy-100 text-navy-500 transition-colors hover:bg-cream-200/70 hover:text-navy-900"
+              >
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
+                  <path d="M10 3.5 11.3 7.2 15 8.5 11.3 9.8 10 13.5 8.7 9.8 5 8.5 8.7 7.2 10 3.5Z" />
+                  <path d="M15.5 13 16.2 15 18 15.7 16.2 16.4 15.5 18.4 14.8 16.4 13 15.7 14.8 15 15.5 13Z" />
+                </svg>
+              </button>
+              <div className="pointer-events-none absolute right-0 top-11 z-30 w-56 rounded-lg border border-navy-100 bg-surface p-3 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                <p className="text-xs font-medium text-navy-900">Trackr+ x AI</p>
+                <p className="mt-0.5 text-[11px] text-navy-400">Ask about an error or your portfolio, 24/7</p>
+              </div>
+            </div>
           </div>
 
           <ThemeToggle />

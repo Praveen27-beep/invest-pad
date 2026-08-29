@@ -44,6 +44,7 @@ from app.ingest.webhook_providers import (
 )
 from app.routers import (
     analytical,
+    assistant,
     auth,
     consent,
     grievance,
@@ -355,6 +356,7 @@ app.include_router(privacy.router)
 app.include_router(reconcile.router)
 app.include_router(grievance.router)
 app.include_router(consent.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")

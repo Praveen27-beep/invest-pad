@@ -111,6 +111,12 @@ class Settings(BaseSettings):
     # Mailgun's own combined-attachment cap.
     ingest_max_attachment_bytes: int = 26_214_400
 
+    # --- in-app AI assistant (app/ai/gemini.py, app/routers/assistant.py) -----------
+    # Degrades gracefully to "assistant unavailable" when unset, same convention as
+    # storage_backend/SMTP above -- a hobby feature going dark must never take the rest
+    # of the app down with it.
+    gemini_api_key: str | None = None
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]

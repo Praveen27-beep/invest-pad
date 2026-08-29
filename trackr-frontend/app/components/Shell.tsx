@@ -3,9 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { AIChatProvider } from "@/lib/ai-chat-context";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 import { OnboardingWizard } from "./onboarding/OnboardingWizard";
+import { AIChatPanel } from "./AIChatPanel";
 
 const PUBLIC_PATHS = ["/login", "/register"];
 
@@ -28,15 +30,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   if (!token) return null; // redirect effect above is in flight
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header pathname={pathname} />
-        <main key={pathname} className="flex-1 overflow-x-auto px-5 py-6 animate-fade-in-up sm:px-6 lg:px-8">
-          {children}
-        </main>
+    <AIChatProvider>
+      <div className="flex min-h-screen">
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header pathname={pathname} />
+          <main key={pathname} className="flex-1 overflow-x-auto px-5 py-6 animate-fade-in-up sm:px-6 lg:px-8">
+            {children}
+          </main>
+        </div>
+        <OnboardingWizard />
+        <AIChatPanel />
       </div>
-      <OnboardingWizard />
-    </div>
+    </AIChatProvider>
   );
 }

@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useAIChat } from "@/lib/ai-chat-context";
 
 /**
  * NegativeHoldingError (409): a SELL/BUYBACK/TRANSFER_OUT for this ISIN exceeds what
@@ -18,8 +21,16 @@ export function NegativeHoldingNotice({
   asOf?: string;
   compact?: boolean;
 }) {
+  const { openChat } = useAIChat();
   const short = deficit ? `${deficit} unit${deficit === "1" ? "" : "s"}` : "some units";
   const when = asOf ? ` as of ${asOf}` : "";
+
+  function askAI() {
+    openChat({
+      context: `Trackr+ is showing a "negative holding" error for ISIN ${isin}: short ${short}${when}. buy history is incomplete -- a sale for this ISIN has no matching buy before it in the ledger.`,
+      initialQuestion: `Why is ${isin} showing this error, and what should I do to fix it?`,
+    });
+  }
 
   if (compact) {
     return (
@@ -37,6 +48,13 @@ export function NegativeHoldingNotice({
           </Link>{" "}
           to add the missing history.
         </p>
+        <button
+          type="button"
+          onClick={askAI}
+          className="press-scale mt-3 rounded-lg bg-navy-700 px-3 py-1.5 text-xs font-medium text-cream-50 transition-colors hover:bg-navy-600"
+        >
+          Ask AI about this
+        </button>
       </div>
     );
   }
@@ -64,6 +82,13 @@ export function NegativeHoldingNotice({
         </Link>{" "}
         for {isin} to find and fix the gap by hand.
       </p>
+      <button
+        type="button"
+        onClick={askAI}
+        className="press-scale mt-3 rounded-lg bg-navy-700 px-4 py-2 text-xs font-medium text-cream-50 transition-colors hover:bg-navy-600"
+      >
+        Ask AI about this
+      </button>
     </div>
   );
 }
