@@ -154,7 +154,7 @@ export function Header({ pathname }: { pathname: string }) {
           title={helpOpen === "import" ? "Import your historical trades" : "Set up automatic daily import"}
           subtitle={
             helpOpen === "import"
-              ? "Upload a contract note to bring in trades you've already made."
+              ? "Bring in trades you've already made."
               : "Forward future contract-note emails automatically — no more manual uploads."
           }
           stepIndex={0}

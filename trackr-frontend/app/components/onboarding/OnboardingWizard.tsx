@@ -65,7 +65,7 @@ export function OnboardingWizard() {
       title={step === "import" ? "Import your historical trades" : "Set up automatic daily import"}
       subtitle={
         step === "import"
-          ? "Upload a contract note to bring in trades you've already made — skip this if you're starting fresh."
+          ? "Bring in trades you've already made — skip this if you're starting fresh."
           : "Forward future contract-note emails automatically, so you never have to upload again."
       }
       stepIndex={stepIndex}
