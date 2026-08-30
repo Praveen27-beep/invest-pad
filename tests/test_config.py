@@ -51,15 +51,20 @@ def test_debug_true_does_not_supply_a_default_for_any_secret() -> None:
 
 
 def test_optional_fields_default_sensibly() -> None:
-    """``ingest_domain`` is deliberately overridden here, not left at its dev
-    placeholder: that placeholder is only a safe default under DEBUG=True (see the
-    INGEST_DOMAIN block below), and this test's whole point is checking defaults
-    with ``debug`` at its own real default of False."""
-    settings = Settings(_env_file=None, ingest_domain="ops.example.test", **REQUIRED)
+    """``ingest_domain`` and ``storage_backend`` are deliberately overridden here, not
+    left at their dev defaults: both are only safe under DEBUG=True (see the
+    INGEST_DOMAIN block below, and test_storage_backend_local_outside_debug_fails_at_
+    construction for storage_backend), and this test's whole point is checking every
+    OTHER field's default with ``debug`` at its own real default of False."""
+    settings = Settings(
+        _env_file=None,
+        ingest_domain="ops.example.test",
+        storage_backend="s3",
+        **REQUIRED,
+    )
     assert settings.jwt_algorithm == "HS256"
     assert settings.jwt_expiry_seconds == 3600
     assert settings.debug is False
-    assert settings.storage_backend == "local"
     assert settings.local_storage_root == "./data/documents"
     assert settings.cors_origins == "http://localhost:3000"
     assert settings.portfolio_storage_bucket is None
@@ -116,8 +121,34 @@ def test_ingest_domain_blank_outside_debug_also_fails_at_construction() -> None:
 
 
 def test_ingest_domain_explicit_value_constructs_cleanly_without_debug() -> None:
-    settings = Settings(_env_file=None, ingest_domain="ingest.realclient.example", **REQUIRED)
+    settings = Settings(
+        _env_file=None,
+        ingest_domain="ingest.realclient.example",
+        storage_backend="s3",
+        **REQUIRED,
+    )
     assert settings.ingest_domain == "ingest.realclient.example"
+
+
+# --- STORAGE_BACKEND: "local" writes to a real directory on disk -- fine for a VPS,
+# --- fails outright on Vercel's read-only function filesystem (docs/DEPLOYMENT.md) ---
+
+
+def test_storage_backend_local_outside_debug_fails_at_construction() -> None:
+    with pytest.raises(ValidationError, match="STORAGE_BACKEND"):
+        Settings(_env_file=None, ingest_domain="ops.example.test", **REQUIRED)
+
+
+def test_storage_backend_local_is_fine_under_debug() -> None:
+    settings = Settings(_env_file=None, debug=True, **REQUIRED)
+    assert settings.storage_backend == "local"
+
+
+def test_storage_backend_s3_is_fine_without_debug() -> None:
+    settings = Settings(
+        _env_file=None, ingest_domain="ops.example.test", storage_backend="s3", **REQUIRED
+    )
+    assert settings.storage_backend == "s3"
 
 
 # --- INGEST_WEBHOOK_PROVIDER: required only when a provider is chosen, but validated

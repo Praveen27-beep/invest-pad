@@ -24,9 +24,33 @@ dependencies = [
   # same as every other table.
   "bcrypt>=4.1",
   "pyjwt>=2.8",
+  # Per-IP rate limiting on /auth/*. In-memory (slowapi's default storage) -- fine for a
+  # single uvicorn worker on the alpha VPS; move to a shared Redis backend before scaling
+  # past one process, since counts would otherwise reset per-worker.
+  "slowapi>=0.1.9",
   # AMFI's market-cap classification (app/prices/market_cap_sources.py) is published as
   # XLSX only, unlike sector's plain CSV -- this is the one dependency that adds.
   "openpyxl>=3.1",
+  # Persistence. psycopg3 maps NUMERIC to Decimal natively, so no conversion layer sits
+  # between the database and the engine. Every one of these three was an "optional"
+  # extra until the Vercel deploy (docs/DEPLOYMENT.md) surfaced why that was wrong for
+  # a real deployment: db/connection.py, db/crypto.py, storage/s3.py and
+  # ingest/zerodha_contract_note.py all import these lazily, at first use rather than
+  # at module load -- so `import app.main` (and therefore Vercel's own build/bundle
+  # step) succeeds without them, and the app only discovers they're missing on the
+  # first real request that needs a database, PAN encryption, S3 storage, or a
+  # forwarded PDF contract note. A build that "succeeds" and then 500s on every request
+  # is worse than one that fails loudly at build time, which is what an unconditional
+  # dependency gets you instead.
+  "psycopg[binary]>=3.1",
+  "cryptography>=42",
+  # Private object storage. R2 is the production target and is S3-compatible, so boto3
+  # covers it.
+  "boto3>=1.34",
+  # Contract-note PDF parsing -- the email-forwarding path (app/ingest/webhook.py,
+  # app/ingest/zerodha_contract_note.py) is the primary production ingestion route per
+  # docs/INGESTION.md, and brokers forward contract notes as PDFs.
+  "pdfplumber>=0.11",
 ]
 
 [project.optional-dependencies]
@@ -39,30 +63,18 @@ dev = [
   # thing under test is provider-specific request parsing, which calling the Python
   # function directly would bypass).
   "httpx>=0.27",
+  # moto mocks S3 behind a real boto3 client for offline tests -- test-only, unlike
+  # boto3 itself above which the app needs at runtime whenever STORAGE_BACKEND=s3.
+  "moto[s3]>=5.0",
 ]
 # Gmail OAuth adapter -- PERSONAL TESTING ONLY, not authorised for client use until a
 # Google CASA assessment clears the restricted gmail.readonly scope. See
-# app/ingest/gmail_oauth.py and docs/INGESTION.md. Never wired into a router.
+# app/ingest/gmail_oauth.py and docs/INGESTION.md. Never wired into a router, and
+# deliberately kept out of the unconditional dependency list above: Vercel's Python
+# bundle has a size ceiling and this adapter is never reachable in production.
 gmail = [
   "google-api-python-client>=2.100",
   "google-auth-oauthlib>=1.2",
-]
-# Persistence. psycopg3 maps NUMERIC to Decimal natively, so no conversion layer sits
-# between the database and the engine.
-db = [
-  "psycopg[binary]>=3.1",
-  "cryptography>=42",
-]
-# Private object storage. R2 is the production target and is S3-compatible, so boto3
-# covers it. moto mocks S3 behind a real boto3 client for offline tests.
-storage = [
-  "boto3>=1.34",
-  "moto[s3]>=5.0",
-]
-# Contract-note PDF parsing. Optional: the engine, the fixtures and every other adapter
-# run without it, and pdfplumber is slow and heavy enough not to impose on them.
-pdf = [
-  "pdfplumber>=0.11",
 ]
 
 [tool.setuptools.packages.find]
@@ -71,6 +83,13 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+# Vercel deploys this directory as its own project (Root Directory = trackr-backend/,
+# see docs/DEPLOYMENT.md). app/main.py already matches Vercel's auto-detected entrypoint
+# locations, but this is set explicitly so a future rename or restructure fails loudly
+# at deploy time instead of Vercel silently picking a different file.
+[tool.vercel]
+entrypoint = "app.main:app"
 
 [tool.ruff]
 target-version = "py311"

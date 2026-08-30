@@ -25,6 +25,10 @@ gmail.json
 *.xlsx
 *.xls
 *.csv
+# Archives are the one shape the rule above misses: a zipped folder of the same
+# statements/contract notes has none of the extensions above and was found sitting
+# untracked and un-ignored in docs/ during the pre-deployment audit (2026-08-30).
+*.zip
 
 # The golden fixture is REAL: every trade, date, quantity and price one investor has
 # made, plus their demat identifiers. It is the correctness bar for the engine and it

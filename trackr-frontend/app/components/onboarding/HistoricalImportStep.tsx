@@ -7,6 +7,61 @@ import { useFetch } from "@/lib/use-fetch";
 import type { AccountOut, ConsentStatusOut, StageResultOut } from "@/lib/api-types";
 import { ConsentCapture } from "../ConsentCapture";
 
+/** A brand-new signup owns zero broker accounts (registration only provisions the
+ * investor, see app/db/repository.py::create_personal_investor) -- so without this,
+ * a first-time user granted consent lands on a step that lets them pick a file but
+ * can never submit it (the account <select> below requires accountList.length > 0,
+ * and the wizard has no Settings link the way ImportTab does). Phase 1 only ships a
+ * Zerodha adapter, so pre-filling that is the zero-friction default, still editable
+ * for anyone whose broker differs. */
+function AddBrokerAccountInline({ onAdded }: { onAdded: () => void }) {
+  const { investorId, token } = useAuth();
+  const [broker, setBroker] = useState("ZERODHA");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!investorId || !broker.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.post(`/investors/${investorId}/accounts`, {
+        json: { broker: broker.trim().toUpperCase(), dp_id: null, client_id: null, is_advised: true, label: null },
+        token,
+      });
+      onAdded();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add account");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleAdd} className="space-y-2 rounded-lg border border-navy-100 bg-cream-50 p-3">
+      <p className="text-sm text-navy-700">Add your broker account to continue -- takes a second.</p>
+      {error && <p className="rounded-lg bg-negative/10 px-3 py-2 text-xs text-negative">{error}</p>}
+      <div className="flex gap-2">
+        <input
+          required
+          value={broker}
+          onChange={(e) => setBroker(e.target.value)}
+          placeholder="ZERODHA"
+          className="flex-1 rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm uppercase focus:border-brass-500 focus:outline-none"
+        />
+        <button
+          type="submit"
+          disabled={submitting || !broker.trim()}
+          className="press-scale shrink-0 rounded-lg bg-navy-700 px-4 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-50"
+        >
+          {submitting ? "Adding…" : "Add account"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 /** MProfit's "Historical trade file" step (Mprofit files to import.png) -- the
  * one-time backfill path. Trackr's equivalent is a Zerodha Contract Note XLSX
  * export (POST /ingest/xlsx): the only source that carries both price AND charges,
@@ -101,7 +156,7 @@ export function HistoricalImportStep({ onUploaded }: { onUploaded: () => void })
           <div>
             <label className="mb-1 block text-xs font-medium text-navy-600">Account</label>
             {accountList.length === 0 ? (
-              <p className="text-sm text-navy-400">Add a broker account in Settings first.</p>
+              <AddBrokerAccountInline onAdded={accounts.refetch} />
             ) : (
               <select
                 required
@@ -141,6 +196,7 @@ export function HistoricalImportStep({ onUploaded }: { onUploaded: () => void })
           <button
             type="submit"
             disabled={uploading || files.length === 0 || !accountId}
+            title={!accountId ? "Add a broker account above first" : files.length === 0 ? "Choose a file first" : undefined}
             className="press-scale w-full rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-medium text-cream-50 transition-colors hover:bg-navy-600 disabled:opacity-50"
           >
             {uploading ? "Importing…" : "Import trades"}

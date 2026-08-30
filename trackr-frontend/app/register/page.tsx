@@ -5,18 +5,24 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api-client";
+import { PasswordInput } from "../components/PasswordInput";
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError("Passwords don't match");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -64,15 +70,24 @@ export default function RegisterPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-navy-600 mb-1">Password</label>
-            <input
-              type="password"
+            <PasswordInput
               required
               minLength={8}
+              autoComplete="new-password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
+              onChange={setPassword}
             />
             <p className="mt-1 text-[11px] text-navy-400">At least 8 characters.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-navy-600 mb-1">Confirm password</label>
+            <PasswordInput
+              required
+              minLength={8}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+            />
           </div>
           <button
             type="submit"

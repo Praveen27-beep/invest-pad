@@ -238,3 +238,28 @@ def consented_investor(db: object, investor: str) -> str:
 
     consent.record_consent(db, investor, notice_version="v1", evidence_ref="test-fixture")
     return investor
+
+
+@pytest.fixture()
+def another_consented_investor(db: object, consented_investor: str) -> str:
+    """A second, distinct, consented investor+account -- for tests proving one
+    investor's requests cannot touch another's rows (tests/test_db_transactions.py's
+    cross-investor account_id case, tests/test_db_ownership.py's counterparts)."""
+    from app.db import consent
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO investor (code, display_name) VALUES ('C002', 'Test Two') "
+            "RETURNING id"
+        )
+        investor_id = str(cur.fetchone()[0])
+        cur.execute(
+            "INSERT INTO account (investor_id, broker, is_advised) "
+            "VALUES (%s, 'ZERODHA', true) RETURNING id",
+            (investor_id,),
+        )
+        account_id = str(cur.fetchone()[0])
+    db.commit()
+    os.environ["_TEST_ANOTHER_ACCOUNT_ID"] = account_id
+    consent.record_consent(db, investor_id, notice_version="v1", evidence_ref="test-fixture")
+    return investor_id

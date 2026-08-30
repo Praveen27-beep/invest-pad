@@ -56,6 +56,24 @@ class Settings(BaseSettings):
     # until the next full login.
     session_ttl_seconds: int = 30 * 24 * 3600
 
+    # --- ops endpoints (app.auth.ops) --------------------------------------------
+    # Shared secret for POST /ops/prices/refresh and /ops/snapshots/run -- unset means
+    # those two endpoints refuse every request, same "no safe default" posture as
+    # jwt_secret above. Not a per-user credential: these mutate every investor's stored
+    # data at once and are meant for a cron job or you, curling the box directly, not a
+    # signed-up alpha user.
+    ops_api_key: str | None = None
+
+    # Vercel's own cron-authentication convention (docs/DEPLOYMENT.md): set a
+    # CRON_SECRET project env var and Vercel automatically sends it as
+    # `Authorization: Bearer <value>` on every cron-triggered request -- no other
+    # signing or IP-allowlisting mechanism exists for Vercel Cron. Deliberately
+    # separate from ops_api_key rather than reused for it: Vercel Cron can only send
+    # GET with this one header shape, so it hits its own GET /ops/cron/* routes
+    # (app.routers.analytical), while ops_api_key keeps gating the POST routes a human
+    # or a non-Vercel scheduler would call directly.
+    cron_secret: str | None = None
+
     # --- web --------------------------------------------------------------------
     # Comma-separated in the environment; split into a list for CORSMiddleware.
     cors_origins: str = "http://localhost:3000"
@@ -150,6 +168,27 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"INGEST_WEBHOOK_PROVIDER={provider!r} requires "
                 f"{', '.join(name.upper() for name in missing)}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_storage_backend(self) -> Settings:
+        """Outside DEBUG mode, ``local`` must not be the storage backend.
+
+        ``LocalDocumentStore`` writes to a real directory on disk (``mkdir`` then
+        ``write_bytes``) -- true on a VPS, but on Vercel (docs/DEPLOYMENT.md) the
+        deployed function directory is read-only and only ``/tmp`` is writable, and
+        even that is wiped between invocations. Left at the ``local`` default outside
+        DEBUG, every document upload would fail with a raw filesystem error the first
+        time someone actually tried one -- possibly days after deploying, whenever
+        someone first uploads a statement. Fail at startup instead, the same posture
+        ``_validate_ingest_domain`` takes for a forgotten ``INGEST_DOMAIN``.
+        """
+        if not self.debug and self.storage_backend == "local":
+            raise ValueError(
+                "STORAGE_BACKEND=local is a development-only default and will not "
+                "work outside of DEBUG mode -- set STORAGE_BACKEND=s3 and the "
+                "PORTFOLIO_STORAGE_* variables instead (see docs/DEPLOYMENT.md)"
             )
         return self
 

@@ -29,7 +29,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app import securities
-from app.auth.dependencies import get_current_user, require_owned_investor
+from app.auth.dependencies import require_owned_investor
+from app.auth.ops import require_cron_secret, require_ops_key
 from app.config import Settings, get_settings
 from app.database import get_conn, money, rate
 from app.db import snapshots
@@ -574,19 +575,17 @@ def contribution(
     }
 
 
-@router.post("/ops/prices/refresh", response_model=PriceRefreshResponse)
-def refresh_prices(
-    connection: Any = Depends(get_conn),
-    _current_user: dict[str, Any] = Depends(get_current_user),
-    settings: Settings = Depends(get_settings),
-) -> dict[str, Any]:
+def _refresh_prices(connection: Any, settings: Settings) -> dict[str, Any]:
     """Fetch NSE + BSE bhavcopy and upsert prices for every ISIN the ledger holds.
 
     Mirrors ``app.prices.pipe.main()``'s logic exactly (both exchanges mandatory, stores
     only ISINs already in the ledger, and the same ``get_notifier`` selection so a
-    failure reaches a human here too) as a callable endpoint rather than a cron
-    entry point. Requires auth: this mutates stored prices for every investor, not just
-    the caller's own view of one.
+    failure reaches a human here too). Shared by both ``POST /ops/prices/refresh``
+    (``X-Ops-Key``, a human or a non-Vercel scheduler calling directly) and
+    ``GET /ops/cron/prices-refresh`` (``CRON_SECRET``, Vercel Cron's own convention --
+    it can only call GET). Idempotent: ``upsert_prices`` is ``ON CONFLICT DO UPDATE``,
+    so a duplicate cron invocation (Vercel's own documented "best effort, can invoke
+    more than once" delivery) changes nothing beyond re-storing the same values.
     """
     price_date = date.today()
     result = fetch_day(price_date, notifier=get_notifier(settings))
@@ -599,6 +598,38 @@ def refresh_prices(
         "missing_isins": missing,
         "price_date": price_date,
     }
+
+
+@router.post(
+    "/ops/prices/refresh",
+    response_model=PriceRefreshResponse,
+    dependencies=[Depends(require_ops_key)],
+)
+def refresh_prices(
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Gated by ``X-Ops-Key`` (``app.auth.ops``), not a user login: this mutates stored
+    prices for every investor, not just one caller's own view, and per the
+    pre-deployment audit (2026-08-30) any signed-up alpha user could otherwise reach it
+    with nothing more than a valid session."""
+    return _refresh_prices(connection, settings)
+
+
+@router.get(
+    "/ops/cron/prices-refresh",
+    response_model=PriceRefreshResponse,
+    dependencies=[Depends(require_cron_secret)],
+)
+def refresh_prices_cron(
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Same job as ``refresh_prices``, reachable by Vercel Cron specifically: GET,
+    gated by ``CRON_SECRET`` (``app.auth.ops.require_cron_secret``) rather than
+    ``X-Ops-Key``, since that is the only credential Vercel's scheduler sends and the
+    only HTTP method it calls with. See docs/DEPLOYMENT.md."""
+    return _refresh_prices(connection, settings)
 
 
 def _run_snapshots(
@@ -683,23 +714,45 @@ def _run_snapshots(
     }
 
 
-@router.post("/ops/snapshots/run", response_model=SnapshotRunResponse)
+@router.post(
+    "/ops/snapshots/run",
+    response_model=SnapshotRunResponse,
+    dependencies=[Depends(require_ops_key)],
+)
 def run_snapshots(
     start: date | None = None,
     end: date | None = None,
     connection: Any = Depends(get_conn),
-    _current_user: dict[str, Any] = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """Persist ``portfolio_snapshot`` rows via ``_run_snapshots``.
 
     No ``start``/``end`` -> both default to today: the cheap daily catch-up, run
     alongside ``/ops/prices/refresh``. A wider range is a resumable historical backfill,
-    fetching any bhavcopy it needs first. Auth-gated like ``/ops/prices/refresh``: this
-    writes stored totals for every investor, not just the caller's own view of one.
+    fetching any bhavcopy it needs first. Gated by ``X-Ops-Key`` like
+    ``/ops/prices/refresh``: this writes stored totals for every investor, not just one
+    caller's own view of one.
     """
     resolved_start = start or date.today()
     resolved_end = end or date.today()
     return _run_snapshots(
         connection, resolved_start, resolved_end, get_notifier(settings)
     )
+
+
+@router.get(
+    "/ops/cron/snapshots-run",
+    response_model=SnapshotRunResponse,
+    dependencies=[Depends(require_cron_secret)],
+)
+def run_snapshots_cron(
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Vercel-Cron-reachable counterpart to ``run_snapshots``: always today only (Cron
+    calls a fixed path with no query params), gated by ``CRON_SECRET`` instead of
+    ``X-Ops-Key``. A wider historical backfill still goes through the POST route
+    directly. See docs/DEPLOYMENT.md. ``_run_snapshots`` skips any (investor, date)
+    already snapshotted, so a duplicate cron invocation is a no-op, not a re-write."""
+    today = date.today()
+    return _run_snapshots(connection, today, today, get_notifier(settings))

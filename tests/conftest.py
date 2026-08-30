@@ -18,6 +18,18 @@ import pytest
 
 pytest_plugins = ["tests.conftest_db"]
 
+
+@pytest.fixture(autouse=True, scope="session")
+def _disable_auth_rate_limiting() -> None:
+    """Router tests drive a shared TestClient through /auth/register and /auth/login
+    many times from the same fake client address -- slowapi's per-IP limiter would
+    otherwise start rejecting the test suite itself rather than a real attacker. Off for
+    the whole run; nothing here exercises the limiter's own behaviour."""
+    from app.rate_limit import limiter
+
+    limiter.enabled = False
+
+
 ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = ROOT / "fixtures"
 SCHEMA = ROOT / "schema"

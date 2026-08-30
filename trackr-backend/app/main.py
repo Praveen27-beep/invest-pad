@@ -20,7 +20,17 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from app.auth.ops import (
+    CronSecretInvalidError,
+    CronSecretMissingError,
+    CronSecretNotConfiguredError,
+    OpsKeyInvalidError,
+    OpsKeyMissingError,
+    OpsNotConfiguredError,
+)
 from app.auth.service import EmailAlreadyRegisteredError, InvalidCredentialsError
 from app.config import get_settings
 from app.db.connection import DatabaseNotConfiguredError
@@ -42,6 +52,7 @@ from app.ingest.webhook_providers import (
     MissingWebhookCredentialError,
     WebhookNotConfiguredError,
 )
+from app.rate_limit import limiter
 from app.routers import (
     analytical,
     auth,
@@ -60,6 +71,9 @@ logger = logging.getLogger("app")
 settings = get_settings()
 
 app = FastAPI(title="Trackr Portfolio Intelligence", version="0.1.0-mvp")
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -231,6 +245,77 @@ async def webhook_not_configured_handler(
         "request_id=%s INGEST_WEBHOOK_PROVIDER is unset; refusing the inbound-email "
         "webhook request rather than accepting an unverifiable one",
         request_id,
+    )
+    return _error(request, 500, "the server is not configured correctly")
+
+
+# --------------------------------------------------------------------------------------
+# ops endpoints (app/auth/ops.py) -- same three-way shape as the webhook handlers above:
+# missing/invalid/not-configured, not collapsed, since there is no account-enumeration
+# concern for a single shared operational secret.
+# --------------------------------------------------------------------------------------
+
+
+@app.exception_handler(OpsKeyMissingError)
+async def ops_key_missing_handler(request: Request, exc: OpsKeyMissingError) -> JSONResponse:
+    logger.warning(
+        "request_id=%s path=%s ops request missing X-Ops-Key",
+        getattr(request.state, "request_id", None), request.url.path,
+    )
+    return _error(request, 401, "missing X-Ops-Key header")
+
+
+@app.exception_handler(OpsKeyInvalidError)
+async def ops_key_invalid_handler(request: Request, exc: OpsKeyInvalidError) -> JSONResponse:
+    logger.warning(
+        "request_id=%s path=%s ops request's X-Ops-Key did not verify",
+        getattr(request.state, "request_id", None), request.url.path,
+    )
+    return _error(request, 403, "invalid X-Ops-Key")
+
+
+@app.exception_handler(OpsNotConfiguredError)
+async def ops_not_configured_handler(
+    request: Request, exc: OpsNotConfiguredError
+) -> JSONResponse:
+    logger.error(
+        "request_id=%s path=%s OPS_API_KEY is unset; refusing the ops request rather "
+        "than accepting an unverifiable one",
+        getattr(request.state, "request_id", None), request.url.path,
+    )
+    return _error(request, 500, "the server is not configured correctly")
+
+
+@app.exception_handler(CronSecretMissingError)
+async def cron_secret_missing_handler(
+    request: Request, exc: CronSecretMissingError
+) -> JSONResponse:
+    logger.warning(
+        "request_id=%s path=%s cron request missing Authorization header",
+        getattr(request.state, "request_id", None), request.url.path,
+    )
+    return _error(request, 401, "missing Authorization header")
+
+
+@app.exception_handler(CronSecretInvalidError)
+async def cron_secret_invalid_handler(
+    request: Request, exc: CronSecretInvalidError
+) -> JSONResponse:
+    logger.warning(
+        "request_id=%s path=%s cron request's Authorization header did not verify",
+        getattr(request.state, "request_id", None), request.url.path,
+    )
+    return _error(request, 403, "invalid Authorization header")
+
+
+@app.exception_handler(CronSecretNotConfiguredError)
+async def cron_secret_not_configured_handler(
+    request: Request, exc: CronSecretNotConfiguredError
+) -> JSONResponse:
+    logger.error(
+        "request_id=%s path=%s CRON_SECRET is unset; refusing the cron request rather "
+        "than accepting an unverifiable one",
+        getattr(request.state, "request_id", None), request.url.path,
     )
     return _error(request, 500, "the server is not configured correctly")
 

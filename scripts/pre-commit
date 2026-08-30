@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Pre-commit secret/PII gate. Not versioned into .git/hooks directly -- git never
+# clones that directory -- so this lives here and `make install-hooks` symlinks it in.
+#
+# Exists because of a real near-miss (pre-deployment audit, 2026-08-30):
+# docs/Docs copy.zip sat in the working tree, untracked but NOT matched by any
+# .gitignore rule (the client-data rule covered *.pdf/*.xlsx/*.xls/*.csv, not *.zip),
+# containing real contract notes, CAS statements and tradebooks. `git add .` would have
+# put a real person's financial history into git history, which per CLAUDE.md's own
+# .gitignore comment is the one place DPDP erasure cannot reach. This hook is the check
+# that would have caught it before the commit existed, not after.
+#
+# Two checks, both cheap, no third-party scanner or network call required:
+#   1. a staged file whose extension says "client document" and isn't one of the
+#      fixtures/ paths .gitignore deliberately re-admits (see .gitignore's own comment
+#      for why those specific paths are safe: synthetic or public data, checked in on
+#      purpose, one at a time).
+#   2. a staged file's ADDED lines containing something secret-shaped -- cloud
+#      credentials, private key headers, or a `word = "long-looking-value"` assignment
+#      for a name containing key/secret/password/token, excluding .env.example (which is
+#      supposed to document names with blank values) and paths under tests/ (this
+#      repo's real convention for placeholder secrets, e.g. "test-jwt-secret").
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+fail=0
+
+#: Exact paths .gitignore re-admits with `!fixtures/...` -- synthetic or public data,
+#: not client documents. Keep this list in sync with .gitignore's own exceptions.
+allowed_regex='^fixtures/(engine_cases\.json|bhavcopy/.*\.csv|nse_sector_sample\.csv|amfi_market_cap_sample\.xlsx)$'
+
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    if [[ "$file" =~ \.(pdf|xlsx|xls|csv|zip)$ ]] && ! [[ "$file" =~ $allowed_regex ]]; then
+        echo "BLOCKED: $file looks like a client document (pdf/xlsx/xls/csv/zip)." >&2
+        echo "  Client data never enters version control -- see .gitignore's own comment." >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+secret_pattern='(AKIA[0-9A-Z]{16}|-----BEGIN (RSA|EC|OPENSSH|PRIVATE) KEY-----|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[0-9A-Za-z]{30,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{30,}|(api[_-]?key|secret|password|passwd|token|private[_-]?key|access[_-]?key)[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_/+=-]{12,})'
+
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    case "$file" in
+        *.env.example|*/.env.example|tests/*) continue ;;
+    esac
+    hit=$(git diff --cached -U0 -- "$file" | grep -E '^\+' | grep -viE 'os\.environ|getenv|process\.env|settings\.|Depends\(' | grep -E "$secret_pattern" || true)
+    if [ -n "$hit" ]; then
+        echo "BLOCKED: $file has an added line that looks like a hardcoded secret:" >&2
+        echo "$hit" | sed 's/^/  /' >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+if [ "$fail" -eq 1 ]; then
+    echo "" >&2
+    echo "Fix the file(s) above, or if this is a genuine false positive, commit with" >&2
+    echo "--no-verify -- but re-check by hand first; this hook exists because a real" >&2
+    echo "person's financial documents almost went into git history over this exact gap." >&2
+    exit 1
+fi

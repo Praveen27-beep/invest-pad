@@ -118,6 +118,7 @@ docs/DATA_MODEL.md       tables, columns, invariants
 docs/ENGINE_SPEC.md      exact calculation rules — FIFO, XIRR, corporate actions
 docs/INGESTION.md        Gmail forwarding, CSV, tradebook; legal boundaries
 docs/BUILD_PLAN.md       session-by-session build order for Claude Code
+docs/DEPLOYMENT.md       Vercel-for-both deploy steps, env vars, cron wiring
 schema/*.schema.json     JSON Schema for every core object (language-agnostic)
 schema/asset_classes.json  the 30 asset-class codes; seed all, build only `EQ`
 contracts/openapi.yaml   HTTP API contract — swap any backend behind this

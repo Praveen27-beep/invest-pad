@@ -14,12 +14,15 @@ DB_CONTAINER="${TRACKR_DB_CONTAINER:-trackr-postgres}"
 DB_IMAGE="${TRACKR_DB_IMAGE:-postgres:16-alpine}"
 # Auto-detect DB port: reuse existing container port if running, or fallback to 5433 if 5432 is bound
 if [[ -z "${TRACKR_DB_PORT:-}" ]]; then
-    if docker ps -a --format '{{.Names}}' | grep -qx "$DB_CONTAINER" && docker port "$DB_CONTAINER" 5432/tcp &>/dev/null; then
-        DB_PORT=$(docker port "$DB_CONTAINER" 5432/tcp 2>/dev/null | head -n1 | sed -E 's/.*://')
-    elif ss -tlnp 'sport = :5432' 2>/dev/null | grep -q LISTEN || lsof -i :5432 &>/dev/null; then
-        DB_PORT=5433
-    else
-        DB_PORT=5432
+    if docker ps -a --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
+        DB_PORT=$(docker inspect --format '{{(index (index .HostConfig.PortBindings "5432/tcp") 0).HostPort}}' "$DB_CONTAINER" 2>/dev/null || true)
+    fi
+    if [[ -z "${DB_PORT:-}" ]]; then
+        if ss -tlnp 'sport = :5432' 2>/dev/null | grep -q LISTEN || lsof -i :5432 &>/dev/null; then
+            DB_PORT=5433
+        else
+            DB_PORT=5432
+        fi
     fi
 else
     DB_PORT="$TRACKR_DB_PORT"
@@ -180,10 +183,17 @@ else
     (
         cd "$BACKEND_DIR"
         # shellcheck disable=SC2086
-        exec setsid "$VENV_DIR/bin/uvicorn" app.main:app \
-            --host 0.0.0.0 --port "$BACKEND_PORT" \
-            --log-level info $reload_flag \
-            </dev/null >> "$LOG_DIR/backend.log" 2>&1
+        if command -v setsid &>/dev/null; then
+            exec setsid "$VENV_DIR/bin/uvicorn" app.main:app \
+                --host 0.0.0.0 --port "$BACKEND_PORT" \
+                --log-level info $reload_flag \
+                </dev/null >> "$LOG_DIR/backend.log" 2>&1
+        else
+            exec "$VENV_DIR/bin/uvicorn" app.main:app \
+                --host 0.0.0.0 --port "$BACKEND_PORT" \
+                --log-level info $reload_flag \
+                </dev/null >> "$LOG_DIR/backend.log" 2>&1
+        fi
     ) &
     bpid=$!
     disown $bpid 2>/dev/null || true
@@ -262,8 +272,13 @@ if [[ -f "$PID_DIR/frontend.pid" ]]; then
 else
     (
         cd "$FRONTEND_DIR"
-        exec setsid ./node_modules/.bin/next dev --port "$FRONTEND_PORT" --hostname 0.0.0.0 \
-            </dev/null >> "$LOG_DIR/frontend.log" 2>&1
+        if command -v setsid &>/dev/null; then
+            exec setsid ./node_modules/.bin/next dev --port "$FRONTEND_PORT" --hostname 0.0.0.0 \
+                </dev/null >> "$LOG_DIR/frontend.log" 2>&1
+        else
+            exec ./node_modules/.bin/next dev --port "$FRONTEND_PORT" --hostname 0.0.0.0 \
+                </dev/null >> "$LOG_DIR/frontend.log" 2>&1
+        fi
     ) &
     fpid=$!
     disown $fpid 2>/dev/null || true

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth import service
@@ -19,6 +19,7 @@ from app.auth.schemas import LoginRequest, RegisterRequest, TokenResponse, UserR
 from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db.repository import create_personal_investor, first_investor_id_for_user
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -29,7 +30,9 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("5/minute")
 def register(
+    request: Request,
     body: RegisterRequest,
     conn: Any = Depends(get_conn),
     settings: Settings = Depends(get_settings),
@@ -48,7 +51,9 @@ def register(
 
 
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit("10/minute")
 def login(
+    request: Request,
     body: LoginRequest,
     conn: Any = Depends(get_conn),
     settings: Settings = Depends(get_settings),
@@ -63,7 +68,9 @@ def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("30/minute")
 def refresh(
+    request: Request,
     conn: Any = Depends(get_conn),
     settings: Settings = Depends(get_settings),
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),

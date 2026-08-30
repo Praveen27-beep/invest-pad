@@ -133,8 +133,17 @@ def test_cost_transfer_survives_a_save_and_load_round_trip(db, consented_investo
     assert reloaded.cost_transfer == Decimal("1234.567890")
 
 
-def test_an_unknown_account_id_is_refused_by_the_database(db, consented_investor) -> None:
-    import psycopg
+def test_an_unknown_account_id_is_refused_before_it_reaches_the_database(
+    db, consented_investor
+) -> None:
+    """Pre-deployment audit (2026-08-30): this used to be refused by a raw
+    ForeignKeyViolation bubbling up as an unhandled 500 -- correct for "doesn't exist",
+    but the same unvalidated path also let an authenticated caller who owns
+    ``consented_investor`` write rows against an account_id belonging to a DIFFERENT
+    investor (and thus a different account owner), since a valid FK proves the account
+    exists, not that this investor owns it. ``create_transactions`` now checks
+    ``account_belongs_to`` up front -- see test below for the cross-investor case."""
+    from fastapi import HTTPException
 
     bad = TransactionIn(
         account_id="00000000-0000-0000-0000-000000000000",
@@ -144,6 +153,29 @@ def test_an_unknown_account_id_is_refused_by_the_database(db, consented_investor
         quantity="10",
         price="100",
     )
-    with pytest.raises(psycopg.errors.ForeignKeyViolation):
+    with pytest.raises(HTTPException) as exc_info:
         create_transactions(consented_investor, [bad], connection=db)
+    assert exc_info.value.status_code == 404
+
+
+def test_an_account_belonging_to_another_investor_is_refused(
+    db, consented_investor, another_consented_investor
+) -> None:
+    """The account exists and passes its FK -- it just belongs to a different investor
+    than the one named in the URL. Without the ``account_belongs_to`` check this would
+    silently append a transaction to a stranger's ledger."""
+    from fastapi import HTTPException
+
+    foreign = TransactionIn(
+        account_id=os.environ["_TEST_ANOTHER_ACCOUNT_ID"],
+        isin="INE153T01027",
+        txn_date=date(2024, 1, 10),
+        txn_type="BUY",
+        quantity="10",
+        price="100",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        create_transactions(consented_investor, [foreign], connection=db)
+    assert exc_info.value.status_code == 404
+    assert txn_count(db) == 0
     db.rollback()

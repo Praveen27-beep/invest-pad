@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money
 from app.db.consent import require_consent
-from app.db.repository import load_transactions, save_transactions
+from app.db.repository import account_belongs_to, load_transactions, save_transactions
 from app.engine.dividends import compute_dividends
 from app.engine.lots import compute_lots
 from app.engine.realised import compute_realised
@@ -87,14 +87,23 @@ def create_transactions(
     counted, never rejected as an error, per contracts/openapi.yaml.
 
     ``investor_id`` scopes the URL; each row still carries its own ``account_id``, which
-    is what ``save_transactions`` actually writes against -- unvalidated here against
-    ``investor_id`` for the same reason the sibling GET endpoints do not validate it
-    either, a database foreign key still refuses an account that does not exist.
+    is what ``save_transactions`` actually writes against -- so every distinct
+    ``account_id`` in the body is checked here against ``investor_id``, the same
+    ``account_belongs_to`` call ``routers.ingest`` already makes before staging. An FK
+    only proves the account exists, not that the caller owns it: without this check the
+    path-level ``require_owned_investor`` guard would authorise the URL while the body
+    let an authenticated user append ledger rows to a stranger's account.
 
     All logic lives in ``app.db.repository.save_transactions``; this handler only
     translates between the wire shape and ``Transaction``.
     """
     require_consent(connection, investor_id)
+    for account_id in {t.account_id for t in body}:
+        if not account_belongs_to(connection, account_id, investor_id):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                f"no such account for this investor: {account_id}",
+            )
     transactions = [
         Transaction(
             isin=t.isin,

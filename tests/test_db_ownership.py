@@ -281,3 +281,30 @@ def test_batches_and_stage_are_scoped_to_the_owner(client, consent_for, account_
         headers={"Authorization": f"Bearer {token_other}"},
     ).json()
     assert empty == []
+
+
+# --- rate limiting ---------------------------------------------------------------
+# Disabled everywhere else in this suite by tests/conftest.py's autouse fixture --
+# every other test above registers/logs in repeatedly from the same fake client
+# address, which the limiter would otherwise throttle. Re-enabled just here, for just
+# long enough to prove app.rate_limit.limiter is actually wired into /auth/register.
+
+
+def test_register_is_rate_limited_per_ip(client) -> None:
+    from app.rate_limit import limiter
+
+    limiter.enabled = True
+    try:
+        for i in range(5):
+            res = client.post(
+                "/auth/register",
+                json={"email": f"rate-limit-{i}@example.com", "password": "password-1"},
+            )
+            assert res.status_code == 201, res.text
+        blocked = client.post(
+            "/auth/register",
+            json={"email": "rate-limit-6@example.com", "password": "password-1"},
+        )
+        assert blocked.status_code == 429
+    finally:
+        limiter.enabled = False
