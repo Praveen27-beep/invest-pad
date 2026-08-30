@@ -76,6 +76,41 @@ app = FastAPI(title="Trackr Portfolio Intelligence", version="0.1.0-mvp")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+class CatchAllExceptionMiddleware:
+    """Convert any exception that reaches here into the generic 500 JSON response
+    (``unhandled_exception_handler`` below), positioned inside ``CORSMiddleware`` so
+    that response still carries CORS headers.
+
+    Deliberately NOT ``@app.exception_handler(Exception)``: Starlette hoists a handler
+    registered for the bare ``Exception`` class straight into ``ServerErrorMiddleware``
+    -- the true outermost ASGI layer, above ``CORSMiddleware`` and every other
+    middleware, by design (``starlette/applications.py``:
+    ``if key in (500, Exception): error_handler = value``). A response built there is
+    sent via the raw, unwrapped ASGI ``send``, bypassing CORS entirely -- every
+    unhandled 500 reaches the browser with no ``Access-Control-Allow-Origin`` header,
+    which the browser reports as a CORS failure and masks the real error. Catching it
+    here instead, below CORS in the middleware stack, is what actually lets CORS add
+    its headers -- confirmed against a local repro before this was written; see the
+    session that added this comment for the reproduction script if it resurfaces.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        try:
+            await self.app(scope, receive, send)
+        except Exception as exc:
+            response = await unhandled_exception_handler(Request(scope, receive=receive), exc)
+            await response(scope, receive, send)
+
+
+app.add_middleware(CatchAllExceptionMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -85,25 +120,53 @@ app.add_middleware(
 )
 
 
-@app.middleware("http")
-async def request_context(request: Request, call_next: Any) -> Any:
+class RequestContextMiddleware:
     """Assign a request id up front so every log line for this request -- including
     an exception handler's -- can be correlated, and echo it back so a client-reported
-    error can be found in the server log from the header alone."""
-    request_id = str(uuid.uuid4())
-    request.state.request_id = request_id
-    started = time.monotonic()
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    logger.info(
-        "request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
-        request_id,
-        request.method,
-        request.url.path,
-        response.status_code,
-        (time.monotonic() - started) * 1000,
-    )
-    return response
+    error can be found in the server log from the header alone.
+
+    Plain ASGI, deliberately not ``@app.middleware("http")`` (Starlette's
+    ``BaseHTTPMiddleware``): that runs the downstream app in a background task, and
+    when a route raises, its ``call_next()`` re-raises the original exception a second
+    time even after ``CatchAllExceptionMiddleware`` above has already produced and sent
+    a clean response -- harmless once that middleware exists, but it double-logs every
+    error and needlessly surfaces a second traceback at the ASGI-server level. A plain
+    ASGI middleware only wraps ``send``, so it never buffers or re-raises around a
+    response Starlette's exception handling already sent.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request_id = str(uuid.uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
+        started = time.monotonic()
+        status_code = 0
+
+        async def send_wrapper(message: dict) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                message["headers"].append((b"x-request-id", request_id.encode()))
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+        logger.info(
+            "request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+            request_id,
+            scope["method"],
+            scope["path"],
+            status_code,
+            (time.monotonic() - started) * 1000,
+        )
+
+
+app.add_middleware(RequestContextMiddleware)
 
 
 def _error(request: Request, status_code: int, message: str, **extra: Any) -> JSONResponse:
@@ -422,11 +485,13 @@ async def database_not_configured_handler(
     return _error(request, 500, "the server is not configured correctly")
 
 
-@app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Never a bare ``except: pass``. Every unhandled exception is logged with its full
     traceback, the request id, and the route, then answered with a generic 500 -- the
-    client never sees internals, but the server log always has them."""
+    client never sees internals, but the server log always has them.
+
+    Called directly from ``CatchAllExceptionMiddleware`` above, not registered via
+    ``@app.exception_handler(Exception)`` -- see that middleware's docstring for why."""
     request_id = getattr(request.state, "request_id", None)
     logger.error(
         "request_id=%s method=%s path=%s unhandled_exception=%s",
