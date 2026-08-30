@@ -11,11 +11,13 @@ import { Card, ErrorState, LoadingState, NoInvestorState } from "./components/Pa
 import { KpiCard } from "./components/KpiCard";
 import { DualXirrCard } from "./components/DualXirrCard";
 import { MissingPriceNotice } from "./components/MissingPriceNotice";
+import { NegativeHoldingNotice } from "./components/NegativeHoldingNotice";
 import { AllocationDonut, type AllocationSlice } from "./components/AllocationDonut";
 import { AllocationGroupsTable, type AllocationGroupRow } from "./components/AllocationGroupsTable";
 import { HistoricalValueChart } from "./components/HistoricalValueChart";
 import { HoldingsTable } from "./components/HoldingsTable";
 import { UnpricedBanner } from "./components/UnpricedBanner";
+import { SkippedHoldingsBanner } from "./components/SkippedHoldingsBanner";
 import { TabBar } from "./components/TabBar";
 import { HoldingsTab } from "./components/tabs/HoldingsTab";
 import { PerformanceTab } from "./components/tabs/PerformanceTab";
@@ -84,7 +86,17 @@ function OverviewTab() {
   // /holdings succeed by partitioning the same unpriced holding out via UnpricedBanner.
   // Blocking the whole dashboard on that would make UnpricedBanner unreachable in
   // exactly the case it exists for -- so only a summary/holdings failure is fatal here.
+  const blockingErrorDetail = summary.errorDetail ?? holdings.errorDetail;
   const blockingError = summary.error ?? holdings.error;
+  if (blockingErrorDetail?.isin) {
+    return (
+      <NegativeHoldingNotice
+        isin={blockingErrorDetail.isin}
+        deficit={blockingErrorDetail.deficit}
+        asOf={blockingErrorDetail.asOf}
+      />
+    );
+  }
   if (blockingError) return <ErrorState message={blockingError} />;
 
   if (summary.loading || performance.loading) return <LoadingState label="Loading portfolio…" />;
@@ -185,6 +197,7 @@ function OverviewTab() {
       )}
 
       {s && <UnpricedBanner unpriced={s.unpriced} />}
+      {s && <SkippedHoldingsBanner skipped={s.skipped} onFixed={() => { summary.refetch(); holdings.refetch(); }} />}
 
       <div className="flex items-center justify-end gap-2 text-xs">
         <span className="text-navy-400">View by</span>

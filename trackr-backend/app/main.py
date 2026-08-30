@@ -55,6 +55,7 @@ from app.ingest.webhook_providers import (
 from app.rate_limit import limiter
 from app.routers import (
     analytical,
+    assistant,
     auth,
     consent,
     grievance,
@@ -129,10 +130,13 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
 
 @app.exception_handler(NegativeHoldingError)
 async def negative_holding_handler(request: Request, exc: NegativeHoldingError) -> JSONResponse:
+    deficit = -exc.quantity if exc.quantity is not None else None
     return _error(
         request, 409,
         f"holding for {exc.isin} went negative; buy history is incomplete",
         isin=exc.isin,
+        deficit=str(deficit) if deficit is not None else None,
+        as_of=str(exc.as_of) if exc.as_of is not None else None,
     )
 
 
@@ -437,6 +441,7 @@ app.include_router(privacy.router)
 app.include_router(reconcile.router)
 app.include_router(grievance.router)
 app.include_router(consent.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")

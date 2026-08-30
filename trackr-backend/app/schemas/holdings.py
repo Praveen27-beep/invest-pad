@@ -44,6 +44,18 @@ class UnpricedOut(BaseModel):
     holdings: list[UnpricedHoldingOut]
 
 
+class SkippedHoldingOut(BaseModel):
+    """One ISIN excluded because its own ledger segment didn't reconcile --
+    ``compute_holdings_partitioned`` (app/engine/holdings.py), named individually the
+    same way UnpricedHoldingOut names a missing price, so the dashboard can point at
+    exactly what's wrong instead of the whole screen going blank over it."""
+
+    isin: str
+    message: str
+    deficit: str | None = None
+    as_of: date | None = None
+
+
 class AllocationGroupOut(BaseModel):
     asset_class: str
     label: str
@@ -73,6 +85,7 @@ class HoldingsResponse(BaseModel):
     holdings: list[HoldingOut]
     totals: TotalsOut
     unpriced: UnpricedOut
+    skipped: list[SkippedHoldingOut] = []
 
 
 class SummaryResponse(BaseModel):
@@ -83,6 +96,7 @@ class SummaryResponse(BaseModel):
     unrealised_pct: float | None = None
     cost_estimated: bool = False
     unpriced: UnpricedOut
+    skipped: list[SkippedHoldingOut] = []
     allocation: list[AllocationGroupOut]
     allocation_by_sector: list[SectorAllocationGroupOut]
     allocation_by_market_cap: list[MarketCapAllocationGroupOut]

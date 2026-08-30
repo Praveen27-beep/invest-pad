@@ -9,6 +9,7 @@ import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { KpiCard } from "../KpiCard";
 import { DualXirrCard } from "../DualXirrCard";
 import { MissingPriceNotice } from "../MissingPriceNotice";
+import { NegativeHoldingNotice } from "../NegativeHoldingNotice";
 
 // Only NIFTY50_TRI has a real adapter (app.prices.index_sources) -- SENSEX_TRI is a
 // valid contract enum value with no reliable free, machine-fetchable TRI source behind
@@ -31,6 +32,16 @@ export function PerformanceTab() {
   if (performance.error) {
     const isins = performance.errorDetail?.isins;
     if (isins && isins.length > 0) return <MissingPriceNotice isins={isins} />;
+    const negIsin = performance.errorDetail?.isin;
+    if (negIsin) {
+      return (
+        <NegativeHoldingNotice
+          isin={negIsin}
+          deficit={performance.errorDetail?.deficit}
+          asOf={performance.errorDetail?.asOf}
+        />
+      );
+    }
     return <ErrorState message={performance.error} />;
   }
   if (performance.loading) return <LoadingState label="Loading performance…" />;

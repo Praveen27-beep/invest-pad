@@ -9,6 +9,7 @@ import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { KpiCard } from "../KpiCard";
 import { ContributionTable } from "../ContributionTable";
 import { MissingPriceNotice } from "../MissingPriceNotice";
+import { NegativeHoldingNotice } from "../NegativeHoldingNotice";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -111,6 +112,12 @@ export function ContributionTab() {
       {contribution.error ? (
         contribution.errorDetail?.isins && contribution.errorDetail.isins.length > 0 ? (
           <MissingPriceNotice isins={contribution.errorDetail.isins} />
+        ) : contribution.errorDetail?.isin ? (
+          <NegativeHoldingNotice
+            isin={contribution.errorDetail.isin}
+            deficit={contribution.errorDetail.deficit}
+            asOf={contribution.errorDetail.asOf}
+          />
         ) : (
           <ErrorState message={contribution.error} />
         )

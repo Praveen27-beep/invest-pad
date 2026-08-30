@@ -8,6 +8,8 @@ import type { HoldingsResponse } from "@/lib/api-types";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { HoldingsTable } from "../HoldingsTable";
 import { UnpricedBanner } from "../UnpricedBanner";
+import { NegativeHoldingNotice } from "../NegativeHoldingNotice";
+import { SkippedHoldingsBanner } from "../SkippedHoldingsBanner";
 
 export function HoldingsTab() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
@@ -33,6 +35,15 @@ export function HoldingsTab() {
   }, [holdings.data, filter]);
 
   if (!investorId) return <NoInvestorState />;
+  if (holdings.errorDetail?.isin) {
+    return (
+      <NegativeHoldingNotice
+        isin={holdings.errorDetail.isin}
+        deficit={holdings.errorDetail.deficit}
+        asOf={holdings.errorDetail.asOf}
+      />
+    );
+  }
   if (holdings.error) return <ErrorState message={holdings.error} />;
 
   return (
@@ -52,6 +63,9 @@ export function HoldingsTab() {
       </div>
 
       {holdings.data && <UnpricedBanner unpriced={holdings.data.unpriced} />}
+      {holdings.data && (
+        <SkippedHoldingsBanner skipped={holdings.data.skipped} onFixed={() => holdings.refetch()} />
+      )}
 
       <Card>
         {holdings.loading ? <LoadingState /> : <HoldingsTable holdings={filtered} />}

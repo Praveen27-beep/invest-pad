@@ -87,7 +87,7 @@ class HttpBhavcopySource:
         request = urllib.request.Request(self.url_for(on), headers=BROWSER_HEADERS)
         try:
             with self._opener(request, timeout=TIMEOUT_SECONDS, context=_ssl_context()) as response:
-                return response.read()
+                body = response.read()
         except urllib.error.HTTPError as exc:
             # 404 is the exchange saying "no trading that day". Anything else is a problem
             # with the fetch itself: 403 means the anti-bot headers stopped working, 5xx
@@ -97,6 +97,17 @@ class HttpBhavcopySource:
             raise FetchFailed(f"{self.exchange}: HTTP {exc.code} for {on}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise FetchFailed(f"{self.exchange}: {type(exc).__name__} for {on}") from exc
+
+        # BSE's "no trading that day" answer is not a 404 -- confirmed live, 2026-08-30
+        # (a Sunday): HTTP 200, its own marketing homepage HTML. Treated as NotPublished,
+        # the same as NSE's 404, rather than falling through to parse() where it would
+        # raise BhavcopyFormatError and alert every single non-trading day -- exactly the
+        # "trains whoever reads the alerts to ignore them" failure NotPublished's own
+        # docstring warns about. A real UDiFF file, zipped or bare CSV, never starts with
+        # an HTML doctype/tag, so this cannot mask an actual format break.
+        if body.lstrip()[:20].lower().startswith((b"<!doctype html", b"<html")):
+            raise NotPublished(f"{self.exchange}: nothing published for {on} (HTML response)")
+        return body
 
 
 def nse_source(opener=None) -> HttpBhavcopySource:

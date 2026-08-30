@@ -18,12 +18,22 @@ export class ApiError extends Error {
    * refused instead of showing a generic failure toast. */
   reasons?: string[];
   batchId?: string;
+  /** NegativeHoldingError's fields (app/engine/errors.py) -- the ISIN whose disposals
+   * exceed its acquisitions, how many units short, and the date the shortfall first
+   * appeared. Carried so the UI can name the ISIN and point at the exact date instead
+   * of showing the raw "buy history is incomplete" string as a dead end. */
+  isin?: string;
+  deficit?: string;
+  asOf?: string;
   constructor(
     status: number,
     message: string,
     isins?: string[],
     reasons?: string[],
-    batchId?: string
+    batchId?: string,
+    isin?: string,
+    deficit?: string,
+    asOf?: string
   ) {
     super(message);
     this.status = status;
@@ -31,6 +41,9 @@ export class ApiError extends Error {
     this.isins = isins;
     this.reasons = reasons;
     this.batchId = batchId;
+    this.isin = isin;
+    this.deficit = deficit;
+    this.asOf = asOf;
   }
 }
 
@@ -95,6 +108,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     let isins: string[] | undefined;
     let reasons: string[] | undefined;
     let batchId: string | undefined;
+    let isin: string | undefined;
+    let deficit: string | undefined;
+    let asOf: string | undefined;
     try {
       const payload = await res.json();
       if (typeof payload?.detail === "string") message = payload.detail;
@@ -105,6 +121,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       if (Array.isArray(payload?.isins)) isins = payload.isins;
       if (Array.isArray(payload?.reasons)) reasons = payload.reasons;
       if (typeof payload?.batch_id === "string") batchId = payload.batch_id;
+      if (typeof payload?.isin === "string") isin = payload.isin;
+      if (typeof payload?.deficit === "string") deficit = payload.deficit;
+      if (typeof payload?.as_of === "string") asOf = payload.as_of;
     } catch {
       // Non-JSON error body -- fall back to statusText.
     }
@@ -126,7 +145,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       }
     }
 
-    throw new ApiError(res.status, message, isins, reasons, batchId);
+    throw new ApiError(res.status, message, isins, reasons, batchId, isin, deficit, asOf);
   }
 
   if (res.status === 204) return undefined as T;

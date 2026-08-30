@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pytest
 from app.engine.errors import NegativeHoldingError
-from app.engine.holdings import compute_holdings
+from app.engine.holdings import compute_holdings, compute_holdings_partitioned
 from app.engine.types import Source, Transaction, TxnType
 
 
@@ -119,6 +119,48 @@ def test_disposal_exceeding_holding_raises() -> None:
 def test_disposal_against_nothing_raises() -> None:
     with pytest.raises(NegativeHoldingError):
         compute_holdings([txn("SELL", "1", "250", "2024-06-10")])
+
+
+def test_partitioned_excludes_only_the_broken_isin() -> None:
+    """The done-when for compute_holdings_partitioned: one ISIN whose ledger doesn't
+    reconcile must not take a clean, independent ISIN down with it."""
+    holdings, skipped = compute_holdings_partitioned(
+        [
+            txn("BUY", "10", "200", "2024-01-10", isin="INE153T01027"),
+            txn("SELL", "40", "250", "2024-06-10", isin="INE153T01027"),
+            txn("BUY", "20", "100", "2024-01-10", isin="INE942C01029"),
+        ]
+    )
+    assert [h.isin for h in holdings] == ["INE942C01029"]
+    (s,) = skipped
+    assert s.isin == "INE153T01027"
+    assert s.deficit == Decimal("30")
+    assert s.as_of == date(2024, 6, 10)
+    assert "INE153T01027" in s.message
+
+
+def test_partitioned_matches_compute_holdings_when_nothing_is_broken() -> None:
+    """No exclusions -> byte-identical to compute_holdings, not just "close enough" --
+    this is what makes reusing this for /holdings and /summary safe."""
+    transactions = [
+        txn("BUY", "10", "200", "2024-01-10", isin="INE153T01027"),
+        txn("BUY", "20", "100", "2024-01-10", isin="INE942C01029"),
+    ]
+    holdings, skipped = compute_holdings_partitioned(transactions)
+    assert skipped == []
+    assert holdings == compute_holdings(transactions)
+
+
+def test_partitioned_excludes_multiple_broken_isins_independently() -> None:
+    holdings, skipped = compute_holdings_partitioned(
+        [
+            txn("SELL", "1", "250", "2024-06-10", isin="INE153T01027"),
+            txn("SELL", "1", "250", "2024-06-10", isin="INE942C01029"),
+            txn("BUY", "20", "100", "2024-01-10", isin="INE000000000"),
+        ]
+    )
+    assert [h.isin for h in holdings] == ["INE000000000"]
+    assert {s.isin for s in skipped} == {"INE153T01027", "INE942C01029"}
 
 
 def test_positions_are_independent_and_sorted() -> None:

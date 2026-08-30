@@ -105,6 +105,48 @@ def test_a_zip_is_transparently_decompressed() -> None:
     assert parse(buffer.getvalue(), "NSE") == parse(payload("NSE"), "NSE")
 
 
+# --- HttpBhavcopySource.fetch() -------------------------------------------------
+
+
+class _FakeHttpResponse:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _FakeHttpResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def test_bse_weekend_html_response_is_not_published_not_a_format_error() -> None:
+    """Confirmed live, 2026-08-30 (a Sunday): BSE answers a non-trading day with HTTP 200
+    and its own marketing homepage, not a 404. Falling through to parse() would raise
+    BhavcopyFormatError and alert every single weekend -- exactly the "trains whoever
+    reads the alerts to ignore them" failure NotPublished's own docstring warns about."""
+    from app.prices.sources import HttpBhavcopySource
+
+    html = b'<!DOCTYPE html><html lang="en"><head><title>BSE</title></head></html>'
+    source = HttpBhavcopySource(
+        "BSE", "https://example.invalid/{d}", opener=lambda *a, **k: _FakeHttpResponse(html)
+    )
+    with pytest.raises(NotPublished):
+        source.fetch(date(2026, 8, 30))
+
+
+def test_a_real_udiff_response_is_never_mistaken_for_html() -> None:
+    from app.prices.sources import HttpBhavcopySource
+
+    body = payload("NSE")
+    source = HttpBhavcopySource(
+        "NSE", "https://example.invalid/{d}", opener=lambda *a, **k: _FakeHttpResponse(body)
+    )
+    assert source.fetch(PRICE_DATE) == body
+
+
 # --- THE GATE ------------------------------------------------------------------
 
 
