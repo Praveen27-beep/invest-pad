@@ -6,6 +6,7 @@ the two answer different questions and are deliberately not derived from each ot
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -196,3 +197,60 @@ def compute_holdings(
             )
         )
     return holdings
+
+
+@dataclass
+class SkippedHolding:
+    """One ISIN whose replay could not complete -- excluded by
+    ``compute_holdings_partitioned`` rather than that failure aborting every other
+    holding. Carries whatever ``NegativeHoldingError``/``DemergerAdjustmentError``
+    itself carried, plus ``str(error)`` so a caller always has a ready-to-show message
+    even for the fields that don't apply to both error types."""
+
+    isin: str
+    message: str
+    deficit: Decimal | None = None
+    as_of: date | None = None
+
+
+def compute_holdings_partitioned(
+    transactions: list[Transaction], as_of: date | None = None
+) -> tuple[list[Holding], list[SkippedHolding]]:
+    """Same replay as ``compute_holdings``, except an ISIN whose ledger doesn't
+    reconcile (a ``NegativeHoldingError`` or ``DemergerAdjustmentError``) is excluded
+    from the result instead of that one broken segment blocking every other holding --
+    the same "partition, don't block" posture ``routers/holdings.py``'s
+    ``_portfolio``/``UnpricedBanner`` already gives a missing price, extended here to a
+    broken ledger segment instead of a missing price.
+
+    Deliberately NOT what ``compute_holdings`` itself does, and nothing that computes a
+    number FROM the holdings (XIRR, snapshots, contribution) should switch to this --
+    those must keep failing loudly, because a return figure computed while silently
+    dropping a broken position would be a confidently wrong number, exactly what
+    CLAUDE.md rule 4 exists to prevent for prices. This exists for the one thing that
+    just needs to LIST what it safely can: the holdings/summary screen, so one bad ISIN
+    does not take an investor's entire dashboard down with it.
+
+    Re-runs the full replay once per excluded ISIN rather than resuming mid-loop --
+    each ISIN's state in ``compute_holdings``'s single pass is independent of every
+    other ISIN's (all state is keyed by isin), so simply removing a broken ISIN's rows
+    and replaying the rest from scratch is exactly equivalent to what a resumable
+    replay would compute, without the two replay implementations risking drift.
+    Terminates: every retry either returns or permanently removes one more ISIN's rows,
+    and there are finitely many ISINs.
+    """
+    excluded: dict[str, SkippedHolding] = {}
+    remaining = transactions
+    while True:
+        try:
+            return compute_holdings(remaining, as_of), list(excluded.values())
+        except NegativeHoldingError as exc:
+            deficit = -exc.quantity if exc.quantity is not None else None
+            excluded[exc.isin] = SkippedHolding(
+                isin=exc.isin, message=str(exc), deficit=deficit, as_of=exc.as_of
+            )
+        except DemergerAdjustmentError as exc:
+            if exc.isin is None:
+                raise
+            excluded[exc.isin] = SkippedHolding(isin=exc.isin, message=str(exc))
+        remaining = [t for t in remaining if t.isin not in excluded]

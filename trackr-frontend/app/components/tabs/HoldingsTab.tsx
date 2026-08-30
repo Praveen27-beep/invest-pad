@@ -9,6 +9,7 @@ import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { HoldingsTable } from "../HoldingsTable";
 import { UnpricedBanner } from "../UnpricedBanner";
 import { NegativeHoldingNotice } from "../NegativeHoldingNotice";
+import { SkippedHoldingsBanner } from "../SkippedHoldingsBanner";
 
 export function HoldingsTab() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
@@ -62,6 +63,9 @@ export function HoldingsTab() {
       </div>
 
       {holdings.data && <UnpricedBanner unpriced={holdings.data.unpriced} />}
+      {holdings.data && (
+        <SkippedHoldingsBanner skipped={holdings.data.skipped} onFixed={() => holdings.refetch()} />
+      )}
 
       <Card>
         {holdings.loading ? <LoadingState /> : <HoldingsTable holdings={filtered} />}

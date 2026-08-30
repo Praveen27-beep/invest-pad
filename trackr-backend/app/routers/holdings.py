@@ -26,7 +26,7 @@ from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money, rate
 from app.db.prices import latest_prices
 from app.db.repository import load_transactions
-from app.engine.holdings import compute_holdings
+from app.engine.holdings import compute_holdings_partitioned
 from app.engine.types import ZERO, Holding
 from app.engine.valuation import value_holdings
 from app.schemas.holdings import HoldingsResponse, SummaryResponse
@@ -73,7 +73,7 @@ def _portfolio(
     transactions = load_transactions(
         connection, investor_id=investor_id, advised_only=advised_only
     )
-    holdings = compute_holdings(transactions, as_of=as_of)
+    holdings, skipped = compute_holdings_partitioned(transactions, as_of=as_of)
 
     prices = latest_prices(connection, [h.isin for h in holdings], as_of)
     priced = [h for h in holdings if h.isin in prices]
@@ -86,6 +86,7 @@ def _portfolio(
         "as_of": as_of,
         "valued": valued,
         "unpriced": unpriced,
+        "skipped": skipped,
         "meta": meta,
         "invested": sum((h.invested for h in valued), ZERO),
         "market_value": sum((h.market_value for h in valued), ZERO),
@@ -141,6 +142,22 @@ def _unpriced(book: dict[str, Any]) -> dict[str, Any]:
             for h in book["unpriced"]
         ],
     }
+
+
+def _skipped(book: dict[str, Any]) -> list[dict[str, Any]]:
+    """ISINs excluded by ``compute_holdings_partitioned`` because their own ledger
+    segment didn't reconcile -- named individually, same "actionable, not a dead end"
+    posture as ``_unpriced`` above, so the dashboard can point at exactly what's wrong
+    with each one instead of the whole screen going blank over it."""
+    return [
+        {
+            "isin": s.isin,
+            "message": s.message,
+            "deficit": money(s.deficit) if s.deficit is not None else None,
+            "as_of": s.as_of,
+        }
+        for s in book["skipped"]
+    ]
 
 
 def _group_holdings(
@@ -253,6 +270,7 @@ def summary(
         "as_of": book["as_of"],
         **_totals(book),
         "unpriced": _unpriced(book),
+        "skipped": _skipped(book),
         "allocation": _allocation(book),
         "allocation_by_sector": _sector_allocation(book),
         "allocation_by_market_cap": _market_cap_allocation(book),
@@ -302,4 +320,5 @@ def holdings(
             ),
         },
         "unpriced": _unpriced(book),
+        "skipped": _skipped(book),
     }

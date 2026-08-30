@@ -55,6 +55,17 @@ export interface UnpricedOut {
   holdings: UnpricedHoldingOut[];
 }
 
+// compute_holdings_partitioned (app/engine/holdings.py) -- an ISIN whose own ledger
+// segment didn't reconcile (negative holding, or a demerger cost-adjustment with
+// nothing to adjust), excluded from `holdings`/`totals` rather than the whole response
+// failing. `deficit`/`as_of` are only ever populated for the negative-holding case.
+export interface SkippedHoldingOut {
+  isin: string;
+  message: string;
+  deficit: string | null;
+  as_of: string | null;
+}
+
 export interface AllocationGroupOut {
   asset_class: string;
   label: string;
@@ -91,6 +102,7 @@ export interface HoldingsResponse {
   holdings: HoldingOut[];
   totals: TotalsOut;
   unpriced: UnpricedOut;
+  skipped: SkippedHoldingOut[];
 }
 
 export interface SummaryResponse {
@@ -101,6 +113,7 @@ export interface SummaryResponse {
   unrealised_pct: number | null;
   cost_estimated: boolean;
   unpriced: UnpricedOut;
+  skipped: SkippedHoldingOut[];
   allocation: AllocationGroupOut[];
   allocation_by_sector: SectorAllocationGroupOut[];
   allocation_by_market_cap: MarketCapAllocationGroupOut[];

@@ -17,6 +17,7 @@ import { AllocationGroupsTable, type AllocationGroupRow } from "./components/All
 import { HistoricalValueChart } from "./components/HistoricalValueChart";
 import { HoldingsTable } from "./components/HoldingsTable";
 import { UnpricedBanner } from "./components/UnpricedBanner";
+import { SkippedHoldingsBanner } from "./components/SkippedHoldingsBanner";
 import { TabBar } from "./components/TabBar";
 import { HoldingsTab } from "./components/tabs/HoldingsTab";
 import { PerformanceTab } from "./components/tabs/PerformanceTab";
@@ -196,6 +197,7 @@ function OverviewTab() {
       )}
 
       {s && <UnpricedBanner unpriced={s.unpriced} />}
+      {s && <SkippedHoldingsBanner skipped={s.skipped} onFixed={() => { summary.refetch(); holdings.refetch(); }} />}
 
       <div className="flex items-center justify-end gap-2 text-xs">
         <span className="text-navy-400">View by</span>
