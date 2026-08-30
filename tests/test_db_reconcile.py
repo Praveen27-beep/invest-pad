@@ -75,9 +75,7 @@ def test_a_doubled_declared_quantity_reads_as_a_bonus(db, investor) -> None:
     assert "bonus" in discrepancy["likely_cause"].lower()
 
 
-def test_an_isin_never_bought_but_declared_reads_as_an_unrecorded_transfer_in(
-    db, investor
-) -> None:
+def test_an_isin_never_bought_but_declared_reads_as_an_unrecorded_transfer_in(db, investor) -> None:
     """Nothing seeded at all -- the ledger has no rows for this investor, so every
     declared quantity is a surplus against a computed zero."""
     body = ReconcileRequest(holdings=[DeclaredHoldingIn(isin=ISIN, quantity="100")])
@@ -100,9 +98,7 @@ def test_as_of_truncates_the_ledger_before_reconciling(db, investor) -> None:
     assert reconcile_holdings(investor, body, connection=db) == []
 
 
-def test_no_declared_holdings_reports_every_computed_holding_as_a_full_exit(
-    db, investor
-) -> None:
+def test_no_declared_holdings_reports_every_computed_holding_as_a_full_exit(db, investor) -> None:
     seed_a_buy(db, investor)
     body = ReconcileRequest(holdings=[])
 

@@ -80,9 +80,7 @@ def parse_cii_csv(payload: bytes) -> list[CIIRow]:
         if not fy or not raw_cii or not source:
             continue
         if not _FY_PATTERN.match(fy):
-            raise CIISourceFormatError(
-                f"CII source: financial_year {fy!r} is not 'YYYY-YY'"
-            )
+            raise CIISourceFormatError(f"CII source: financial_year {fy!r} is not 'YYYY-YY'")
         try:
             cii_value = Decimal(raw_cii)
         except InvalidOperation as exc:

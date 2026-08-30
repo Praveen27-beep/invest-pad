@@ -41,8 +41,18 @@ NIFTY_TRI_INDEX_NAME = "NIFTY50_TRI"
 _NIFTY_50_REQUEST_NAME = "NIFTY 50"
 
 _MONTHS = (
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 #: Explicit month-name maps rather than strptime/strftime's "%b" -- that is locale-
 #: dependent, and a server running under a non-English locale would silently send or

@@ -53,9 +53,7 @@ def _authorise(conn: Any, current_user: dict[str, Any], investor_id: str | None)
         )
 
 
-def assert_owned_investor(
-    conn: Any, current_user: dict[str, Any], investor_id: str
-) -> None:
+def assert_owned_investor(conn: Any, current_user: dict[str, Any], investor_id: str) -> None:
     """Programmatic twin of ``require_owned_investor`` -- for handlers whose scope
     arrives outside the request path, e.g. POST /ingest/csv's ``investor_id`` form
     field."""

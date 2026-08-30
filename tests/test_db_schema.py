@@ -57,8 +57,17 @@ def test_every_core_table_exists(db) -> None:
         cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
         tables = {r[0] for r in cur.fetchall()}
     assert {
-        "investor", "account", "security", "transaction", "price", "holding_snapshot",
-        "client_consent", "audit_log", "investor_secret", "retention_policy", "legal_hold",
+        "investor",
+        "account",
+        "security",
+        "transaction",
+        "price",
+        "holding_snapshot",
+        "client_consent",
+        "audit_log",
+        "investor_secret",
+        "retention_policy",
+        "legal_hold",
     } <= tables
 
 
@@ -106,15 +115,31 @@ def test_dedupe_key_is_unique_at_the_database_level(db, investor) -> None:
         cur.execute(
             "INSERT INTO transaction (account_id, isin, txn_date, txn_type, quantity, "
             "price, source, dedupe_key) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-            (row.account_id, row.isin, row.txn_date, "BUY", row.quantity, row.price,
-             "TRADEBOOK", key),
+            (
+                row.account_id,
+                row.isin,
+                row.txn_date,
+                "BUY",
+                row.quantity,
+                row.price,
+                "TRADEBOOK",
+                key,
+            ),
         )
         with pytest.raises(psycopg.errors.UniqueViolation):
             cur.execute(
                 "INSERT INTO transaction (account_id, isin, txn_date, txn_type, quantity, "
                 "price, source, dedupe_key) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                (row.account_id, row.isin, row.txn_date, "BUY", row.quantity, row.price,
-                 "TRADEBOOK", key),
+                (
+                    row.account_id,
+                    row.isin,
+                    row.txn_date,
+                    "BUY",
+                    row.quantity,
+                    row.price,
+                    "TRADEBOOK",
+                    key,
+                ),
             )
     db.rollback()
 
@@ -176,9 +201,7 @@ def test_erasure_flag_is_the_only_way_through(db, investor) -> None:
 
 def test_numeric_round_trips_without_drift(db, investor) -> None:
     """NUMERIC(20,6). Six decimals of quantity, exactly, in and out."""
-    repository.save_transactions(
-        db, [txn(qty="0.012000", price="1234.567891", ref="FRACTIONAL")]
-    )
+    repository.save_transactions(db, [txn(qty="0.012000", price="1234.567891", ref="FRACTIONAL")])
     (loaded,) = repository.load_transactions(db, isin="INE153T01027")
     assert loaded.quantity == Decimal("0.012000")
     assert loaded.price == Decimal("1234.567891")
@@ -189,9 +212,7 @@ def test_stt_round_trips_through_save_and_load(db, investor) -> None:
     """stt is a subset of charges (Income Tax Act Section 48), threaded through
     save_transactions/load_transactions the same way charges is -- see
     docs/PHASE3_SESSION10_STT_FIX.md."""
-    repository.save_transactions(
-        db, [txn(charges="15.500000", stt="12.345678", ref="STT1")]
-    )
+    repository.save_transactions(db, [txn(charges="15.500000", stt="12.345678", ref="STT1")])
     (loaded,) = repository.load_transactions(db, isin="INE153T01027")
     assert loaded.stt == Decimal("12.345678")
     assert loaded.charges == Decimal("15.500000")
@@ -236,9 +257,7 @@ def test_fmv_31jan2018_rejects_zero(db) -> None:
     import psycopg
 
     with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING"
-        )
+        cur.execute("INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING")
         with pytest.raises(psycopg.errors.CheckViolation):
             cur.execute("UPDATE security SET fmv_31jan2018 = 0 WHERE isin = 'INE153T01027'")
     db.rollback()
@@ -246,15 +265,11 @@ def test_fmv_31jan2018_rejects_zero(db) -> None:
 
 def test_fmv_31jan2018_accepts_null_and_a_positive_value(db) -> None:
     with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING"
-        )
+        cur.execute("INSERT INTO security (isin) VALUES ('INE153T01027') ON CONFLICT DO NOTHING")
         cur.execute("SELECT fmv_31jan2018 FROM security WHERE isin = 'INE153T01027'")
         assert cur.fetchone()[0] is None
 
-        cur.execute(
-            "UPDATE security SET fmv_31jan2018 = 123.456789 WHERE isin = 'INE153T01027'"
-        )
+        cur.execute("UPDATE security SET fmv_31jan2018 = 123.456789 WHERE isin = 'INE153T01027'")
         cur.execute("SELECT fmv_31jan2018 FROM security WHERE isin = 'INE153T01027'")
         assert cur.fetchone()[0] == Decimal("123.456789")
 
@@ -303,9 +318,7 @@ def test_cost_inflation_index_round_trips_without_drift(db) -> None:
             "INSERT INTO cost_inflation_index (financial_year, cii_value, source) "
             "VALUES ('2023-24', 348.00, 'CBDT')"
         )
-        cur.execute(
-            "SELECT cii_value FROM cost_inflation_index WHERE financial_year = '2023-24'"
-        )
+        cur.execute("SELECT cii_value FROM cost_inflation_index WHERE financial_year = '2023-24'")
         assert cur.fetchone()[0] == Decimal("348.00")
 
 
@@ -328,8 +341,9 @@ def test_cost_inflation_index_has_no_isin_column(db) -> None:
 def test_every_import_leaves_an_audit_row(db, investor) -> None:
     repository.save_transactions(db, [txn()], actor_uid=None)
     with db.cursor() as cur:
-        cur.execute("SELECT action, diff_json FROM audit_log WHERE action = %s",
-                    (audit.ACTION_IMPORT,))
+        cur.execute(
+            "SELECT action, diff_json FROM audit_log WHERE action = %s", (audit.ACTION_IMPORT,)
+        )
         rows = cur.fetchall()
     assert len(rows) == 1
     assert rows[0][1]["inserted"] == 1
@@ -341,6 +355,7 @@ def test_a_failed_audit_rolls_back_the_mutation(db, investor, monkeypatch) -> No
     The audit write shares the transaction, so if it cannot be written the data it would
     have described does not survive either.
     """
+
     def boom(*args, **kwargs):
         raise RuntimeError("audit unavailable")
 

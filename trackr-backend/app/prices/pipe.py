@@ -79,14 +79,18 @@ def merge(rows_by_exchange: dict[str, list[BhavcopyRow]]) -> list[MergedPrice]:
             existing = merged.get(row.isin)
             if existing is None:
                 merged[row.isin] = MergedPrice(
-                    isin=row.isin, price_date=row.price_date, close=row.close,
+                    isin=row.isin,
+                    price_date=row.price_date,
+                    close=row.close,
                     source=SOURCE_LABEL.get(exchange, exchange),
                 )
             else:
                 # Kept so "which feed did this number come from?" stays answerable.
                 merged[row.isin] = MergedPrice(
-                    isin=existing.isin, price_date=existing.price_date,
-                    close=existing.close, source=existing.source,
+                    isin=existing.isin,
+                    price_date=existing.price_date,
+                    close=existing.close,
+                    source=existing.source,
                     also_quoted_by=(*existing.also_quoted_by, exchange),
                 )
     return sorted(merged.values(), key=lambda p: p.isin)
@@ -153,6 +157,7 @@ def trading_days(start: date, end: date) -> list[date]:
         cursor += timedelta(days=1)
     return days
 
+
 def backfill_days(
     start: date,
     end: date,
@@ -203,4 +208,3 @@ def main(on: date | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

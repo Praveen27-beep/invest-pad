@@ -33,8 +33,8 @@ from app.engine.types import Source, Transaction
 #: never silently outrank one whose contents are understood.
 SOURCE_PRECEDENCE: dict[str, int] = {
     Source.CONTRACT_NOTE.value: 1,  # carries charges
-    Source.MANUAL.value: 2,         # a human typed it deliberately
-    Source.TRADEBOOK.value: 3,      # no charges
+    Source.MANUAL.value: 2,  # a human typed it deliberately
+    Source.TRADEBOOK.value: 3,  # no charges
     Source.CSV.value: 4,
     Source.EMAIL.value: 5,
 }
@@ -98,9 +98,7 @@ ACTION_EXCLUDE = "EXCLUDE"
 ACTION_SUPERSEDE = "SUPERSEDE"
 
 
-def decide(
-    incoming: Transaction, existing_source: str | None, existing_id: str | None
-) -> Decision:
+def decide(incoming: Transaction, existing_source: str | None, existing_id: str | None) -> Decision:
     """Arbitrate one incoming row against whatever already describes that trade.
 
     Never silent: every outcome carries a sentence naming the trade and the reason.

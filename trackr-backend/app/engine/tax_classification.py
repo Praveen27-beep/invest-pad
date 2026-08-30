@@ -63,7 +63,5 @@ def classify_term(realised: Realised, asset_class: str, long_term_days: int | No
     if long_term_days is None:
         raise CapitalGainsNotApplicableError(asset_class)
     if realised.holding_days is None:
-        raise ValueError(
-            f"Realised lot for {realised.isin} has no holding_days -- cannot classify"
-        )
+        raise ValueError(f"Realised lot for {realised.isin} has no holding_days -- cannot classify")
     return Term.LONG if realised.holding_days > long_term_days else Term.SHORT

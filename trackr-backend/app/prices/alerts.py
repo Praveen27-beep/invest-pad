@@ -99,9 +99,7 @@ class EmailNotifier:
         message["Subject"] = _header_safe(f"[Trackr] {subject}")
         message["From"] = self.from_address
         message["To"] = self.recipient
-        body = "\n".join(
-            [detail, "", *(f"{key}: {value}" for key, value in context.items())]
-        )
+        body = "\n".join([detail, "", *(f"{key}: {value}" for key, value in context.items())])
         message.set_content(body)
 
         try:
@@ -114,7 +112,10 @@ class EmailNotifier:
         except (smtplib.SMTPException, OSError):
             logger.error(
                 "PRICE PIPE ALERT EMAIL FAILED TO SEND (%s -- %s | %s)",
-                subject, detail, context, exc_info=True,
+                subject,
+                detail,
+                context,
+                exc_info=True,
             )
 
 

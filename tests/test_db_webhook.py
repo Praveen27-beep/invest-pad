@@ -255,9 +255,7 @@ def test_a_tampered_mailgun_signature_is_rejected_and_nothing_is_staged(
     entirely (the next test below), per app.ingest.webhook_providers's own split
     between MissingWebhookCredentialError and InvalidWebhookCredentialError."""
     client = make_client(mailgun_settings(tmp_path))
-    response = post_mailgun(
-        client, attachments=[("note.pdf", NOTE_A)], signature="0" * 64
-    )
+    response = post_mailgun(client, attachments=[("note.pdf", NOTE_A)], signature="0" * 64)
 
     assert response.status_code == 403
     assert batch_count(db) == 0
@@ -296,9 +294,7 @@ def test_correctly_authenticated_postmark_request_stages_the_attachment(
     assert result["parsed"] == 1
 
 
-def test_postmark_with_the_wrong_password_is_rejected(
-    make_client, db, investor, tmp_path
-) -> None:
+def test_postmark_with_the_wrong_password_is_rejected(make_client, db, investor, tmp_path) -> None:
     client = make_client(postmark_settings(tmp_path))
     credentials = base64.b64encode(f"{POSTMARK_USER}:wrong".encode()).decode()
     payload = {"To": TO, "From": "noreply@zerodha.com", "Subject": "x", "Attachments": []}
@@ -329,9 +325,7 @@ def test_an_unknown_investor_code_is_404(make_client, db, investor, tmp_path) ->
     assert batch_count(db) == 0
 
 
-def test_a_broker_with_no_matching_account_is_404(
-    make_client, db, investor, tmp_path
-) -> None:
+def test_a_broker_with_no_matching_account_is_404(make_client, db, investor, tmp_path) -> None:
     """The investor fixture creates only a ZERODHA account -- routing to upstox has
     nowhere to land."""
     client = make_client(mailgun_settings(tmp_path))
@@ -408,9 +402,7 @@ def test_a_duplicate_attachment_does_not_discard_a_legitimate_one_alongside_it(
     # than being discarded by a rollback triggered by NOTE_A's duplicate.
     assert batch_count(db) == 2
     with db.cursor() as cur:
-        cur.execute(
-            "SELECT filename FROM import_batch WHERE id = %s", (new_result["batch_id"],)
-        )
+        cur.execute("SELECT filename FROM import_batch WHERE id = %s", (new_result["batch_id"],))
         assert cur.fetchone()[0] == "note_b.pdf"
 
 

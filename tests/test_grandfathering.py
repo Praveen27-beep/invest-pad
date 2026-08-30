@@ -71,12 +71,12 @@ def test_boundary_31_jan_2018_qualifies_1_feb_2018_does_not() -> None:
     day_before = _lot(date(2018, 1, 31), "100")
     cutoff_day = _lot(GRANDFATHERING_CUTOFF_DATE, "100")
 
-    assert grandfathered_cost_of_acquisition(
-        day_before, Decimal("150"), Decimal("200")
-    ) == Decimal("150")
-    assert grandfathered_cost_of_acquisition(
-        cutoff_day, Decimal("150"), Decimal("200")
-    ) == Decimal("100")
+    assert grandfathered_cost_of_acquisition(day_before, Decimal("150"), Decimal("200")) == Decimal(
+        "150"
+    )
+    assert grandfathered_cost_of_acquisition(cutoff_day, Decimal("150"), Decimal("200")) == Decimal(
+        "100"
+    )
 
 
 def test_pre_2018_lot_with_no_fmv_sourced_uses_buy_price() -> None:

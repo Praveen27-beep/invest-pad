@@ -28,22 +28,32 @@ def a_snapshot(day: date, market_value: str, invested: str | None = None) -> Sna
 
 def a_buy(day: date, quantity: str = "50", price: str = "200") -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=day, txn_type=TxnType.BUY,
-        quantity=Decimal(quantity), price=Decimal(price),
+        isin=ISIN,
+        txn_date=day,
+        txn_type=TxnType.BUY,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
     )
 
 
 def a_sell(day: date, quantity: str = "50", price: str = "200") -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=day, txn_type=TxnType.SELL,
-        quantity=Decimal(quantity), price=Decimal(price),
+        isin=ISIN,
+        txn_date=day,
+        txn_type=TxnType.SELL,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
     )
 
 
 def a_dividend(day: date, amount: str) -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=day, txn_type=TxnType.DIVIDEND,
-        quantity=Decimal("0"), price=Decimal("0"), dividend_amount=Decimal(amount),
+        isin=ISIN,
+        txn_date=day,
+        txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"),
+        price=Decimal("0"),
+        dividend_amount=Decimal(amount),
     )
 
 

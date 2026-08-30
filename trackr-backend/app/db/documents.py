@@ -73,18 +73,35 @@ def store_document(
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
-            (investor_id, account_id, doctype, key, digest, len(content), content_type,
-             filename or None, source_message_id, received),
+            (
+                investor_id,
+                account_id,
+                doctype,
+                key,
+                digest,
+                len(content),
+                content_type,
+                filename or None,
+                source_message_id,
+                received,
+            ),
         )
         document_id = str(cur.fetchone()[0])
 
     audit.record(
-        conn, audit.ACTION_DOCUMENT_STORED, "document", document_id, actor_uid,
+        conn,
+        audit.ACTION_DOCUMENT_STORED,
+        "document",
+        document_id,
+        actor_uid,
         {"doctype": doctype, "bytes": len(content), "storage_key": key},
     )
     return {
-        "id": document_id, "storage_key": key, "sha256": digest,
-        "byte_size": len(content), "already_present": False,
+        "id": document_id,
+        "storage_key": key,
+        "sha256": digest,
+        "byte_size": len(content),
+        "already_present": False,
     }
 
 
@@ -114,22 +131,28 @@ def signed_url_for(
     granted is the only moment it can honestly be recorded.
     """
     with conn.cursor() as cur:
-        cur.execute("SELECT storage_key, investor_id FROM document WHERE id = %s",
-                    (document_id,))
+        cur.execute("SELECT storage_key, investor_id FROM document WHERE id = %s", (document_id,))
         row = cur.fetchone()
         if row is None:
             raise LookupError(f"no such document: {document_id}")
         key, investor_id = row[0], str(row[1])
 
     audit.record(
-        conn, audit.ACTION_DOCUMENT_ACCESSED, "document", document_id, actor_uid,
+        conn,
+        audit.ACTION_DOCUMENT_ACCESSED,
+        "document",
+        document_id,
+        actor_uid,
         {"investor_id": investor_id, "ttl_seconds": ttl_seconds},
     )
     return store.signed_url(key, ttl_seconds)
 
 
 def delete_documents_for_investor(
-    conn: Any, store: Any, investor_id: str, investor_code: str,
+    conn: Any,
+    store: Any,
+    investor_id: str,
+    investor_code: str,
     actor_uid: str | None = None,
 ) -> int:
     """Remove an investor's objects and rows. Returns how many documents were removed.
@@ -153,7 +176,11 @@ def delete_documents_for_investor(
 
     if documents:
         audit.record(
-            conn, audit.ACTION_DOCUMENT_DELETED, "investor", investor_id, actor_uid,
+            conn,
+            audit.ACTION_DOCUMENT_DELETED,
+            "investor",
+            investor_id,
+            actor_uid,
             {"documents_deleted": len(documents)},
         )
     return len(documents)

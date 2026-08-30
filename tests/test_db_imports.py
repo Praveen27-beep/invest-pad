@@ -61,9 +61,14 @@ def stage(db, adapter, investor, content=None, filename="tradebook.csv", store=N
     content = CSV.encode() if content is None else content
 
     return imports.stage_batch(
-        db, adapter, content, investor_id=investor,
-        account_id=os.environ["_TEST_ACCOUNT_ID"], filename=filename,
-        store=store, investor_code="C001",
+        db,
+        adapter,
+        content,
+        investor_id=investor,
+        account_id=os.environ["_TEST_ACCOUNT_ID"],
+        filename=filename,
+        store=store,
+        investor_code="C001",
     )
 
 
@@ -172,9 +177,13 @@ def test_reparse_actually_picks_up_a_state_change(db, investor, store) -> None:
                     StagedRow(
                         row_number=1,
                         transaction=Transaction(
-                            isin="INE153T01027", txn_date=date(2024, 1, 1),
-                            txn_type=TxnType.BUY, quantity=Decimal("1"), price=Decimal("1"),
-                            account_id=account_id, source=Source.CSV,
+                            isin="INE153T01027",
+                            txn_date=date(2024, 1, 1),
+                            txn_type=TxnType.BUY,
+                            quantity=Decimal("1"),
+                            price=Decimal("1"),
+                            account_id=account_id,
+                            source=Source.CSV,
                         ),
                         confidence=CONFIDENCE_CERTAIN,
                     )
@@ -218,8 +227,9 @@ def test_a_discarded_batch_cannot_be_reparsed(db, adapter, investor, store) -> N
 
 def test_reparsing_an_unknown_batch_is_refused(db, adapter, store) -> None:
     with pytest.raises(imports.BatchNotFoundError):
-        imports.reparse_batch(db, store, "00000000-0000-0000-0000-000000000000", adapter,
-                              actor_uid=ACTOR)
+        imports.reparse_batch(
+            db, store, "00000000-0000-0000-0000-000000000000", adapter, actor_uid=ACTOR
+        )
 
 
 def test_reparsing_with_a_mismatched_adapter_is_refused(db, adapter, investor, store) -> None:
@@ -266,9 +276,7 @@ def _investor_with_account(db: object, code: str) -> tuple[str, str]:
     return investor_id, account_id
 
 
-def test_the_same_file_stages_independently_for_another_investor(
-    db, adapter, investor
-) -> None:
+def test_the_same_file_stages_independently_for_another_investor(db, adapter, investor) -> None:
     """Regression: the sha256 short-circuit used to match GLOBALLY, so another tenant's
     identical upload blocked this one and named a batch id the ownership guard then
     refused to serve -- 'this investor belongs to another account'. A file hash identifies
@@ -277,8 +285,12 @@ def test_the_same_file_stages_independently_for_another_investor(
 
     mine = stage(db, adapter, investor)
     theirs = imports.stage_batch(
-        db, adapter, CSV.encode(), investor_id=other_investor,
-        account_id=other_account, filename="tradebook.csv",
+        db,
+        adapter,
+        CSV.encode(),
+        investor_id=other_investor,
+        account_id=other_account,
+        filename="tradebook.csv",
     )
 
     assert theirs["parsed"] == 1
@@ -291,15 +303,17 @@ def test_the_same_file_stages_independently_for_another_investor(
     assert str(mine_again.value.batch_id) == mine["batch_id"]
     with pytest.raises(imports.DuplicateUploadError) as theirs_again:
         imports.stage_batch(
-            db, adapter, CSV.encode(), investor_id=other_investor,
-            account_id=other_account, filename="tradebook.csv",
+            db,
+            adapter,
+            CSV.encode(),
+            investor_id=other_investor,
+            account_id=other_account,
+            filename="tradebook.csv",
         )
     assert str(theirs_again.value.batch_id) == theirs["batch_id"]
 
 
-def test_reuploading_to_another_account_of_the_same_investor_stages(
-    db, adapter, investor
-) -> None:
+def test_reuploading_to_another_account_of_the_same_investor_stages(db, adapter, investor) -> None:
     """dedupe_key begins with account_id: two accounts are two ledgers, so one account's
     staged file must not answer for the other's."""
     with db.cursor() as cur:
@@ -313,8 +327,12 @@ def test_reuploading_to_another_account_of_the_same_investor_stages(
 
     first = stage(db, adapter, investor)
     second = imports.stage_batch(
-        db, adapter, CSV.encode(), investor_id=investor,
-        account_id=other_account, filename="tradebook.csv",
+        db,
+        adapter,
+        CSV.encode(),
+        investor_id=investor,
+        account_id=other_account,
+        filename="tradebook.csv",
     )
 
     assert second["parsed"] == 1
@@ -325,7 +343,7 @@ def test_reuploading_to_another_account_of_the_same_investor_stages(
 
 
 def test_review_predicts_the_duplicates_promotion_will_skip(db, adapter, investor) -> None:
-    """"23 of your 115 rows are already here" is worth knowing BEFORE clicking promote."""
+    """ "23 of your 115 rows are already here" is worth knowing BEFORE clicking promote."""
     first = stage(db, adapter, investor, filename="a.csv")
     imports.promote_batch(db, first["batch_id"], actor_uid=ACTOR)
 
@@ -388,8 +406,7 @@ def test_the_real_exports_load_and_reimporting_inserts_zero(db, adapter, investo
     batches = []
     for path in TRADEBOOKS:
         batches.append(
-            stage(db, adapter, investor, content=Path(path).read_bytes(),
-                  filename=Path(path).name)
+            stage(db, adapter, investor, content=Path(path).read_bytes(), filename=Path(path).name)
         )
 
     assert sum(b["parsed"] for b in batches) == EXPECTED_TRADEBOOK_ROWS
@@ -406,8 +423,7 @@ def test_the_real_exports_load_and_reimporting_inserts_zero(db, adapter, investo
     # that, the unique index means promotion inserts nothing.
     for path in TRADEBOOKS:
         with pytest.raises(imports.DuplicateUploadError):
-            stage(db, adapter, investor, content=Path(path).read_bytes(),
-                  filename=Path(path).name)
+            stage(db, adapter, investor, content=Path(path).read_bytes(), filename=Path(path).name)
 
     assert txn_count(db) == EXPECTED_TRADEBOOK_ROWS, "re-importing inserted zero"
 
@@ -438,8 +454,9 @@ def test_promotion_registers_unknown_securities(db, adapter, investor) -> None:
     """An import is how a new holding is first discovered; requiring the security master
     to be pre-populated would make that impossible."""
     for path in TRADEBOOKS:
-        batch = stage(db, adapter, investor, content=Path(path).read_bytes(),
-                      filename=Path(path).name)
+        batch = stage(
+            db, adapter, investor, content=Path(path).read_bytes(), filename=Path(path).name
+        )
         imports.promote_batch(db, batch["batch_id"], actor_uid=ACTOR)
 
     with db.cursor() as cur:
@@ -454,8 +471,9 @@ def test_the_ledger_replays_into_holdings(db, adapter, investor) -> None:
     from app.engine.holdings import compute_holdings
 
     for path in TRADEBOOKS:
-        batch = stage(db, adapter, investor, content=Path(path).read_bytes(),
-                      filename=Path(path).name)
+        batch = stage(
+            db, adapter, investor, content=Path(path).read_bytes(), filename=Path(path).name
+        )
         imports.promote_batch(db, batch["batch_id"], actor_uid=ACTOR)
 
     transactions = repository.load_transactions(db, investor_id=investor)

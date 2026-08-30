@@ -22,8 +22,7 @@ from app.db.connection import connect, database_url
 def run(conn, owner_user_id: str) -> int:
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE investor SET owner_user_id = %s "
-            "WHERE owner_user_id IS NULL",
+            "UPDATE investor SET owner_user_id = %s WHERE owner_user_id IS NULL",
             (owner_user_id,),
         )
         return cur.rowcount

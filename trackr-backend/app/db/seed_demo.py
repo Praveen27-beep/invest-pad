@@ -142,8 +142,10 @@ def main() -> None:
         _to_transaction(row, account_ids[row["account"]]) for row in fixture["transactions"]
     ]
 
-    print(f"fixture: {len(transactions)} transactions, {len(fixture['securities'])} securities,"
-          f" {len(fixture['accounts'])} accounts")
+    print(
+        f"fixture: {len(transactions)} transactions, {len(fixture['securities'])} securities,"
+        f" {len(fixture['accounts'])} accounts"
+    )
 
     with connect() as conn:
         with conn.cursor() as cur:
@@ -207,10 +209,13 @@ def main() -> None:
             login_note = f"demo login already exists: {demo_user['email']}"
 
     print(f"investor {investor_id} ({investor['code']})")
-    print(f"transactions: inserted={summary.inserted}"
-          f" skipped_duplicates={summary.skipped_duplicates}")
-    print(f"prices stored: {stored}"
-          f" ({len(holdings)} securities x up to {PRICE_LOOKBACK_DAYS} trading days)")
+    print(
+        f"transactions: inserted={summary.inserted} skipped_duplicates={summary.skipped_duplicates}"
+    )
+    print(
+        f"prices stored: {stored}"
+        f" ({len(holdings)} securities x up to {PRICE_LOOKBACK_DAYS} trading days)"
+    )
     print(login_note)
     print(
         f"\nSet NEXT_PUBLIC_DEFAULT_INVESTOR_ID={investor_id} in trackr-frontend/.env.local, "

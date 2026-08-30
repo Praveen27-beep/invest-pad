@@ -84,9 +84,17 @@ def raise_grievance(
         row = dict(zip([c.name for c in cur.description], cur.fetchone(), strict=True))
 
     audit.record(
-        conn, ACTION_RAISED, "grievance", str(row["id"]), actor_uid,
-        {"reference": reference, "channel": channel, "investor_id": investor_id,
-         "due_at": row["due_at"].isoformat()},
+        conn,
+        ACTION_RAISED,
+        "grievance",
+        str(row["id"]),
+        actor_uid,
+        {
+            "reference": reference,
+            "channel": channel,
+            "investor_id": investor_id,
+            "due_at": row["due_at"].isoformat(),
+        },
     )
     return row
 
@@ -140,7 +148,11 @@ def resolve(
 
     within = resolved_at <= due_at
     audit.record(
-        conn, ACTION_RESOLVED, "grievance", grievance_id, actor_uid,
+        conn,
+        ACTION_RESOLVED,
+        "grievance",
+        grievance_id,
+        actor_uid,
         {"within_ceiling": within, "days_taken": None},
     )
     return {"resolved_at": resolved_at, "due_at": due_at, "within_ceiling": within}
@@ -155,8 +167,7 @@ def escalate(conn: Any, grievance_id: str, reason: str, actor_uid: str | None = 
         )
         if cur.rowcount == 0:
             raise GrievanceNotFoundError(f"no unresolved grievance {grievance_id}")
-    audit.record(conn, ACTION_ESCALATED, "grievance", grievance_id, actor_uid,
-                 {"reason": reason})
+    audit.record(conn, ACTION_ESCALATED, "grievance", grievance_id, actor_uid, {"reason": reason})
 
 
 def _select_open(conn: Any, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:

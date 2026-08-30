@@ -210,14 +210,15 @@ def test_a_failed_live_fetch_degrades_to_null_rather_than_500ing_the_request(
 
     transactions = [
         Transaction(
-            isin="INE153T01027", txn_date=date(2024, 1, 10), txn_type=TxnType.BUY,
-            quantity=Decimal("100"), price=Decimal("200"),
+            isin="INE153T01027",
+            txn_date=date(2024, 1, 10),
+            txn_type=TxnType.BUY,
+            quantity=Decimal("100"),
+            price=Decimal("200"),
         )
     ]
 
-    monkeypatch.setattr(
-        analytical_router, "get_index_levels", lambda *a, **k: {}
-    )
+    monkeypatch.setattr(analytical_router, "get_index_levels", lambda *a, **k: {})
 
     def _raise(*args: object, **kwargs: object) -> None:
         raise IndexSourceFetchFailed("NIFTY 50 TRI: simulated network failure")

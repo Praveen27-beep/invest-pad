@@ -63,9 +63,7 @@ class NseSectorSource:
     def fetch(self) -> bytes:
         request = urllib.request.Request(NSE_SECTOR_URL, headers=BROWSER_HEADERS)
         try:
-            with self._opener(
-                request, timeout=TIMEOUT_SECONDS, context=_ssl_context()
-            ) as response:
+            with self._opener(request, timeout=TIMEOUT_SECONDS, context=_ssl_context()) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             raise SectorSourceFetchFailed(f"NSE sector list: HTTP {exc.code}") from exc

@@ -40,10 +40,19 @@ CLEAN_FILES = sorted(glob.glob(f"{LOCAL_DOCS}/ContractNote_*.xlsx"))
 #: Column layout for the synthetic bulk-shape sheets below, matching the real export's
 #: 14-column header exactly (0-indexed).
 TRADE_HEADER = [
-    "Order No.", "Order Time.", "Trade No.", "Trade Time", "Security/Contract Description",
-    "Buy(B) / Sell(S)", "Quantity", "Exchange", "Gross Rate / Trade Price Per Unit (Rs)",
-    "Brokerage per Unit (Rs)", "Net Rate per Unit (Rs)",
-    "Closing Rate per Unit (Only for Derivatives) (Rs)", "Net Total (Before Levies) (Rs)",
+    "Order No.",
+    "Order Time.",
+    "Trade No.",
+    "Trade Time",
+    "Security/Contract Description",
+    "Buy(B) / Sell(S)",
+    "Quantity",
+    "Exchange",
+    "Gross Rate / Trade Price Per Unit (Rs)",
+    "Brokerage per Unit (Rs)",
+    "Net Rate per Unit (Rs)",
+    "Closing Rate per Unit (Only for Derivatives) (Rs)",
+    "Net Total (Before Levies) (Rs)",
     "Remarks",
 ]
 TRADE_NET_TOTAL_COL = 12
@@ -212,7 +221,9 @@ def test_bulk_charges_read_from_the_charges_sub_tables_own_column_not_the_trades
     export. Reading charge amounts from the trades header's column silently zeroed
     every charge -- this pins the fix."""
     content = _bulk_workbook(
-        "19-10-2022", "19-10-2022", "CNT-1",
+        "19-10-2022",
+        "19-10-2022",
+        "CNT-1",
         trades=[("1", "100", "GUJTHEM - X / INE942C01029", 100, 714.0, "B")],
         charges={"Brokerage": 0.01, "Securities transaction tax": 71.0, "Stamp Duty": 11.0},
     )
@@ -225,7 +236,9 @@ def test_trade_no_is_the_identity_not_order_no(adapter) -> None:
     """Verified against the real busy 31-01-2023 sheet: one Order No. covers several
     Trade No. fills at different prices. source_ref must be the trade number."""
     content = _bulk_workbook(
-        "31-01-2023", "31-01-2023", "CNT-1",
+        "31-01-2023",
+        "31-01-2023",
+        "CNT-1",
         trades=[
             ("SAME_ORDER", "T1", "ADANIGREEN - EQ / INE364U01010", 6, 1200.0, "B"),
             ("SAME_ORDER", "T2", "ADANIGREEN - EQ / INE364U01010", 5, 1200.0, "B"),
@@ -238,7 +251,9 @@ def test_trade_no_is_the_identity_not_order_no(adapter) -> None:
 
 def test_charges_are_apportioned_by_turnover_and_sum_exactly(adapter) -> None:
     content = _bulk_workbook(
-        "01-01-2024", "01-01-2024", "CNT-1",
+        "01-01-2024",
+        "01-01-2024",
+        "CNT-1",
         trades=[
             ("1", "T1", "GUJTHEM - X / INE942C01029", 18, 2663.95, "B"),
             ("2", "T2", "BLS - EQ / INE153T01027", 6, 2663.95, "B"),
@@ -255,7 +270,9 @@ def test_an_options_contract_description_is_rejected_not_guessed(adapter) -> Non
     """Verified against a real F&O row in the 2024-25 export -- no ISIN, so it must
     never become a phantom equity security."""
     content = _bulk_workbook(
-        "12-08-2024", "12-08-2024", "CNT-1",
+        "12-08-2024",
+        "12-08-2024",
+        "CNT-1",
         trades=[("1", "T1", "ADANIENT24AUG3050PE", 1, 10.0, "B")],
         charges={},
     )
@@ -276,7 +293,12 @@ def test_the_date_range_note_covers_every_recognised_day(adapter) -> None:
         ws.append(TRADE_HEADER)
         row = [None] * len(TRADE_HEADER)
         row[0], row[2], row[4], row[5], row[6], row[8] = (
-            "1", "T1", "GUJTHEM - X / INE942C01029", "B", 1, 100.0,
+            "1",
+            "T1",
+            "GUJTHEM - X / INE942C01029",
+            "B",
+            1,
+            100.0,
         )
         row[TRADE_NET_TOTAL_COL] = -100.0
         ws.append(row)
@@ -307,7 +329,8 @@ def test_a_sheet_with_no_recognisable_header_is_rejected_by_name(adapter) -> Non
 
 def test_clean_shape_trades_use_the_isin_and_symbol_columns_directly(adapter) -> None:
     content = _clean_workbook(
-        "31-07-2026", "CNT-26/27-69548230",
+        "31-07-2026",
+        "CNT-26/27-69548230",
         trades=[
             ("INE322A01010", "GILLETTE", "BUY", 1, 7724.0),
             ("INE022Q01020", "IEX", "BUY", 20, 133.05),
@@ -328,7 +351,8 @@ def test_clean_shape_sell_side_is_the_full_word_not_a_single_letter(adapter) -> 
     """The clean shape spells the side out ("BUY"/"SELL"), unlike the bulk shape's
     single letter -- verified against the real ContractNote_31Jul2026_Parasu.xlsx."""
     content = _clean_workbook(
-        "31-07-2026", "CNT-1",
+        "31-07-2026",
+        "CNT-1",
         trades=[("INE322A01010", "GILLETTE", "SELL", 1, 100.0)],
         charges={},
     )
@@ -338,7 +362,8 @@ def test_clean_shape_sell_side_is_the_full_word_not_a_single_letter(adapter) -> 
 
 def test_clean_shape_charges_reconcile_to_the_stated_total(adapter) -> None:
     content = _clean_workbook(
-        "31-07-2026", "CNT-1",
+        "31-07-2026",
+        "CNT-1",
         trades=[
             ("INE322A01010", "GILLETTE", "BUY", 1, 7724.0),
             ("INE022Q01020", "IEX", "BUY", 20, 133.05),

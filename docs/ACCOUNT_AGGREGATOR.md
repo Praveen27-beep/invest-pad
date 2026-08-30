@@ -149,6 +149,7 @@ without changing anything downstream, same as every other adapter:
 ```python
 class AccountAggregatorAdapter(Protocol):
     name: str = "account_aggregator"
+
     def detect(self, payload: bytes, meta: dict) -> bool: ...
     def parse(self, payload: bytes, ctx: ParseContext) -> list[Transaction]: ...
 ```

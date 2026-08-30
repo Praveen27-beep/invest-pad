@@ -115,9 +115,7 @@ def raw_pan(conn: Any, investor_id: str) -> str:
     ``_pdf_password``) so app.routers.ingest's PDF upload endpoint can resolve the same
     PAN without duplicating the investor_secret/crypto.decrypt query."""
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT pan_enc FROM investor_secret WHERE investor_id = %s", (investor_id,)
-        )
+        cur.execute("SELECT pan_enc FROM investor_secret WHERE investor_id = %s", (investor_id,))
         row = cur.fetchone()
     if row is None or row[0] is None:
         return ""

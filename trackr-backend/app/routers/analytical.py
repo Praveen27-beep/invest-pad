@@ -160,9 +160,11 @@ def _window_xirr(
             opening_snapshot = compute_snapshot(transactions, window_prices, target_start)
         except MissingPriceError as exc:
             logger.warning(
-                "%s omitted: no usable price on/before %s for %s "
-                "(investor_id=%s request_id=%s)",
-                label, target_start, exc.isins, investor_id,
+                "%s omitted: no usable price on/before %s for %s (investor_id=%s request_id=%s)",
+                label,
+                target_start,
+                exc.isins,
+                investor_id,
                 getattr(getattr(request, "state", None), "request_id", None),
                 exc_info=True,
             )
@@ -277,9 +279,12 @@ def _benchmark(
             fetch_and_store(connection, min(dates_needed), max(dates_needed))
         except (IndexSourceFetchFailed, IndexSourceFormatError) as exc:
             logger.warning(
-                "benchmark omitted: %s fetch failed for %s (investor_id=%s "
-                "request_id=%s): %s",
-                name, dates_needed, investor_id, request_id, exc,
+                "benchmark omitted: %s fetch failed for %s (investor_id=%s request_id=%s): %s",
+                name,
+                dates_needed,
+                investor_id,
+                request_id,
+                exc,
                 exc_info=True,
             )
             return None
@@ -289,9 +294,11 @@ def _benchmark(
         result = compute_benchmark(transactions, levels, as_of, name)
     except MissingIndexLevelError as exc:
         logger.warning(
-            "benchmark omitted: no usable %s level for %s "
-            "(investor_id=%s request_id=%s)",
-            name, exc.dates, investor_id, request_id,
+            "benchmark omitted: no usable %s level for %s (investor_id=%s request_id=%s)",
+            name,
+            exc.dates,
+            investor_id,
+            request_id,
             exc_info=True,
         )
         return None
@@ -339,9 +346,7 @@ def performance(
     ``_benchmark`` for the cash-flow replication and why ``SENSEX_TRI`` 400s.
     """
     resolved_as_of = as_of or date.today()
-    transactions = load_transactions(
-        connection, investor_id=investor_id, advised_only=advised_only
-    )
+    transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
 
     isins = [h.isin for h in compute_holdings(transactions, resolved_as_of)]
     prices = latest_prices(connection, isins, resolved_as_of)
@@ -357,43 +362,95 @@ def performance(
     # per window.
     earliest_txn = min((t.txn_date for t in transactions), default=None)
     fy_xirr, _ = _window_xirr(
-        request, connection, investor_id, transactions, prices,
-        "fy_xirr", financial_year_start(resolved_as_of), earliest_txn,
-        resolved_as_of, advised_only,
+        request,
+        connection,
+        investor_id,
+        transactions,
+        prices,
+        "fy_xirr",
+        financial_year_start(resolved_as_of),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
     )
     xirr_1y, _ = _window_xirr(
-        request, connection, investor_id, transactions, prices,
-        "xirr_1y", years_before(resolved_as_of, 1), earliest_txn,
-        resolved_as_of, advised_only,
+        request,
+        connection,
+        investor_id,
+        transactions,
+        prices,
+        "xirr_1y",
+        years_before(resolved_as_of, 1),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
     )
     xirr_3y, _ = _window_xirr(
-        request, connection, investor_id, transactions, prices,
-        "xirr_3y", years_before(resolved_as_of, 3), earliest_txn,
-        resolved_as_of, advised_only,
+        request,
+        connection,
+        investor_id,
+        transactions,
+        prices,
+        "xirr_3y",
+        years_before(resolved_as_of, 3),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
     )
     xirr_5y, _ = _window_xirr(
-        request, connection, investor_id, transactions, prices,
-        "xirr_5y", years_before(resolved_as_of, 5), earliest_txn,
-        resolved_as_of, advised_only,
+        request,
+        connection,
+        investor_id,
+        transactions,
+        prices,
+        "xirr_5y",
+        years_before(resolved_as_of, 5),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
     )
 
     # TWRR windows (docs/ENGINE_SPEC.md section 5) -- the adviser-skill companion to the
     # four XIRR windows above, same target_start dates, never shown alone.
     fy_twrr = _window_twrr(
-        connection, investor_id, transactions, financial_year_start(resolved_as_of),
-        earliest_txn, resolved_as_of, advised_only, snapshot,
+        connection,
+        investor_id,
+        transactions,
+        financial_year_start(resolved_as_of),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
+        snapshot,
     )
     twrr_1y = _window_twrr(
-        connection, investor_id, transactions, years_before(resolved_as_of, 1),
-        earliest_txn, resolved_as_of, advised_only, snapshot,
+        connection,
+        investor_id,
+        transactions,
+        years_before(resolved_as_of, 1),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
+        snapshot,
     )
     twrr_3y = _window_twrr(
-        connection, investor_id, transactions, years_before(resolved_as_of, 3),
-        earliest_txn, resolved_as_of, advised_only, snapshot,
+        connection,
+        investor_id,
+        transactions,
+        years_before(resolved_as_of, 3),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
+        snapshot,
     )
     twrr_5y = _window_twrr(
-        connection, investor_id, transactions, years_before(resolved_as_of, 5),
-        earliest_txn, resolved_as_of, advised_only, snapshot,
+        connection,
+        investor_id,
+        transactions,
+        years_before(resolved_as_of, 5),
+        earliest_txn,
+        resolved_as_of,
+        advised_only,
+        snapshot,
     )
 
     net_invested = compute_net_invested(transactions, resolved_as_of)
@@ -415,8 +472,16 @@ def performance(
     period_warn: str | None = None
     if onboarding_date is not None and onboarding_date <= resolved_as_of:
         period_xirr_value, actual_start = _window_xirr(
-            request, connection, investor_id, transactions, prices,
-            "period_xirr", onboarding_date, earliest_txn, resolved_as_of, advised_only,
+            request,
+            connection,
+            investor_id,
+            transactions,
+            prices,
+            "period_xirr",
+            onboarding_date,
+            earliest_txn,
+            resolved_as_of,
+            advised_only,
         )
         if period_xirr_value is not None:
             period_start = actual_start
@@ -496,9 +561,7 @@ def list_snapshots(
     genuinely different ledger, not filtered after the fact.
     """
     if start > end:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "start must be on or before end"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "start must be on or before end")
     rows = snapshots.list_snapshots_range(connection, investor_id, advised_only, start, end)
     return [_snapshot_row(row) for row in rows]
 
@@ -533,13 +596,9 @@ def contribution(
     """
     resolved_as_of = as_of or date.today()
     if period_start > resolved_as_of:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "period_start must be on or before as_of"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "period_start must be on or before as_of")
 
-    transactions = load_transactions(
-        connection, investor_id=investor_id, advised_only=advised_only
-    )
+    transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
 
     start_isins = [h.isin for h in compute_holdings(transactions, period_start)]
     start_prices = latest_prices(connection, start_isins, period_start)
@@ -632,9 +691,7 @@ def refresh_prices_cron(
     return _refresh_prices(connection, settings)
 
 
-def _run_snapshots(
-    connection: Any, start: date, end: date, notifier: Notifier
-) -> dict[str, Any]:
+def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) -> dict[str, Any]:
     """The rebuild job. The ONLY code path allowed to write ``portfolio_snapshot``
     (docs/ENGINE_SPEC.md section 8) -- everywhere else, including ``_window_xirr``'s
     live fallback, only ever reads it.
@@ -655,9 +712,7 @@ def _run_snapshots(
        rest of the run.
     """
     already_priced = price_dates_present(connection, start, end)
-    price_results = backfill_days(
-        start, end, already_present=already_priced, notifier=notifier
-    )
+    price_results = backfill_days(start, end, already_present=already_priced, notifier=notifier)
     wanted = set(held_isins(connection))
     price_dates_fetched = 0
     for result in price_results:
@@ -692,7 +747,10 @@ def _run_snapshots(
                 except (MissingPriceError, NegativeHoldingError) as exc:
                     logger.warning(
                         "snapshot omitted: %s on/before %s (investor_id=%s advised_only=%s)",
-                        exc, on_date, investor_id, advised_only,
+                        exc,
+                        on_date,
+                        investor_id,
+                        advised_only,
                         exc_info=True,
                     )
                     skipped.append(
@@ -735,9 +793,7 @@ def run_snapshots(
     """
     resolved_start = start or date.today()
     resolved_end = end or date.today()
-    return _run_snapshots(
-        connection, resolved_start, resolved_end, get_notifier(settings)
-    )
+    return _run_snapshots(connection, resolved_start, resolved_end, get_notifier(settings))
 
 
 @router.get(

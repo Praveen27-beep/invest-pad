@@ -94,9 +94,7 @@ class ZerodhaTradebookAdapter:
             _, cells = _split_line(probe)
             missing = sorted(REQUIRED_COLUMNS - {_norm_key(c) for c in cells})
             return ParseResult(
-                rejections=[
-                    Rejection(0, f"not a Zerodha tradebook: missing {missing}")
-                ],
+                rejections=[Rejection(0, f"not a Zerodha tradebook: missing {missing}")],
                 notes=notes,
             )
 
@@ -157,8 +155,7 @@ class ZerodhaTradebookAdapter:
 
         trade_id = (raw.get("trade_id") or "").strip()
         if not trade_id:
-            return reject("missing trade_id, which is the only stable identity a "
-                          "tradebook row has")
+            return reject("missing trade_id, which is the only stable identity a tradebook row has")
 
         return StagedRow(
             row_number=row_number,

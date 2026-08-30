@@ -149,7 +149,8 @@ def test_no_synthetic_correction_rows_remain_for_kdl(dummy=None) -> None:
     Kept as a test so nobody reintroduces one to "fix" a difference that is not an error.
     """
     corrections = [
-        t for t in GOLDEN["transactions"]
+        t
+        for t in GOLDEN["transactions"]
         if str(t.get("source_ref", "")).startswith("COST-CORRECTION")
         and t["isin"] == "INE0O4R01018"
     ]

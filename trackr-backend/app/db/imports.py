@@ -138,9 +138,16 @@ def stage_batch(
     document_id = None
     if store is not None:
         stored = documents.store_document(
-            conn, store, investor_id=investor_id, investor_code=investor_code or "UNKNOWN",
-            doctype=doctype, content=content, received=date.today(),
-            filename=filename, content_type=content_type, account_id=account_id,
+            conn,
+            store,
+            investor_id=investor_id,
+            investor_code=investor_code or "UNKNOWN",
+            doctype=doctype,
+            content=content,
+            received=date.today(),
+            filename=filename,
+            content_type=content_type,
+            account_id=account_id,
             actor_uid=actor_uid,
         )
         document_id = str(stored["id"])
@@ -153,8 +160,17 @@ def stage_batch(
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
-            (investor_id, account_id, adapter.name, filename or None, digest, document_id,
-             result.parsed, result.rejected, json.dumps(result.notes)),
+            (
+                investor_id,
+                account_id,
+                adapter.name,
+                filename or None,
+                digest,
+                document_id,
+                result.parsed,
+                result.rejected,
+                json.dumps(result.notes),
+            ),
         )
         batch_id = str(cur.fetchone()[0])
 
@@ -164,10 +180,15 @@ def stage_batch(
                 INSERT INTO import_row (batch_id, row_number, confidence, dedupe_key, payload)
                 VALUES (%s,%s,%s,%s,%s)
                 """,
-                (batch_id, staged.row_number, staged.confidence,
-                 make_dedupe_key(staged.transaction),
-                 json.dumps({"transaction": _txn_to_payload(staged.transaction),
-                             "raw": staged.raw})),
+                (
+                    batch_id,
+                    staged.row_number,
+                    staged.confidence,
+                    make_dedupe_key(staged.transaction),
+                    json.dumps(
+                        {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
+                    ),
+                ),
             )
         for rejection in result.rejections:
             cur.execute(
@@ -175,14 +196,26 @@ def stage_batch(
                 INSERT INTO import_row (batch_id, row_number, status, payload, reason)
                 VALUES (%s,%s,'REJECTED',%s,%s)
                 """,
-                (batch_id, rejection.row_number, json.dumps({"raw": rejection.raw}),
-                 rejection.reason),
+                (
+                    batch_id,
+                    rejection.row_number,
+                    json.dumps({"raw": rejection.raw}),
+                    rejection.reason,
+                ),
             )
 
     audit.record(
-        conn, ACTION_BATCH_STAGED, "import_batch", batch_id, actor_uid,
-        {"adapter": adapter.name, "filename": filename,
-         "parsed": result.parsed, "rejected": result.rejected},
+        conn,
+        ACTION_BATCH_STAGED,
+        "import_batch",
+        batch_id,
+        actor_uid,
+        {
+            "adapter": adapter.name,
+            "filename": filename,
+            "parsed": result.parsed,
+            "rejected": result.rejected,
+        },
     )
 
     declared_holdings = 0
@@ -192,8 +225,12 @@ def stage_batch(
         declared_holdings = holdings.record_snapshot(conn, declared)
 
     return {
-        "batch_id": batch_id, "parsed": result.parsed, "rejected": result.rejected,
-        "sha256": digest, "document_id": document_id, "notes": result.notes,
+        "batch_id": batch_id,
+        "parsed": result.parsed,
+        "rejected": result.rejected,
+        "sha256": digest,
+        "document_id": document_id,
+        "notes": result.notes,
         "declared_holdings": declared_holdings,
     }
 
@@ -241,8 +278,7 @@ def reparse_batch(
             raise ValueError(f"batch {batch_id} has no stored document to reparse")
         if adapter.name != adapter_name:
             raise ValueError(
-                f"batch {batch_id} was staged with adapter {adapter_name!r}, "
-                f"not {adapter.name!r}"
+                f"batch {batch_id} was staged with adapter {adapter_name!r}, not {adapter.name!r}"
             )
 
         cur.execute("SELECT storage_key FROM document WHERE id = %s", (document_id,))
@@ -265,10 +301,15 @@ def reparse_batch(
                 INSERT INTO import_row (batch_id, row_number, confidence, dedupe_key, payload)
                 VALUES (%s,%s,%s,%s,%s)
                 """,
-                (batch_id, staged.row_number, staged.confidence,
-                 make_dedupe_key(staged.transaction),
-                 json.dumps({"transaction": _txn_to_payload(staged.transaction),
-                             "raw": staged.raw})),
+                (
+                    batch_id,
+                    staged.row_number,
+                    staged.confidence,
+                    make_dedupe_key(staged.transaction),
+                    json.dumps(
+                        {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
+                    ),
+                ),
             )
         for rejection in result.rejections:
             cur.execute(
@@ -276,12 +317,15 @@ def reparse_batch(
                 INSERT INTO import_row (batch_id, row_number, status, payload, reason)
                 VALUES (%s,%s,'REJECTED',%s,%s)
                 """,
-                (batch_id, rejection.row_number, json.dumps({"raw": rejection.raw}),
-                 rejection.reason),
+                (
+                    batch_id,
+                    rejection.row_number,
+                    json.dumps({"raw": rejection.raw}),
+                    rejection.reason,
+                ),
             )
         cur.execute(
-            "UPDATE import_batch SET row_count = %s, rejected_count = %s, notes = %s "
-            "WHERE id = %s",
+            "UPDATE import_batch SET row_count = %s, rejected_count = %s, notes = %s WHERE id = %s",
             (result.parsed, result.rejected, json.dumps(result.notes), batch_id),
         )
 
@@ -292,12 +336,20 @@ def reparse_batch(
         declared_holdings = holdings.record_snapshot(conn, declared)
 
     audit.record(
-        conn, ACTION_BATCH_REPARSED, "import_batch", batch_id, actor_uid,
+        conn,
+        ACTION_BATCH_REPARSED,
+        "import_batch",
+        batch_id,
+        actor_uid,
         {"adapter": adapter.name, "parsed": result.parsed, "rejected": result.rejected},
     )
     return {
-        "batch_id": batch_id, "parsed": result.parsed, "rejected": result.rejected,
-        "sha256": sha256, "document_id": str(document_id), "notes": result.notes,
+        "batch_id": batch_id,
+        "parsed": result.parsed,
+        "rejected": result.rejected,
+        "sha256": sha256,
+        "document_id": str(document_id),
+        "notes": result.notes,
         "declared_holdings": declared_holdings,
     }
 
@@ -442,8 +494,9 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
     for row_id, txn in candidates:
         identity = precedence.trade_identity(txn)
         existing = known.get(identity) if identity else None
-        decision = precedence.decide(txn, existing[0] if existing else None,
-                                     existing[1] if existing else None)
+        decision = precedence.decide(
+            txn, existing[0] if existing else None, existing[1] if existing else None
+        )
         if decision.action == precedence.ACTION_EXCLUDE:
             excluded.append((str(row_id), decision.reason))
         elif decision.action == precedence.ACTION_SUPERSEDE:
@@ -463,10 +516,7 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
     # the first thing to mention a security, which is backwards: the import IS how a new
     # holding is discovered. The symbol comes from the source row and is display-only, so
     # an existing name is never overwritten by a later file's spelling of it.
-    securities = {
-        p["transaction"]["isin"]: (p.get("raw") or {}).get("symbol")
-        for _, p in staged
-    }
+    securities = {p["transaction"]["isin"]: (p.get("raw") or {}).get("symbol") for _, p in staged}
     with conn.cursor() as cur:
         for isin, symbol in sorted(securities.items()):
             cur.execute(
@@ -513,7 +563,11 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
         # Logged as its own audit event, not folded into the promotion summary. Somebody
         # asking "why is this trade not in the ledger?" must be able to find the answer.
         audit.record(
-            conn, ACTION_ROWS_EXCLUDED, "import_batch", batch_id, actor_uid,
+            conn,
+            ACTION_ROWS_EXCLUDED,
+            "import_batch",
+            batch_id,
+            actor_uid,
             {
                 "excluded": [{"row": r, "reason": why} for r, why in excluded],
                 "superseded": [{"row": r, "reason": why} for r, why, _ in superseded],
@@ -521,9 +575,17 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
         )
 
     audit.record(
-        conn, ACTION_BATCH_PROMOTED, "import_batch", batch_id, actor_uid,
-        {"inserted": summary.inserted, "skipped_duplicates": summary.skipped_duplicates,
-         "excluded_by_precedence": len(excluded), "superseded": len(superseded)},
+        conn,
+        ACTION_BATCH_PROMOTED,
+        "import_batch",
+        batch_id,
+        actor_uid,
+        {
+            "inserted": summary.inserted,
+            "skipped_duplicates": summary.skipped_duplicates,
+            "excluded_by_precedence": len(excluded),
+            "superseded": len(superseded),
+        },
     )
     return summary
 
@@ -552,13 +614,18 @@ def _reversals_for(conn: Any, transaction_ids: list[str]) -> list[Transaction]:
                 continue
             reversals.append(
                 Transaction(
-                    isin=row[1], txn_date=row[2], txn_type=opposite[original],
-                    quantity=row[4], price=row[5], charges=row[6],
+                    isin=row[1],
+                    txn_date=row[2],
+                    txn_type=opposite[original],
+                    quantity=row[4],
+                    price=row[5],
+                    charges=row[6],
                     # stt is a SUBSET of charges (never zeroed independently) --
                     # carrying it through the same way charges is carried through keeps
                     # the "stt <= charges" invariant true on this synthetic row too.
                     stt=row[7],
-                    account_id=str(row[0]), source=Source.MANUAL,
+                    account_id=str(row[0]),
+                    source=Source.MANUAL,
                     source_ref=f"REVERSAL-{row[9]}",
                     raw_payload={
                         "correction": "reversing entry",
@@ -572,9 +639,7 @@ def _reversals_for(conn: Any, transaction_ids: list[str]) -> list[Transaction]:
     return reversals
 
 
-def discard_batch(
-    conn: Any, batch_id: str, reason: str, actor_uid: str | None = None
-) -> None:
+def discard_batch(conn: Any, batch_id: str, reason: str, actor_uid: str | None = None) -> None:
     """Reject a batch without promoting it. A bad parse ends here.
 
     The staged rows are kept, not deleted: what was rejected and why is the evidence that
@@ -597,6 +662,10 @@ def discard_batch(
             (reason, batch_id),
         )
     audit.record(
-        conn, ACTION_BATCH_DISCARDED, "import_batch", batch_id, actor_uid,
+        conn,
+        ACTION_BATCH_DISCARDED,
+        "import_batch",
+        batch_id,
+        actor_uid,
         {"reason": reason},
     )

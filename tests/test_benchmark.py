@@ -24,15 +24,21 @@ AS_OF = date(2025, 1, 10)
 
 def a_buy(day: date = BUY_DATE, quantity: str = "100", price: str = "200") -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=day, txn_type=TxnType.BUY,
-        quantity=Decimal(quantity), price=Decimal(price),
+        isin=ISIN,
+        txn_date=day,
+        txn_type=TxnType.BUY,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
     )
 
 
 def a_sell(day: date = SELL_DATE, quantity: str = "50", price: str = "300") -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=day, txn_type=TxnType.SELL,
-        quantity=Decimal(quantity), price=Decimal(price),
+        isin=ISIN,
+        txn_date=day,
+        txn_type=TxnType.SELL,
+        quantity=Decimal(quantity),
+        price=Decimal(price),
     )
 
 

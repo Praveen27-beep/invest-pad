@@ -82,9 +82,7 @@ def test_key_segments_are_sanitised() -> None:
 
 
 def test_investor_prefix_groups_a_whole_client() -> None:
-    assert object_key("C001", "CAS", date(2026, 3, 31), PDF).startswith(
-        investor_prefix("C001")
-    )
+    assert object_key("C001", "CAS", date(2026, 3, 31), PDF).startswith(investor_prefix("C001"))
 
 
 def test_extension_defaults_when_absent() -> None:

@@ -184,9 +184,7 @@ def _consume(
             queue.popleft()
 
 
-def compute_lots(
-    transactions: list[Transaction], as_of: date | None = None
-) -> list[Lot]:
+def compute_lots(transactions: list[Transaction], as_of: date | None = None) -> list[Lot]:
     """Open FIFO lots, oldest first within each ISIN.
 
     Runs alongside weighted-average cost: the average is what the dashboard shows, the

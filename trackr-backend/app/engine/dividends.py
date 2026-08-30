@@ -59,10 +59,7 @@ def compute_dividends(transactions: list[Transaction]) -> list[DividendSummary]:
         DividendSummary(
             isin=isin,
             total=totals[isin],
-            by_year=[
-                DividendYear(fy=fy, amount=by_year[isin][fy])
-                for fy in sorted(by_year[isin])
-            ],
+            by_year=[DividendYear(fy=fy, amount=by_year[isin][fy]) for fy in sorted(by_year[isin])],
         )
         for isin in sorted(totals)
     ]

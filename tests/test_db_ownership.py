@@ -260,9 +260,7 @@ def test_batches_and_stage_are_scoped_to_the_owner(client, consent_for, account_
         "batch_id"
     ]
 
-    res = client.get(
-        f"/ingest/stage/{staged}", headers={"Authorization": f"Bearer {token_other}"}
-    )
+    res = client.get(f"/ingest/stage/{staged}", headers={"Authorization": f"Bearer {token_other}"})
     assert res.status_code == 403
 
     res = client.post(

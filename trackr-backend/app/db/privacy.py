@@ -38,9 +38,7 @@ def open_holds(conn: Any, investor_id: str) -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
-def place_legal_hold(
-    conn: Any, investor_id: str, reason: str, actor_uid: str | None = None
-) -> str:
+def place_legal_hold(conn: Any, investor_id: str, reason: str, actor_uid: str | None = None) -> str:
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO legal_hold (investor_id, reason) VALUES (%s, %s) RETURNING id",
@@ -48,7 +46,11 @@ def place_legal_hold(
         )
         hold_id = str(cur.fetchone()[0])
     audit.record(
-        conn, audit.ACTION_LEGAL_HOLD_PLACED, "investor", investor_id, actor_uid,
+        conn,
+        audit.ACTION_LEGAL_HOLD_PLACED,
+        "investor",
+        investor_id,
+        actor_uid,
         {"hold_id": hold_id, "reason": reason},
     )
     return hold_id
@@ -88,9 +90,7 @@ def export_investor(
         row = cur.fetchone()
         if row is None:
             raise LookupError(f"no such investor: {investor_id}")
-        export["investor"] = dict(
-            zip([c.name for c in cur.description], row, strict=True)
-        )
+        export["investor"] = dict(zip([c.name for c in cur.description], row, strict=True))
 
         for table, sql in (
             ("accounts", "SELECT * FROM account WHERE investor_id = %s"),
@@ -118,7 +118,11 @@ def export_investor(
                     "demat": crypto.decrypt(secret[1]) if secret[1] else None,
                 }
             audit.record(
-                conn, audit.ACTION_SECRET_READ, "investor", investor_id, actor_uid,
+                conn,
+                audit.ACTION_SECRET_READ,
+                "investor",
+                investor_id,
+                actor_uid,
                 {"reason": "export with identifiers"},
             )
 
@@ -128,7 +132,11 @@ def export_investor(
     export["documents"] = documents.documents_for_investor(conn, investor_id)
 
     audit.record(
-        conn, audit.ACTION_EXPORT, "investor", investor_id, actor_uid,
+        conn,
+        audit.ACTION_EXPORT,
+        "investor",
+        investor_id,
+        actor_uid,
         {
             "documents": len(export["documents"]),
             "include_identifiers": include_identifiers,
@@ -199,8 +207,15 @@ def erase_investor(
     # Recorded AFTER the delete and outside the flag's usefulness, so the trail is the
     # last thing written and cannot itself be cascaded away.
     audit.record(
-        conn, audit.ACTION_ERASURE, "investor", investor_id, actor_uid,
-        {"transactions_deleted": txn_count, "investors_deleted": removed,
-         "documents_deleted": docs_removed},
+        conn,
+        audit.ACTION_ERASURE,
+        "investor",
+        investor_id,
+        actor_uid,
+        {
+            "transactions_deleted": txn_count,
+            "investors_deleted": removed,
+            "documents_deleted": docs_removed,
+        },
     )
     return {"investors": removed, "transactions": txn_count, "documents": docs_removed}

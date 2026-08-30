@@ -80,9 +80,7 @@ def test_a_target_date_resolves_to_the_most_recent_level_on_or_before_it(db) -> 
 def test_a_date_with_no_level_within_the_staleness_window_is_omitted(db) -> None:
     upsert_index_levels(db, [a_row(date(2024, 1, 1), "25000")])
 
-    levels = get_index_levels(
-        db, INDEX_NAME, [date(2024, 3, 1)], max_staleness_days=5
-    )
+    levels = get_index_levels(db, INDEX_NAME, [date(2024, 3, 1)], max_staleness_days=5)
     assert date(2024, 3, 1) not in levels
 
 

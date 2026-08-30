@@ -96,9 +96,7 @@ def test_cagr_multi_buy_uses_first_buy_date_and_blended_invested() -> None:
 def test_cagr_is_none_when_bought_on_as_of_itself() -> None:
     """Zero holding days -- 365.25 / 0 is undefined, not an extreme rate."""
     holdings = compute_holdings([txn("BUY", "100", "100", "2024-06-01")])
-    (valued,) = value_holdings(
-        holdings, {ISIN: Decimal("110")}, as_of=date(2024, 6, 1)
-    )
+    (valued,) = value_holdings(holdings, {ISIN: Decimal("110")}, as_of=date(2024, 6, 1))
     assert valued.cagr is None
 
 
@@ -119,9 +117,7 @@ def test_cagr_is_none_when_cost_basis_is_not_positive() -> None:
     assert h.invested == Decimal("0")
     assert h.first_buy_date == date(2024, 1, 1)
 
-    (valued,) = value_holdings(
-        holdings, {ISIN: Decimal("10")}, as_of=date(2025, 1, 1)
-    )
+    (valued,) = value_holdings(holdings, {ISIN: Decimal("10")}, as_of=date(2025, 1, 1))
     assert valued.cagr is None
 
 
@@ -135,9 +131,7 @@ def test_cagr_is_none_when_position_has_no_acquisition_to_anchor_a_start_date() 
     assert h.first_buy_date is None
     assert h.invested == Decimal("0")
 
-    (valued,) = value_holdings(
-        holdings, {ISIN: Decimal("10")}, as_of=date(2025, 1, 1)
-    )
+    (valued,) = value_holdings(holdings, {ISIN: Decimal("10")}, as_of=date(2025, 1, 1))
     assert valued.cagr is None
 
 

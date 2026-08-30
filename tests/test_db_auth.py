@@ -105,13 +105,9 @@ def test_register_rejects_an_already_registered_email(db) -> None:
         service.register(db, "taken@example.com", "a-different-password")
 
 
-def test_login_issues_a_token_that_verifies_back_to_the_same_user(
-    db, settings: Settings
-) -> None:
+def test_login_issues_a_token_that_verifies_back_to_the_same_user(db, settings: Settings) -> None:
     registered = service.register(db, "login@example.com", "a-strong-password")
-    token, expires_in, user = service.login(
-        db, settings, "login@example.com", "a-strong-password"
-    )
+    token, expires_in, user = service.login(db, settings, "login@example.com", "a-strong-password")
     assert expires_in == settings.jwt_expiry_seconds
     assert user["id"] == registered["id"]
 
@@ -190,9 +186,7 @@ def test_current_user_rejects_a_revoked_session(db, settings: Settings) -> None:
         service.current_user(db, settings, token)
 
 
-def test_current_user_rejects_a_token_for_a_since_deactivated_user(
-    db, settings: Settings
-) -> None:
+def test_current_user_rejects_a_token_for_a_since_deactivated_user(db, settings: Settings) -> None:
     """The is_active check in current_user is defense in depth beyond login-time: an
     account deactivated mid-session must stop working before its token expires."""
     user = service.register(db, "later-deactivated@example.com", "a-strong-password")
@@ -255,9 +249,7 @@ def test_refresh_issues_a_fresh_working_token_and_rotates_the_old_one(
         service.current_user(db, settings, old_token)
 
 
-def test_refresh_accepts_an_expired_token_whose_session_is_alive(
-    db, settings: Settings
-) -> None:
+def test_refresh_accepts_an_expired_token_whose_session_is_alive(db, settings: Settings) -> None:
     """THE case: the JWT's hour is up -- current_user refuses it -- but the server-side
     session is still live, so the client gets back in without re-typing a password."""
     service.register(db, "expired@example.com", "a-strong-password")
@@ -294,9 +286,7 @@ def test_refresh_is_refused_once_the_session_window_itself_has_closed(
 
 def test_refresh_is_refused_for_a_revoked_session(db, settings: Settings) -> None:
     service.register(db, "refresh-revoked@example.com", "a-strong-password")
-    token, _e, _u = service.login(
-        db, settings, "refresh-revoked@example.com", "a-strong-password"
-    )
+    token, _e, _u = service.login(db, settings, "refresh-revoked@example.com", "a-strong-password")
     with db.cursor() as cur:
         cur.execute(
             "UPDATE app_session SET revoked_at = now() WHERE session_token_hash = %s",

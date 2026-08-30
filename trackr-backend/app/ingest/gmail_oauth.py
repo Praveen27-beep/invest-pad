@@ -100,9 +100,7 @@ class MailDocument:
         return "EMAIL"
 
 
-def authorise(
-    client_secrets_path: Path, token_path: Path = DEFAULT_TOKEN_PATH
-) -> Any:
+def authorise(client_secrets_path: Path, token_path: Path = DEFAULT_TOKEN_PATH) -> Any:
     """Return an authorised Gmail credential, running the consent flow if needed.
 
     First run opens a browser for consent; afterwards the cached grant is reused and
@@ -174,8 +172,10 @@ def _iter_message_ids(service: Any, query: str) -> Iterator[str]:
     """
     page_token = None
     while True:
-        request = service.users().messages().list(
-            userId="me", q=query, maxResults=500, pageToken=page_token
+        request = (
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=500, pageToken=page_token)
         )
         response = request.execute()
         for message in response.get("messages", []):
@@ -208,9 +208,7 @@ def _classify(sender: str) -> str:
 
 def fetch_documents(service: Any, message_id: str) -> list[MailDocument]:
     """Download every wanted attachment on one message."""
-    message = service.users().messages().get(
-        userId="me", id=message_id, format="full"
-    ).execute()
+    message = service.users().messages().get(userId="me", id=message_id, format="full").execute()
 
     payload = message.get("payload", {})
     sender = _header(payload, "From")
@@ -227,9 +225,13 @@ def fetch_documents(service: Any, message_id: str) -> list[MailDocument]:
         body = part.get("body", {})
         attachment_id = body.get("attachmentId")
         if attachment_id:
-            fetched = service.users().messages().attachments().get(
-                userId="me", messageId=message_id, id=attachment_id
-            ).execute()
+            fetched = (
+                service.users()
+                .messages()
+                .attachments()
+                .get(userId="me", messageId=message_id, id=attachment_id)
+                .execute()
+            )
             data = fetched.get("data", "")
         else:
             data = body.get("data", "")

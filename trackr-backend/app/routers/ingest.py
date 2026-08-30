@@ -339,9 +339,7 @@ def reparse_stage(
     instance = _build_adapter(row[0])
 
     store = get_store(settings)
-    return imports.reparse_batch(
-        conn, store, batch_id, instance, actor_uid=str(current_user["id"])
-    )
+    return imports.reparse_batch(conn, store, batch_id, instance, actor_uid=str(current_user["id"]))
 
 
 @router.post(

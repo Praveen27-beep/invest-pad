@@ -86,16 +86,12 @@ def test_every_schema_file_is_covered() -> None:
 def test_txn_type_enum_matches_schema() -> None:
     """All ten ledger event types, including the awkward ones."""
     schema = schema_for("transaction.schema.json")
-    assert {t.value for t in engine_types.TxnType} == set(
-        schema["properties"]["txn_type"]["enum"]
-    )
+    assert {t.value for t in engine_types.TxnType} == set(schema["properties"]["txn_type"]["enum"])
 
 
 def test_source_enum_matches_schema() -> None:
     schema = schema_for("transaction.schema.json")
-    assert {s.value for s in engine_types.Source} == set(
-        schema["properties"]["source"]["enum"]
-    )
+    assert {s.value for s in engine_types.Source} == set(schema["properties"]["source"]["enum"])
 
 
 def test_all_thirty_asset_classes_are_seeded() -> None:

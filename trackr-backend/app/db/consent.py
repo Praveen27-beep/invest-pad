@@ -92,7 +92,9 @@ def record_consent(
 
 
 def withdraw_consent(
-    conn: Any, investor_id: str, purpose: str = PURPOSE_PORTFOLIO_TRACKING,
+    conn: Any,
+    investor_id: str,
+    purpose: str = PURPOSE_PORTFOLIO_TRACKING,
     actor_uid: str | None = None,
 ) -> int:
     """Stamp ``withdrawn_at`` on every live consent for this purpose. Returns the count.
@@ -138,9 +140,7 @@ def has_live_consent(
         return cur.fetchone() is not None
 
 
-def require_consent(
-    conn: Any, investor_id: str, purpose: str = PURPOSE_PORTFOLIO_TRACKING
-) -> None:
+def require_consent(conn: Any, investor_id: str, purpose: str = PURPOSE_PORTFOLIO_TRACKING) -> None:
     """Raise unless live consent exists. Call before processing any personal data.
 
     Raises:

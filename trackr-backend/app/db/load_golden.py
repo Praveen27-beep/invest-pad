@@ -118,15 +118,14 @@ def main() -> None:
 
     # Symbols the fixture knows for currently-held positions. Used only where the
     # exchanges no longer list the ISIN.
-    fixture_symbols = {
-        h["isin"]: h.get("symbol", "") for h in fixture["expected"]["holdings"]
-    }
+    fixture_symbols = {h["isin"]: h.get("symbol", "") for h in fixture["expected"]["holdings"]}
 
     print(f"fixture: {len(transactions)} transactions, {len(isins)} distinct ISINs")
     print("price pipe:")
     meta, merged_prices = fetch_reference(isins, as_of)
-    print(f"  metadata for {len(meta)}/{len(isins)} ISINs,"
-          f" {len(merged_prices)} price rows to store")
+    print(
+        f"  metadata for {len(meta)}/{len(isins)} ISINs, {len(merged_prices)} price rows to store"
+    )
 
     with connect() as conn:
         with conn.cursor() as cur:
@@ -177,8 +176,9 @@ def main() -> None:
         stored = price_db.upsert_prices(conn, merged_prices)
 
     print(f"investor {investor_id}")
-    print(f"transactions: inserted={summary.inserted}"
-          f" skipped_duplicates={summary.skipped_duplicates}")
+    print(
+        f"transactions: inserted={summary.inserted} skipped_duplicates={summary.skipped_duplicates}"
+    )
     print(f"prices stored: {stored}")
 
 

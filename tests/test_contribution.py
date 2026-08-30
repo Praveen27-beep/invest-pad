@@ -68,9 +68,7 @@ END_PRICES = {ISIN_A: Decimal("1300"), ISIN_B: Decimal("2400")}
 
 
 def _compute() -> dict[str, object]:
-    result = compute_contribution(
-        TRANSACTIONS, START_PRICES, END_PRICES, PERIOD_START, AS_OF
-    )
+    result = compute_contribution(TRANSACTIONS, START_PRICES, END_PRICES, PERIOD_START, AS_OF)
     return {c.isin: c for c in result}
 
 

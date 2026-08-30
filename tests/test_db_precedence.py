@@ -50,9 +50,14 @@ ACCOUNT = "11111111-1111-1111-1111-111111111111"
 
 def txn(source: Source, ref: str = "1089300", price: str = "2663.95") -> Transaction:
     return Transaction(
-        isin=ISIN, txn_date=date(2026, 8, 12), txn_type=TxnType.BUY,
-        quantity=Decimal("18"), price=Decimal(price),
-        account_id=ACCOUNT, source=source, source_ref=ref,
+        isin=ISIN,
+        txn_date=date(2026, 8, 12),
+        txn_type=TxnType.BUY,
+        quantity=Decimal("18"),
+        price=Decimal(price),
+        account_id=ACCOUNT,
+        source=source,
+        source_ref=ref,
     )
 
 
@@ -63,8 +68,13 @@ def seed_security(db):
 
 def stage(db, adapter, investor, content, filename):
     return imports.stage_batch(
-        db, adapter, content, investor_id=investor,
-        account_id=os.environ["_TEST_ACCOUNT_ID"], filename=filename, investor_code="C001",
+        db,
+        adapter,
+        content,
+        investor_id=investor,
+        account_id=os.environ["_TEST_ACCOUNT_ID"],
+        filename=filename,
+        investor_code="C001",
     )
 
 
@@ -103,8 +113,13 @@ def test_identity_needs_a_trade_number(dummy=None) -> None:
     """Without one there is nothing stable to match on, and guessing from price and
     quantity would collapse the genuinely distinct same-price fills Session 6 found."""
     anonymous = Transaction(
-        isin=ISIN, txn_date=date(2026, 8, 12), txn_type=TxnType.BUY,
-        quantity=Decimal("18"), price=Decimal("100"), account_id="acct", source_ref=None,
+        isin=ISIN,
+        txn_date=date(2026, 8, 12),
+        txn_type=TxnType.BUY,
+        quantity=Decimal("18"),
+        price=Decimal("100"),
+        account_id="acct",
+        source_ref=None,
     )
     assert precedence.trade_identity(anonymous) is None
 
@@ -192,9 +207,7 @@ def test_a_note_arriving_later_supersedes_the_tradebook_row(db, investor) -> Non
     rows = repository.load_transactions(db, investor_id=investor)
     assert len(rows) == 3, "original + reversal + replacement"
 
-    net = sum(
-        (r.quantity if r.txn_type is TxnType.BUY else -r.quantity) for r in rows
-    )
+    net = sum((r.quantity if r.txn_type is TxnType.BUY else -r.quantity) for r in rows)
     assert net == Decimal("18"), "the reversal cancels the original exactly"
     assert sum(r.charges for r in rows) == Decimal("7.01"), "charges arrive with the note"
 
@@ -223,7 +236,8 @@ def test_a_reversal_explains_itself(db, investor) -> None:
     imports.promote_batch(db, note["batch_id"], actor_uid=ACTOR)
 
     reversal = next(
-        r for r in repository.load_transactions(db, investor_id=investor)
+        r
+        for r in repository.load_transactions(db, investor_id=investor)
         if str(r.source_ref).startswith("REVERSAL-")
     )
     assert reversal.txn_type is TxnType.SELL
@@ -260,16 +274,15 @@ def test_the_real_overlap_does_not_double_count(db, investor) -> None:
     Without this guard both sources import in full and every shared trade lands twice.
     """
     notes = sorted(glob.glob(f"{LOCAL_DOCS}/[Cc]ontract note*.pdf"))
-    books = sorted(
-        glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv")
-    )
+    books = sorted(glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv"))
     if not books:
         pytest.skip("tradebooks not present")
 
     for path in notes:
         try:
-            batch = stage(db, ZerodhaContractNoteAdapter(), investor,
-                          Path(path).read_bytes(), Path(path).name)
+            batch = stage(
+                db, ZerodhaContractNoteAdapter(), investor, Path(path).read_bytes(), Path(path).name
+            )
         except imports.DuplicateUploadError:
             # Contract note39 and note40 are byte-identical. The hash catches it, which is
             # the outer defence working exactly as intended.
@@ -279,8 +292,9 @@ def test_the_real_overlap_does_not_double_count(db, investor) -> None:
 
     excluded = 0
     for path in books:
-        batch = stage(db, ZerodhaTradebookAdapter(), investor,
-                      Path(path).read_bytes(), Path(path).name)
+        batch = stage(
+            db, ZerodhaTradebookAdapter(), investor, Path(path).read_bytes(), Path(path).name
+        )
         imports.promote_batch(db, batch["batch_id"], actor_uid=ACTOR)
         with db.cursor() as cur:
             cur.execute(

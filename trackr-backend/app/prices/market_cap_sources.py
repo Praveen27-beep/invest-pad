@@ -74,16 +74,12 @@ class AmfiMarketCapSource:
     def fetch(self) -> bytes:
         request = urllib.request.Request(AMFI_MARKET_CAP_URL, headers=BROWSER_HEADERS)
         try:
-            with self._opener(
-                request, timeout=TIMEOUT_SECONDS, context=_ssl_context()
-            ) as response:
+            with self._opener(request, timeout=TIMEOUT_SECONDS, context=_ssl_context()) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             raise MarketCapSourceFetchFailed(f"AMFI market-cap list: HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise MarketCapSourceFetchFailed(
-                f"AMFI market-cap list: {type(exc).__name__}"
-            ) from exc
+            raise MarketCapSourceFetchFailed(f"AMFI market-cap list: {type(exc).__name__}") from exc
 
 
 def amfi_market_cap_source(opener: Any = None) -> AmfiMarketCapSource:
@@ -124,8 +120,8 @@ def parse_amfi_market_cap_list(payload: bytes) -> list[MarketCapRow]:
     for record in rows:
         if len(record) <= max(isin_idx, category_idx):
             continue
-        isin = (str(record[isin_idx]).strip() if record[isin_idx] is not None else "")
-        bucket = (str(record[category_idx]).strip() if record[category_idx] is not None else "")
+        isin = str(record[isin_idx]).strip() if record[isin_idx] is not None else ""
+        bucket = str(record[category_idx]).strip() if record[category_idx] is not None else ""
         if not isin or not bucket:
             continue
         if bucket not in VALID_BUCKETS:

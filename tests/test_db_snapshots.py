@@ -42,8 +42,14 @@ def buy(
     account_id: str, isin: str, day: date, quantity: str, price: str, ref: str
 ) -> TransactionIn:
     return TransactionIn(
-        account_id=account_id, isin=isin, txn_date=day, txn_type="BUY",
-        quantity=quantity, price=price, source="MANUAL", source_ref=ref,
+        account_id=account_id,
+        isin=isin,
+        txn_date=day,
+        txn_type="BUY",
+        quantity=quantity,
+        price=price,
+        source="MANUAL",
+        source_ref=ref,
     )
 
 
@@ -140,9 +146,7 @@ def test_get_snapshot_on_or_before_ignores_later_rows_and_returns_none_with_noth
     assert got is None
 
 
-def test_get_snapshot_on_or_before_is_scoped_to_its_own_advised_only_series(
-    db, investor
-) -> None:
+def test_get_snapshot_on_or_before_is_scoped_to_its_own_advised_only_series(db, investor) -> None:
     dbsnapshots.upsert_snapshot(db, investor, False, a_snapshot(market_value="1200"))
     got = dbsnapshots.get_snapshot_on_or_before(db, investor, AS_OF, True)
     assert got is None
@@ -275,7 +279,5 @@ def test_list_snapshots_range_does_not_fill_a_gap_between_two_real_rows(db, inve
         db, investor, False, a_snapshot(as_of=date(2024, 8, 3), market_value="1100")
     )
 
-    rows = dbsnapshots.list_snapshots_range(
-        db, investor, False, date(2024, 8, 1), date(2024, 8, 3)
-    )
+    rows = dbsnapshots.list_snapshots_range(db, investor, False, date(2024, 8, 1), date(2024, 8, 3))
     assert [r.as_of for r in rows] == [date(2024, 8, 1), date(2024, 8, 3)]

@@ -43,9 +43,7 @@ class S3DocumentStore:
         return self._client
 
     def put(self, key: str, content: bytes, content_type: str = "application/pdf") -> str:
-        self.client.put_object(
-            Bucket=self.bucket, Key=key, Body=content, ContentType=content_type
-        )
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=content, ContentType=content_type)
         return key
 
     def get(self, key: str) -> bytes:

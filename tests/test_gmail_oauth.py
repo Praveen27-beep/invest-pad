@@ -127,8 +127,7 @@ def test_query_bounds_on_a_date_when_polling() -> None:
 def test_retroactive_scan_pages_through_everything() -> None:
     """Gmail caps a page at 500. Stopping at page one silently truncates history."""
     msgs = {
-        f"m{i}": message(f"m{i}", CDSL, f"cas{i}.pdf", b"%PDF-1.4", "2026-01-05")
-        for i in range(5)
+        f"m{i}": message(f"m{i}", CDSL, f"cas{i}.pdf", b"%PDF-1.4", "2026-01-05") for i in range(5)
     }
     service = FakeGmail(msgs, page_size=2)
     found = list(retroactive_scan(service))

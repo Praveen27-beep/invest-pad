@@ -15,9 +15,7 @@ from typing import Any
 from app.engine.types import Snapshot
 
 
-def upsert_snapshot(
-    conn: Any, investor_id: str, advised_only: bool, snapshot: Snapshot
-) -> None:
+def upsert_snapshot(conn: Any, investor_id: str, advised_only: bool, snapshot: Snapshot) -> None:
     """Store one snapshot. Idempotent: rerunning a date changes nothing.
 
     ``ON CONFLICT DO UPDATE`` rather than ``DO NOTHING``, same reasoning as

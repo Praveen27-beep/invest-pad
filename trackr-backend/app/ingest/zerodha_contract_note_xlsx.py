@@ -121,9 +121,7 @@ class ZerodhaContractNoteXlsxAdapter:
         try:
             import openpyxl
         except ImportError as exc:  # pragma: no cover - dependency guard
-            return ParseResult(
-                rejections=[Rejection(0, f"openpyxl is not installed: {exc}")]
-            )
+            return ParseResult(rejections=[Rejection(0, f"openpyxl is not installed: {exc}")])
 
         try:
             workbook = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
@@ -216,7 +214,13 @@ class ZerodhaContractNoteXlsxAdapter:
                 elif "net total" in c and "levies" in c:
                     col["net_total"] = i
             required = {
-                "order", "trade", "description", "side", "quantity", "exchange", "price",
+                "order",
+                "trade",
+                "description",
+                "side",
+                "quantity",
+                "exchange",
+                "price",
                 "net_total",
             }
             if required <= set(col):
@@ -314,8 +318,7 @@ class ZerodhaContractNoteXlsxAdapter:
                     rejections.append(
                         Rejection(
                             row_number,
-                            f"sheet {sheet_name!r}: implausible quantity/price "
-                            f"{quantity}/{price}",
+                            f"sheet {sheet_name!r}: implausible quantity/price {quantity}/{price}",
                         )
                     )
                     continue

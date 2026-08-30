@@ -195,8 +195,7 @@ def test_reading_identifiers_is_audited_as_an_access_event(db, investor, crypto_
         )
     privacy.export_investor(db, investor, include_identifiers=True)
     with db.cursor() as cur:
-        cur.execute("SELECT count(*) FROM audit_log WHERE action = %s",
-                    (audit.ACTION_SECRET_READ,))
+        cur.execute("SELECT count(*) FROM audit_log WHERE action = %s", (audit.ACTION_SECRET_READ,))
         assert cur.fetchone()[0] == 1
 
 
@@ -257,9 +256,7 @@ def test_erasure_authorisation_does_not_leak_past_its_transaction(db, investor) 
     db.commit()
 
     with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO investor (code, display_name) VALUES ('C002','Two') RETURNING id"
-        )
+        cur.execute("INSERT INTO investor (code, display_name) VALUES ('C002','Two') RETURNING id")
         other = str(cur.fetchone()[0])
         cur.execute(
             "INSERT INTO account (id, investor_id, broker) VALUES (%s,%s,'ZERODHA')",

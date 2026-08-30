@@ -62,8 +62,7 @@ def get_user_by_email(conn: Any, email: str) -> dict[str, Any] | None:
 def get_user_by_id(conn: Any, user_id: str) -> dict[str, Any] | None:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT id, email, display_name, is_active, created_at "
-            "FROM app_user WHERE id = %s",
+            "SELECT id, email, display_name, is_active, created_at FROM app_user WHERE id = %s",
             (user_id,),
         )
         row = cur.fetchone()
@@ -72,9 +71,7 @@ def get_user_by_id(conn: Any, user_id: str) -> dict[str, Any] | None:
         return _row_dict(cur, row)
 
 
-def create_session(
-    conn: Any, user_id: str, token_hash: str, expires_at: datetime
-) -> str:
+def create_session(conn: Any, user_id: str, token_hash: str, expires_at: datetime) -> str:
     """Record one issued token. Returns the session id.
 
     ``current_user`` looks a session up by the hash of its token (see
@@ -118,7 +115,6 @@ def revoke_session(conn: Any, session_id: str) -> None:
     is already set changes nothing -- because refresh rotation and logout can race."""
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE app_session SET revoked_at = now() "
-            "WHERE id = %s AND revoked_at IS NULL",
+            "UPDATE app_session SET revoked_at = now() WHERE id = %s AND revoked_at IS NULL",
             (session_id,),
         )

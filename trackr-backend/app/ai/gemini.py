@@ -20,9 +20,7 @@ import urllib.request
 from dataclasses import dataclass
 from functools import lru_cache
 
-_ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-)
+_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _DEFAULT_MODEL = "gemini-3.6-flash"
 _TIMEOUT_SECONDS = 20
 
@@ -39,6 +37,7 @@ def _ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context(cafile=certifi.where())
     except ImportError:
         return ssl.create_default_context()
+
 
 #: Gemini's roles are "user" and "model" -- this app's chat history uses "assistant"
 #: like every other chat API, so the router-facing shape stays consistent and this is

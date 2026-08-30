@@ -6,6 +6,7 @@ may compute holdings, prices, or returns.
 ```python
 class Adapter(Protocol):
     name: str
+
     def detect(self, payload: bytes, meta: dict) -> bool: ...
     def parse(self, payload: bytes, ctx: ParseContext) -> list[Transaction]: ...
 ```

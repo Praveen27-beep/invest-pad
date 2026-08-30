@@ -191,11 +191,17 @@ def test_transactions_on_the_start_date_are_not_double_counted() -> None:
     """
     same_day = compute_period_xirr(
         [txn("BUY", "100", "100", "2025-08-11")],
-        {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11),
+        {ISIN_A: Decimal("150")},
+        date(2025, 8, 11),
+        Decimal("10000"),
+        date(2026, 8, 11),
     )
     pre_existing = compute_period_xirr(
         [txn("BUY", "100", "100", "2020-01-01")],
-        {ISIN_A: Decimal("150")}, date(2025, 8, 11), Decimal("10000"), date(2026, 8, 11),
+        {ISIN_A: Decimal("150")},
+        date(2025, 8, 11),
+        Decimal("10000"),
+        date(2026, 8, 11),
     )
     assert same_day == pre_existing
 

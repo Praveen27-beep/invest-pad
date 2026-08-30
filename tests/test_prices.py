@@ -29,14 +29,10 @@ NSE_ONLY = "INE0O4R01018"
 
 GOLDEN_PATH = Path(__file__).parent.parent / "fixtures" / "golden_portfolio.json"
 HELD = (
-    {
-        h["isin"]
-        for h in json.loads(GOLDEN_PATH.read_text())["expected"]["holdings"]
-    }
+    {h["isin"] for h in json.loads(GOLDEN_PATH.read_text())["expected"]["holdings"]}
     if GOLDEN_PATH.exists()
     else set()
 )
-
 
 
 def payload(exchange: str) -> bytes:
@@ -208,8 +204,10 @@ def test_a_closed_market_is_not_a_failure() -> None:
     notifier = CollectingNotifier()
     result = fetch_day(
         date(2026, 8, 15),
-        sources=[FakeSource("NSE", NotPublished("holiday")),
-                 FakeSource("BSE", NotPublished("holiday"))],
+        sources=[
+            FakeSource("NSE", NotPublished("holiday")),
+            FakeSource("BSE", NotPublished("holiday")),
+        ],
         notifier=notifier,
     )
     assert result.succeeded
@@ -221,8 +219,10 @@ def test_a_fetch_failure_alerts() -> None:
     notifier = CollectingNotifier()
     result = fetch_day(
         PRICE_DATE,
-        sources=[FakeSource("NSE", FetchFailed("NSE: HTTP 403")),
-                 FakeSource("BSE", payload("bse"))],
+        sources=[
+            FakeSource("NSE", FetchFailed("NSE: HTTP 403")),
+            FakeSource("BSE", payload("bse")),
+        ],
         notifier=notifier,
     )
     assert not result.succeeded
@@ -236,8 +236,7 @@ def test_half_a_run_is_reported_as_dangerous_not_fine() -> None:
     notifier = CollectingNotifier()
     result = fetch_day(
         PRICE_DATE,
-        sources=[FakeSource("NSE", payload("nse")),
-                 FakeSource("BSE", FetchFailed("BSE: timeout"))],
+        sources=[FakeSource("NSE", payload("nse")), FakeSource("BSE", FetchFailed("BSE: timeout"))],
         notifier=notifier,
     )
     assert result.prices, "prices were still produced"

@@ -101,9 +101,7 @@ def value_holdings(
     return [replace(h, weight_pct=h.market_value / total) for h in valued]
 
 
-def total_market_value(
-    holdings: list[Holding], prices: dict[str, Decimal]
-) -> Decimal:
+def total_market_value(holdings: list[Holding], prices: dict[str, Decimal]) -> Decimal:
     """Market value of everything held. The terminal cash flow of an XIRR series.
 
     This is why a tradebook alone cannot produce XIRR: trade files record what already

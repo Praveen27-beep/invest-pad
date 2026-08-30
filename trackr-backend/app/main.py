@@ -97,7 +97,10 @@ async def request_context(request: Request, call_next: Any) -> Any:
     response.headers["X-Request-ID"] = request_id
     logger.info(
         "request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
-        request_id, request.method, request.url.path, response.status_code,
+        request_id,
+        request.method,
+        request.url.path,
+        response.status_code,
         (time.monotonic() - started) * 1000,
     )
     return response
@@ -122,7 +125,8 @@ def _error(request: Request, status_code: int, message: str, **extra: Any) -> JS
 @app.exception_handler(MissingPriceError)
 async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSONResponse:
     return _error(
-        request, 409,
+        request,
+        409,
         "one or more held ISINs have no usable price within the staleness window",
         isins=exc.isins,
     )
@@ -132,7 +136,8 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
 async def negative_holding_handler(request: Request, exc: NegativeHoldingError) -> JSONResponse:
     deficit = -exc.quantity if exc.quantity is not None else None
     return _error(
-        request, 409,
+        request,
+        409,
         f"holding for {exc.isin} went negative; buy history is incomplete",
         isin=exc.isin,
         deficit=str(deficit) if deficit is not None else None,
@@ -156,9 +161,7 @@ async def batch_not_found_handler(request: Request, exc: BatchNotFoundError) -> 
 
 
 @app.exception_handler(BatchAlreadyResolvedError)
-async def batch_resolved_handler(
-    request: Request, exc: BatchAlreadyResolvedError
-) -> JSONResponse:
+async def batch_resolved_handler(request: Request, exc: BatchAlreadyResolvedError) -> JSONResponse:
     return _error(request, 409, str(exc))
 
 
@@ -173,9 +176,7 @@ async def duplicate_upload_handler(request: Request, exc: DuplicateUploadError) 
 
 
 @app.exception_handler(UnroutableAddressError)
-async def unroutable_address_handler(
-    request: Request, exc: UnroutableAddressError
-) -> JSONResponse:
+async def unroutable_address_handler(request: Request, exc: UnroutableAddressError) -> JSONResponse:
     return _error(request, 422, str(exc))
 
 
@@ -223,7 +224,9 @@ async def missing_webhook_credential_handler(
     request_id = getattr(request.state, "request_id", None)
     logger.warning(
         "request_id=%s provider=%s inbound-email webhook credential missing/malformed: %s",
-        request_id, _webhook_provider_for_log(request), exc,
+        request_id,
+        _webhook_provider_for_log(request),
+        exc,
     )
     return _error(request, 401, str(exc))
 
@@ -235,7 +238,9 @@ async def invalid_webhook_credential_handler(
     request_id = getattr(request.state, "request_id", None)
     logger.warning(
         "request_id=%s provider=%s inbound-email webhook credential did not verify: %s",
-        request_id, _webhook_provider_for_log(request), exc,
+        request_id,
+        _webhook_provider_for_log(request),
+        exc,
     )
     return _error(request, 403, str(exc))
 
@@ -264,7 +269,8 @@ async def webhook_not_configured_handler(
 async def ops_key_missing_handler(request: Request, exc: OpsKeyMissingError) -> JSONResponse:
     logger.warning(
         "request_id=%s path=%s ops request missing X-Ops-Key",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 401, "missing X-Ops-Key header")
 
@@ -273,19 +279,19 @@ async def ops_key_missing_handler(request: Request, exc: OpsKeyMissingError) -> 
 async def ops_key_invalid_handler(request: Request, exc: OpsKeyInvalidError) -> JSONResponse:
     logger.warning(
         "request_id=%s path=%s ops request's X-Ops-Key did not verify",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 403, "invalid X-Ops-Key")
 
 
 @app.exception_handler(OpsNotConfiguredError)
-async def ops_not_configured_handler(
-    request: Request, exc: OpsNotConfiguredError
-) -> JSONResponse:
+async def ops_not_configured_handler(request: Request, exc: OpsNotConfiguredError) -> JSONResponse:
     logger.error(
         "request_id=%s path=%s OPS_API_KEY is unset; refusing the ops request rather "
         "than accepting an unverifiable one",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 500, "the server is not configured correctly")
 
@@ -296,7 +302,8 @@ async def cron_secret_missing_handler(
 ) -> JSONResponse:
     logger.warning(
         "request_id=%s path=%s cron request missing Authorization header",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 401, "missing Authorization header")
 
@@ -307,7 +314,8 @@ async def cron_secret_invalid_handler(
 ) -> JSONResponse:
     logger.warning(
         "request_id=%s path=%s cron request's Authorization header did not verify",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 403, "invalid Authorization header")
 
@@ -319,7 +327,8 @@ async def cron_secret_not_configured_handler(
     logger.error(
         "request_id=%s path=%s CRON_SECRET is unset; refusing the cron request rather "
         "than accepting an unverifiable one",
-        getattr(request.state, "request_id", None), request.url.path,
+        getattr(request.state, "request_id", None),
+        request.url.path,
     )
     return _error(request, 500, "the server is not configured correctly")
 
@@ -360,9 +369,7 @@ async def consent_missing_handler(request: Request, exc: ConsentMissingError) ->
 async def grievance_already_resolved_handler(
     request: Request, exc: AlreadyResolvedError
 ) -> JSONResponse:
-    return _error(
-        request, 409, f"grievance {exc} is already resolved and cannot be reopened"
-    )
+    return _error(request, 409, f"grievance {exc} is already resolved and cannot be reopened")
 
 
 # --------------------------------------------------------------------------------------
@@ -371,9 +378,7 @@ async def grievance_already_resolved_handler(
 
 
 @app.exception_handler(EmailAlreadyRegisteredError)
-async def email_taken_handler(
-    request: Request, exc: EmailAlreadyRegisteredError
-) -> JSONResponse:
+async def email_taken_handler(request: Request, exc: EmailAlreadyRegisteredError) -> JSONResponse:
     return _error(request, 409, str(exc))
 
 
@@ -425,7 +430,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     request_id = getattr(request.state, "request_id", None)
     logger.error(
         "request_id=%s method=%s path=%s unhandled_exception=%s",
-        request_id, request.method, request.url.path, exc,
+        request_id,
+        request.method,
+        request.url.path,
+        exc,
         exc_info=True,
     )
     return _error(request, 500, "internal server error")

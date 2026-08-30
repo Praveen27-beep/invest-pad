@@ -160,9 +160,7 @@ def _financial_year_bounds(fy: str) -> tuple[date, date]:
         start_year_str, end_suffix = fy.split("-", 1)
         start_year = int(start_year_str)
         end_year = (
-            start_year // 100 * 100 + int(end_suffix)
-            if len(end_suffix) == 2
-            else int(end_suffix)
+            start_year // 100 * 100 + int(end_suffix) if len(end_suffix) == 2 else int(end_suffix)
         )
     except (ValueError, IndexError) as exc:
         raise HTTPException(

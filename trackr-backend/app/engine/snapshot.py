@@ -36,9 +36,7 @@ def compute_snapshot(
 
     invested = sum((h.invested for h in holdings), ZERO)
     market_value = sum((h.market_value for h in holdings), ZERO)
-    realised_to_date = sum(
-        (r.gain for r in compute_realised(transactions, on_date)), ZERO
-    )
+    realised_to_date = sum((r.gain for r in compute_realised(transactions, on_date)), ZERO)
 
     return Snapshot(
         as_of=on_date,

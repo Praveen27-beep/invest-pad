@@ -13,7 +13,6 @@ from io import BytesIO
 from urllib.error import HTTPError, URLError
 
 import pytest
-
 from app.ai.gemini import AssistantError, ChatTurn, generate_reply
 
 
@@ -24,7 +23,7 @@ class _FakeResponse:
     def read(self) -> bytes:
         return self._body
 
-    def __enter__(self) -> "_FakeResponse":
+    def __enter__(self) -> _FakeResponse:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -41,9 +40,7 @@ def test_success_extracts_text_and_maps_roles(monkeypatch: pytest.MonkeyPatch) -
     def fake_urlopen(request, timeout, context=None):
         captured["body"] = json.loads(request.data)
         captured["url"] = request.full_url
-        return _FakeResponse(
-            {"candidates": [{"content": {"parts": [{"text": "Here's why."}]}}]}
-        )
+        return _FakeResponse({"candidates": [{"content": {"parts": [{"text": "Here's why."}]}}]})
 
     _patch_urlopen(monkeypatch, fake_urlopen)
 
@@ -72,7 +69,9 @@ def test_empty_turns_raises_without_a_network_call(monkeypatch: pytest.MonkeyPat
 
 def test_http_error_is_wrapped_not_leaked(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_urlopen(request, timeout, context=None):
-        raise HTTPError(request.full_url, 429, "quota exceeded", None, BytesIO(b'{"error":"quota"}'))
+        raise HTTPError(
+            request.full_url, 429, "quota exceeded", None, BytesIO(b'{"error":"quota"}')
+        )
 
     _patch_urlopen(monkeypatch, fake_urlopen)
 

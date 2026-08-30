@@ -70,9 +70,7 @@ def _portfolio(
     DATA_MODEL.md, contracts/openapi.yaml) -- so a SEBI-registered adviser can report on
     the mandated account only.
     """
-    transactions = load_transactions(
-        connection, investor_id=investor_id, advised_only=advised_only
-    )
+    transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
     holdings, skipped = compute_holdings_partitioned(transactions, as_of=as_of)
 
     prices = latest_prices(connection, [h.isin for h in holdings], as_of)
@@ -218,9 +216,7 @@ def _sector_allocation(book: dict[str, Any]) -> list[dict[str, Any]]:
     being merged into a real sector or excluded from the response.
     """
     total = book["market_value"]
-    groups = _group_holdings(
-        book, lambda h: securities.describe(book["meta"], h.isin)["sector"]
-    )
+    groups = _group_holdings(book, lambda h: securities.describe(book["meta"], h.isin)["sector"])
     return [
         {
             "sector": sector,

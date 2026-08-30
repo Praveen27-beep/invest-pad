@@ -16,8 +16,11 @@ pytestmark = pytest.mark.db
 
 def raise_one(db, subject="Statement shows wrong quantity", investor_id=None):
     return grievance.raise_grievance(
-        db, subject=subject, channel="EMAIL",
-        detail="Client says June holdings are overstated.", investor_id=investor_id,
+        db,
+        subject=subject,
+        channel="EMAIL",
+        detail="Client says June holdings are overstated.",
+        investor_id=investor_id,
     )
 
 
@@ -180,7 +183,8 @@ def test_open_list_is_ordered_by_urgency(db) -> None:
             (sooner["id"],),
         )
     assert [g["subject"] for g in grievance.open_grievances(db)] == [
-        "more urgent", "less urgent",
+        "more urgent",
+        "less urgent",
     ]
     assert later["id"]
 
@@ -194,7 +198,9 @@ def test_every_transition_is_audited(db) -> None:
         cur.execute("SELECT action FROM audit_log WHERE entity_type = 'grievance'")
         actions = {r[0] for r in cur.fetchall()}
     assert actions == {
-        grievance.ACTION_RAISED, grievance.ACTION_ACKNOWLEDGED, grievance.ACTION_RESOLVED,
+        grievance.ACTION_RAISED,
+        grievance.ACTION_ACKNOWLEDGED,
+        grievance.ACTION_RESOLVED,
     }
 
 

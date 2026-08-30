@@ -77,5 +77,4 @@ class Adapter(Protocol):
 
     name: str
 
-    def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult:
-        ...
+    def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult: ...

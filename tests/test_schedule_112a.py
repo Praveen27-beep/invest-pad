@@ -112,8 +112,13 @@ def test_stt_is_excluded_from_cost_of_acquisition_and_consideration() -> None:
     app.engine.realised.tax_cost/tax_proceeds, every reported column must come out
     identical to _be_realised()'s own (STT-free) test above."""
     with_stt = _realised(
-        BE_ISIN, "100", "10100", "19800", open_date=date(2016, 3, 1),
-        cost_stt="100", proceeds_stt="200",
+        BE_ISIN,
+        "100",
+        "10100",
+        "19800",
+        open_date=date(2016, 3, 1),
+        cost_stt="100",
+        proceeds_stt="200",
     )
     report = build_schedule_112a(
         ltcg_realised=[with_stt],
@@ -241,9 +246,7 @@ def test_short_term_lot_raises_instead_of_being_silently_included() -> None:
 
 def test_be_lot_missing_scrip_name_raises() -> None:
     with pytest.raises(ValueError, match=BE_ISIN):
-        build_schedule_112a(
-            ltcg_realised=[_be_realised()], fmv_31jan2018={}, scrip_names={}
-        )
+        build_schedule_112a(ltcg_realised=[_be_realised()], fmv_31jan2018={}, scrip_names={})
 
 
 def test_empty_input_produces_an_empty_report() -> None:

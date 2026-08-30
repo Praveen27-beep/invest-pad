@@ -22,12 +22,10 @@ def seed(db, isin=BLS, on=None, close="100", source="NSE_BHAVCOPY"):
     from app.prices.pipe import MergedPrice
 
     with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO security (isin) VALUES (%s) ON CONFLICT DO NOTHING", (isin,)
-        )
+        cur.execute("INSERT INTO security (isin) VALUES (%s) ON CONFLICT DO NOTHING", (isin,))
     return dbprices.upsert_prices(
-        db, [MergedPrice(isin=isin, price_date=on or PRICE_DATE,
-                         close=Decimal(close), source=source)]
+        db,
+        [MergedPrice(isin=isin, price_date=on or PRICE_DATE, close=Decimal(close), source=source)],
     )
 
 
@@ -84,7 +82,7 @@ def test_a_stale_price_is_omitted_rather_than_served(db) -> None:
 
 
 def test_missing_prices_names_the_isins(db) -> None:
-    """"Cannot value your portfolio" is unactionable. Naming the security is not."""
+    """ "Cannot value your portfolio" is unactionable. Naming the security is not."""
     seed(db)
     missing = dbprices.missing_prices(db, [BLS, NSE_ONLY], PRICE_DATE)
     assert missing == [NSE_ONLY]
@@ -127,8 +125,12 @@ def test_valuation_runs_off_stored_prices(db, investor) -> None:
     dbprices.upsert_prices(db, [p for p in result.prices if p.isin == BLS])
 
     prices = dbprices.latest_prices(db, [BLS], PRICE_DATE)
-    holding = Holding(isin=BLS, quantity=Decimal("795"), avg_cost=Decimal("268.9685"),
-                      invested=Decimal("213829.96"))
+    holding = Holding(
+        isin=BLS,
+        quantity=Decimal("795"),
+        avg_cost=Decimal("268.9685"),
+        invested=Decimal("213829.96"),
+    )
     (valued,) = value_holdings([holding], prices)
     assert valued.market_value == Decimal("795") * prices[BLS]
 
@@ -153,16 +155,31 @@ def test_held_isins_covers_everything_ever_traded(db, investor) -> None:
 
     with db.cursor() as cur:
         cur.execute("INSERT INTO security (isin) VALUES (%s) ON CONFLICT DO NOTHING", (BLS,))
-    repository.save_transactions(db, [
-        Transaction(isin=BLS, txn_date=date(2024, 1, 10), txn_type=TxnType.BUY,
-                    quantity=Decimal("10"), price=Decimal("100"),
-                    account_id=os.environ["_TEST_ACCOUNT_ID"], source=Source.MANUAL,
-                    source_ref="A"),
-        Transaction(isin=BLS, txn_date=date(2024, 6, 10), txn_type=TxnType.SELL,
-                    quantity=Decimal("10"), price=Decimal("120"),
-                    account_id=os.environ["_TEST_ACCOUNT_ID"], source=Source.MANUAL,
-                    source_ref="B"),
-    ])
+    repository.save_transactions(
+        db,
+        [
+            Transaction(
+                isin=BLS,
+                txn_date=date(2024, 1, 10),
+                txn_type=TxnType.BUY,
+                quantity=Decimal("10"),
+                price=Decimal("100"),
+                account_id=os.environ["_TEST_ACCOUNT_ID"],
+                source=Source.MANUAL,
+                source_ref="A",
+            ),
+            Transaction(
+                isin=BLS,
+                txn_date=date(2024, 6, 10),
+                txn_type=TxnType.SELL,
+                quantity=Decimal("10"),
+                price=Decimal("120"),
+                account_id=os.environ["_TEST_ACCOUNT_ID"],
+                source=Source.MANUAL,
+                source_ref="B",
+            ),
+        ],
+    )
     assert dbprices.held_isins(db) == [BLS], "closed position still needs historical prices"
 
 

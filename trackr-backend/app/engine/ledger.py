@@ -13,9 +13,7 @@ from datetime import date
 from app.engine.types import Transaction
 
 
-def ordered(
-    transactions: list[Transaction], as_of: date | None = None
-) -> list[Transaction]:
+def ordered(transactions: list[Transaction], as_of: date | None = None) -> list[Transaction]:
     """Ledger rows in replay order, optionally truncated at ``as_of``.
 
     ENGINE_SPEC section 1 specifies ``(txn_date, id)``. Sorting on ``txn_date`` alone is

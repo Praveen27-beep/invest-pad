@@ -44,9 +44,7 @@ def _rounded_pool(pool: Decimal, quantity: Decimal) -> Decimal:
     return (pool / quantity).quantize(AVG_COST_PLACES, rounding=ROUND_HALF_UP) * quantity
 
 
-def compute_holdings(
-    transactions: list[Transaction], as_of: date | None = None
-) -> list[Holding]:
+def compute_holdings(transactions: list[Transaction], as_of: date | None = None) -> list[Holding]:
     """Replay the ledger into current positions.
 
     Positions at or below zero quantity are closed and excluded from the output.

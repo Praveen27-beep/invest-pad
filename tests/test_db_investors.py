@@ -39,6 +39,7 @@ def _staff_user(db):
         )
     db.commit()
 
+
 PAN = "AAAPZ1234C"
 NIL_UUID = "00000000-0000-0000-0000-000000000000"
 

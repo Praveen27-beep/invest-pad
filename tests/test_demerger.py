@@ -88,9 +88,7 @@ def test_ratio_not_strictly_between_zero_and_one_raises() -> None:
     with pytest.raises(ValueError):
         demerger_cost_split(ISIN_A, ISIN_B, EX_DATE, Decimal("100000"), Decimal("0"))
     with pytest.raises(ValueError):
-        demerger_cost_split(
-            ISIN_A, ISIN_B, EX_DATE, Decimal("100000"), Decimal("1.1")
-        )
+        demerger_cost_split(ISIN_A, ISIN_B, EX_DATE, Decimal("100000"), Decimal("1.1"))
 
 
 def test_holdings_cost_bases_sum_back_to_the_original_pool() -> None:

@@ -147,9 +147,7 @@ def test_mailgun_accepts_a_correctly_computed_signature() -> None:
 def test_mailgun_rejects_a_tampered_signature() -> None:
     cfg = settings(ingest_webhook_provider="mailgun", ingest_mailgun_signing_key="key-123")
     request = make_request(
-        body=_urlencode_form(
-            {"timestamp": "1700000000", "token": "tok-abc", "signature": "0" * 64}
-        )
+        body=_urlencode_form({"timestamp": "1700000000", "token": "tok-abc", "signature": "0" * 64})
     )
     with pytest.raises(InvalidWebhookCredentialError):
         run(_verify_mailgun(request, cfg))

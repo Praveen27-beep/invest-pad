@@ -90,9 +90,7 @@ def pg_cluster() -> Iterator[str]:
             yield url
         finally:
             with psycopg.connect(admin_url, autocommit=True) as conn:
-                conn.execute(
-                    f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)"
-                )
+                conn.execute(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
         return
 
     data_dir = Path(tempfile.mkdtemp(prefix="portfolio-pgdata-"))
@@ -108,21 +106,39 @@ def pg_cluster() -> Iterator[str]:
 
     subprocess.run(
         [
-            str(pg_bin / "initdb"), "-D", str(data_dir), "-U", "postgres", "--auth=trust",
+            str(pg_bin / "initdb"),
+            "-D",
+            str(data_dir),
+            "-U",
+            "postgres",
+            "--auth=trust",
             # Encoding must be stated explicitly. Under LC_ALL=C initdb otherwise picks
             # SQL_ASCII, and a SQL_ASCII connection hands psycopg bytes where it expects
             # str -- which surfaces far from here, as a TypeError deep in a query result.
-            "--encoding=UTF8", "--lc-collate=C", "--lc-ctype=C",
+            "--encoding=UTF8",
+            "--lc-collate=C",
+            "--lc-ctype=C",
         ],
-        check=True, capture_output=True, env=env,
+        check=True,
+        capture_output=True,
+        env=env,
     )
     subprocess.run(
         [
-            str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-l", str(log), "-w", "start",
+            str(pg_bin / "pg_ctl"),
+            "-D",
+            str(data_dir),
+            "-l",
+            str(log),
+            "-w",
+            "start",
             # listen on the socket dir only; no TCP surface beyond loopback
-            "-o", f"-p {port} -k {sock_dir} -c listen_addresses=127.0.0.1",
+            "-o",
+            f"-p {port} -k {sock_dir} -c listen_addresses=127.0.0.1",
         ],
-        check=True, capture_output=True, env=env,
+        check=True,
+        capture_output=True,
+        env=env,
     )
 
     url = f"postgresql://postgres@127.0.0.1:{port}/{TEST_DB}"
@@ -145,7 +161,9 @@ def pg_cluster() -> Iterator[str]:
     finally:
         subprocess.run(
             [str(pg_bin / "pg_ctl"), "-D", str(data_dir), "-m", "immediate", "-w", "stop"],
-            check=False, capture_output=True, env=env,
+            check=False,
+            capture_output=True,
+            env=env,
         )
         shutil.rmtree(data_dir, ignore_errors=True)
         shutil.rmtree(sock_dir, ignore_errors=True)
@@ -249,8 +267,7 @@ def another_consented_investor(db: object, consented_investor: str) -> str:
 
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO investor (code, display_name) VALUES ('C002', 'Test Two') "
-            "RETURNING id"
+            "INSERT INTO investor (code, display_name) VALUES ('C002', 'Test Two') RETURNING id"
         )
         investor_id = str(cur.fetchone()[0])
         cur.execute(

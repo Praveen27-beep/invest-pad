@@ -59,9 +59,7 @@ def register(
 
     normalised = email.strip().lower()
     try:
-        return repository.create_user(
-            conn, normalised, hash_password(password), display_name
-        )
+        return repository.create_user(conn, normalised, hash_password(password), display_name)
     except psycopg.errors.UniqueViolation as exc:
         raise EmailAlreadyRegisteredError(normalised) from exc
 
@@ -118,9 +116,7 @@ def login(
     return token, expires_in, user
 
 
-def refresh(
-    conn: Any, settings: Settings, token: str
-) -> tuple[str, int, dict[str, Any]]:
+def refresh(conn: Any, settings: Settings, token: str) -> tuple[str, int, dict[str, Any]]:
     """Exchange a token for a fresh one, renewing the session it was issued under.
 
     Returns ``(token, expires_in, user)``, shaped like ``login``'s return so callers

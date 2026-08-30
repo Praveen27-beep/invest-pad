@@ -119,8 +119,11 @@ def test_email_notifier_sends_a_correctly_addressed_message(fake_smtp) -> None:
 
 def test_email_notifier_skips_auth_without_credentials(fake_smtp) -> None:
     notifier = EmailNotifier(
-        host="smtp.example.com", port=25, use_tls=False,
-        from_address="a@x.example", recipient="b@x.example",
+        host="smtp.example.com",
+        port=25,
+        use_tls=False,
+        from_address="a@x.example",
+        recipient="b@x.example",
     )
     notifier.notify("subject", "detail", {})
     client = fake_smtp[0]
@@ -132,8 +135,11 @@ def test_email_notifier_strips_header_injection_attempts(fake_smtp) -> None:
     """subject/detail ultimately come from a fetch error message -- never trust it not
     to contain a newline that could smuggle extra headers into the email."""
     notifier = EmailNotifier(
-        host="smtp.example.com", port=587, use_tls=False,
-        from_address="a@x.example", recipient="b@x.example",
+        host="smtp.example.com",
+        port=587,
+        use_tls=False,
+        from_address="a@x.example",
+        recipient="b@x.example",
     )
     notifier.notify("bad subject\r\nBcc: attacker@evil.example", "detail", {})
     message = fake_smtp[0].sent[0]
@@ -145,8 +151,11 @@ def test_email_notifier_strips_header_injection_attempts(fake_smtp) -> None:
 @pytest.mark.parametrize("missing", ["host", "from_address", "recipient"])
 def test_email_notifier_requires_host_from_address_and_recipient(missing: str) -> None:
     kwargs = {
-        "host": "smtp.example.com", "port": 587, "use_tls": True,
-        "from_address": "a@x.example", "recipient": "b@x.example",
+        "host": "smtp.example.com",
+        "port": 587,
+        "use_tls": True,
+        "from_address": "a@x.example",
+        "recipient": "b@x.example",
     }
     kwargs[missing] = ""
     with pytest.raises(ValueError):
@@ -157,14 +166,18 @@ def test_email_notifier_does_not_raise_when_smtp_itself_fails(monkeypatch, caplo
     """A broken mail server must not crash the price pipe -- see the module docstring.
     This is the property that lets the pipe still store prices from the exchange that
     DID answer even when alert delivery is down."""
+
     class ExplodingSMTP:
         def __init__(self, *args, **kwargs):
             raise OSError("connection refused")
 
     monkeypatch.setattr("smtplib.SMTP", ExplodingSMTP)
     notifier = EmailNotifier(
-        host="smtp.example.com", port=587, use_tls=True,
-        from_address="a@x.example", recipient="b@x.example",
+        host="smtp.example.com",
+        port=587,
+        use_tls=True,
+        from_address="a@x.example",
+        recipient="b@x.example",
     )
 
     with caplog.at_level(logging.ERROR, logger="prices"):
@@ -205,8 +218,11 @@ def test_a_forced_exchange_failure_reaches_the_email_notifier(fake_smtp) -> None
     double standing in for it) constructs and hands a message to smtplib on a genuine
     fetch failure, with the failing exchange and error message intact."""
     notifier = EmailNotifier(
-        host="smtp.example.com", port=587, use_tls=True,
-        from_address="alerts@trackr.example", recipient="ops@trackr.example",
+        host="smtp.example.com",
+        port=587,
+        use_tls=True,
+        from_address="alerts@trackr.example",
+        recipient="ops@trackr.example",
     )
     on = date(2026, 8, 16)
 

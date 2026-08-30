@@ -68,23 +68,17 @@ def test_missing_source_column_is_rejected() -> None:
 
 
 def test_malformed_financial_year_is_rejected() -> None:
-    payload = _csv_bytes(
-        ["financial_year", "cii_value", "source"], [["2012", "200", "CBDT"]]
-    )
+    payload = _csv_bytes(["financial_year", "cii_value", "source"], [["2012", "200", "CBDT"]])
     with pytest.raises(CIISourceFormatError, match="2012"):
         parse_cii_csv(payload)
 
 
 def test_non_positive_cii_value_is_rejected() -> None:
-    payload = _csv_bytes(
-        ["financial_year", "cii_value", "source"], [["2012-13", "0", "CBDT"]]
-    )
+    payload = _csv_bytes(["financial_year", "cii_value", "source"], [["2012-13", "0", "CBDT"]])
     with pytest.raises(CIISourceFormatError, match="2012-13"):
         parse_cii_csv(payload)
 
-    payload = _csv_bytes(
-        ["financial_year", "cii_value", "source"], [["2012-13", "-5", "CBDT"]]
-    )
+    payload = _csv_bytes(["financial_year", "cii_value", "source"], [["2012-13", "-5", "CBDT"]])
     with pytest.raises(CIISourceFormatError, match="2012-13"):
         parse_cii_csv(payload)
 

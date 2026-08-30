@@ -39,9 +39,7 @@ def _period_flows(period_rows: list[Transaction]) -> dict[str, Decimal]:
         if txn.txn_type in ACQUIRING_TYPES:
             flows[txn.isin] = flows.get(txn.isin, ZERO) + txn.quantity * txn.price + txn.charges
         elif txn.txn_type in DISPOSING_TYPES:
-            flows[txn.isin] = (
-                flows.get(txn.isin, ZERO) - (txn.quantity * txn.price - txn.charges)
-            )
+            flows[txn.isin] = flows.get(txn.isin, ZERO) - (txn.quantity * txn.price - txn.charges)
         elif txn.txn_type is TxnType.DIVIDEND and txn.dividend_amount != ZERO:
             flows[txn.isin] = flows.get(txn.isin, ZERO) - txn.dividend_amount
     return flows
@@ -83,9 +81,7 @@ def compute_contribution(
         for h in value_holdings(compute_holdings(transactions, as_of), end_prices)
     }
 
-    period_rows = [
-        t for t in ordered(transactions, as_of) if start_date < t.txn_date <= as_of
-    ]
+    period_rows = [t for t in ordered(transactions, as_of) if start_date < t.txn_date <= as_of]
     flows = _period_flows(period_rows)
 
     isins = set(start_holdings) | set(end_holdings) | {t.isin for t in period_rows}

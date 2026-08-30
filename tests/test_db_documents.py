@@ -27,8 +27,14 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LocalDocumentStore
 
 def store_one(db, store, investor, content=PDF, doctype="CAS", filename="cas.pdf"):
     return documents.store_document(
-        db, store, investor_id=investor, investor_code="C001", doctype=doctype,
-        content=content, received=date(2026, 3, 31), filename=filename,
+        db,
+        store,
+        investor_id=investor,
+        investor_code="C001",
+        doctype=doctype,
+        content=content,
+        received=date(2026, 3, 31),
+        filename=filename,
     )
 
 
@@ -71,8 +77,9 @@ def test_sha256_is_unique_at_the_database_level(db, store, investor) -> None:
 def test_storing_is_audited(db, store, investor) -> None:
     store_one(db, store, investor)
     with db.cursor() as cur:
-        cur.execute("SELECT count(*) FROM audit_log WHERE action = %s",
-                    (audit.ACTION_DOCUMENT_STORED,))
+        cur.execute(
+            "SELECT count(*) FROM audit_log WHERE action = %s", (audit.ACTION_DOCUMENT_STORED,)
+        )
         assert cur.fetchone()[0] == 1
 
 
@@ -84,8 +91,9 @@ def test_issuing_a_signed_url_is_audited(db, store, investor) -> None:
     assert "signature=" in url
 
     with db.cursor() as cur:
-        cur.execute("SELECT count(*) FROM audit_log WHERE action = %s",
-                    (audit.ACTION_DOCUMENT_ACCESSED,))
+        cur.execute(
+            "SELECT count(*) FROM audit_log WHERE action = %s", (audit.ACTION_DOCUMENT_ACCESSED,)
+        )
         assert cur.fetchone()[0] == 1
 
 
@@ -133,13 +141,17 @@ def test_legal_hold_still_protects_documents(db, store, investor) -> None:
 def test_erasure_does_not_touch_another_investors_documents(db, store, investor) -> None:
     store_one(db, store, investor)
     with db.cursor() as cur:
-        cur.execute(
-            "INSERT INTO investor (code, display_name) VALUES ('C002','Two') RETURNING id"
-        )
+        cur.execute("INSERT INTO investor (code, display_name) VALUES ('C002','Two') RETURNING id")
         other = str(cur.fetchone()[0])
     documents.store_document(
-        db, store, investor_id=other, investor_code="C002", doctype="CAS",
-        content=OTHER, received=date(2026, 3, 31), filename="cas.pdf",
+        db,
+        store,
+        investor_id=other,
+        investor_code="C002",
+        doctype="CAS",
+        content=OTHER,
+        received=date(2026, 3, 31),
+        filename="cas.pdf",
     )
 
     privacy.erase_investor(db, investor, store=store)

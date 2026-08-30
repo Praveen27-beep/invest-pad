@@ -51,8 +51,14 @@ def test_a_holding_whose_security_does_not_exist_yet_still_writes(db, investor) 
 
     written = holdings.record_snapshot(
         db,
-        [FakeHolding(isin="INF247L01BQ9", account_id=account_id,
-                     quantity=Decimal("10"), snap_date=date(2026, 6, 30))],
+        [
+            FakeHolding(
+                isin="INF247L01BQ9",
+                account_id=account_id,
+                quantity=Decimal("10"),
+                snap_date=date(2026, 6, 30),
+            )
+        ],
     )
     assert written == 1
 
@@ -76,8 +82,14 @@ def test_an_existing_security_row_is_left_alone(db, investor) -> None:
 
     holdings.record_snapshot(
         db,
-        [FakeHolding(isin="INE153T01027", account_id=account_id,
-                     quantity=Decimal("5"), snap_date=date(2026, 6, 30))],
+        [
+            FakeHolding(
+                isin="INE153T01027",
+                account_id=account_id,
+                quantity=Decimal("5"),
+                snap_date=date(2026, 6, 30),
+            )
+        ],
     )
 
     with db.cursor() as cur:
@@ -92,12 +104,26 @@ def test_upsert_on_the_same_account_isin_date_overwrites_the_quantity(db, invest
     account_id = _account_id()
     snap_date = date(2026, 6, 30)
     holdings.record_snapshot(
-        db, [FakeHolding(isin="INE153T01027", account_id=account_id,
-                          quantity=Decimal("5"), snap_date=snap_date)]
+        db,
+        [
+            FakeHolding(
+                isin="INE153T01027",
+                account_id=account_id,
+                quantity=Decimal("5"),
+                snap_date=snap_date,
+            )
+        ],
     )
     holdings.record_snapshot(
-        db, [FakeHolding(isin="INE153T01027", account_id=account_id,
-                          quantity=Decimal("9"), snap_date=snap_date)]
+        db,
+        [
+            FakeHolding(
+                isin="INE153T01027",
+                account_id=account_id,
+                quantity=Decimal("9"),
+                snap_date=snap_date,
+            )
+        ],
     )
 
     with db.cursor() as cur:
@@ -114,7 +140,13 @@ def test_upsert_on_the_same_account_isin_date_overwrites_the_quantity(db, invest
 def test_a_holding_with_no_account_id_is_skipped_not_written_with_a_null(db, investor) -> None:
     written = holdings.record_snapshot(
         db,
-        [FakeHolding(isin="INE153T01027", account_id="", quantity=Decimal("5"),
-                     snap_date=date(2026, 6, 30))],
+        [
+            FakeHolding(
+                isin="INE153T01027",
+                account_id="",
+                quantity=Decimal("5"),
+                snap_date=date(2026, 6, 30),
+            )
+        ],
     )
     assert written == 0

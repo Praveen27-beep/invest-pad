@@ -15,12 +15,10 @@ from functools import lru_cache
 from typing import Protocol, runtime_checkable
 
 NSE_URL = (
-    "https://nsearchives.nseindia.com/content/cm/"
-    "BhavCopy_NSE_CM_0_0_0_{d:%Y%m%d}_F_0000.csv.zip"
+    "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{d:%Y%m%d}_F_0000.csv.zip"
 )
 BSE_URL = (
-    "https://www.bseindia.com/download/BhavCopy/Equity/"
-    "BhavCopy_BSE_CM_0_0_0_{d:%Y%m%d}_F_0000.CSV"
+    "https://www.bseindia.com/download/BhavCopy/Equity/BhavCopy_BSE_CM_0_0_0_{d:%Y%m%d}_F_0000.CSV"
 )
 
 #: NSE returns 403 to anything that does not look like a browser.

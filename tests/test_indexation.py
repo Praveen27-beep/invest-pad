@@ -36,18 +36,14 @@ def test_pre_cutoff_lot_is_indexed_by_cii_ratio() -> None:
     """buy FY2012-13 (CII 200), sell FY2019-20 (CII 289), cost=100000 ->
     100000 x (289/200) = 100000 x 1.445 = 144500 exactly -- chosen so the ratio
     terminates and can be hand-checked without a calculator."""
-    result = indexed_cost_of_acquisition(
-        Decimal("100000"), "2012-13", "2019-20", CII_TABLE
-    )
+    result = indexed_cost_of_acquisition(Decimal("100000"), "2012-13", "2019-20", CII_TABLE)
     assert result == Decimal("144500")
 
 
 def test_same_fy_purchase_and_sale_is_a_no_op_ratio() -> None:
     """CII_sale_year / CII_purchase_year = 1 when both years are the same FY --
     indexation must leave the cost unchanged, not merely "close"."""
-    result = indexed_cost_of_acquisition(
-        Decimal("50000"), "2012-13", "2012-13", CII_TABLE
-    )
+    result = indexed_cost_of_acquisition(Decimal("50000"), "2012-13", "2012-13", CII_TABLE)
     assert result == Decimal("50000")
 
 
@@ -65,9 +61,7 @@ def test_purchase_fy_at_cutoff_returns_unindexed_cost() -> None:
 def test_purchase_fy_just_before_cutoff_is_still_indexed() -> None:
     """FY2022-23 is the last FY entirely before 1 Apr 2023 -- proves the gate excludes
     exactly FY2023-24 onward, not one year early."""
-    result = indexed_cost_of_acquisition(
-        Decimal("100000"), "2022-23", "2022-23", CII_TABLE
-    )
+    result = indexed_cost_of_acquisition(Decimal("100000"), "2022-23", "2022-23", CII_TABLE)
     assert result == Decimal("100000")  # same-FY ratio = 1, but must not raise/gate out
 
 

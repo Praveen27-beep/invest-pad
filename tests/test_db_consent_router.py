@@ -69,9 +69,7 @@ def claim(db, investor) -> None:
             "ON CONFLICT (id) DO NOTHING",
             (STAFF["id"], STAFF["email"]),
         )
-        cur.execute(
-            "UPDATE investor SET owner_user_id = %s WHERE id = %s", (STAFF["id"], investor)
-        )
+        cur.execute("UPDATE investor SET owner_user_id = %s WHERE id = %s", (STAFF["id"], investor))
     db.commit()
 
 
@@ -95,9 +93,7 @@ def test_grant_records_a_consent_and_is_audited(db, investor) -> None:
     assert result["lawful_basis"] == "CONSENT"
 
     with db.cursor() as cur:
-        cur.execute(
-            "SELECT action, actor_uid FROM audit_log WHERE entity_id = %s", (result["id"],)
-        )
+        cur.execute("SELECT action, actor_uid FROM audit_log WHERE entity_id = %s", (result["id"],))
         action, actor_uid = cur.fetchone()
     assert action == "CONSENT_GIVEN"
     assert str(actor_uid) == STAFF["id"]

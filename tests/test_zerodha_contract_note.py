@@ -119,8 +119,12 @@ def test_every_charge_component_is_recognised() -> None:
         "IGST (@18%) (Rs)3 (4.00) SEBI turnover fees (Rs) (5.00) Stamp duty (Rs) (6.00)"
     )
     assert charges == {
-        "brokerage": Decimal("1.00"), "stt": Decimal("2.00"), "exchange": Decimal("3.00"),
-        "igst": Decimal("4.00"), "sebi": Decimal("5.00"), "stamp": Decimal("6.00"),
+        "brokerage": Decimal("1.00"),
+        "stt": Decimal("2.00"),
+        "exchange": Decimal("3.00"),
+        "igst": Decimal("4.00"),
+        "sebi": Decimal("5.00"),
+        "stamp": Decimal("6.00"),
     }
 
 
@@ -311,17 +315,15 @@ def test_the_same_trade_from_two_sources_does_not_currently_dedupe(adapter) -> N
     """
     from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 
-    tradebooks = sorted(
-        glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv")
-    )
+    tradebooks = sorted(glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv"))
     if not tradebooks:
         pytest.skip("tradebooks not present")
 
     tb = {}
     for path in tradebooks:
-        for staged in ZerodhaTradebookAdapter().parse(
-            Path(path).read_bytes(), account_id=ACCOUNT
-        ).rows:
+        for staged in (
+            ZerodhaTradebookAdapter().parse(Path(path).read_bytes(), account_id=ACCOUNT).rows
+        ):
             tb[staged.transaction.source_ref] = staged.transaction
 
     cn = {}

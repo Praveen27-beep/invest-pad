@@ -33,9 +33,7 @@ GOOD = (
     "12345,99001,2024-01-10T10:15:00\n"
 )
 
-TRADEBOOKS = sorted(
-    glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv")
-)
+TRADEBOOKS = sorted(glob.glob(f"{LOCAL_DOCS}/tradebook-*-EQ*.csv"))
 
 
 @pytest.fixture()
@@ -256,4 +254,3 @@ def test_rejection_row_numbers_count_preamble_lines(adapter) -> None:
     (rejection,) = result.rejections
     expected = len(SHEETS_PREAMBLE.splitlines()) + 3  # header line + two data rows
     assert rejection.row_number == expected
-

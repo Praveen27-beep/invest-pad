@@ -126,9 +126,7 @@ def add_security(db, isin: str, symbol: str) -> None:
 
 def set_onboarding_date(db, investor_id: str, on: date) -> None:
     with db.cursor() as cur:
-        cur.execute(
-            "UPDATE investor SET onboarding_date = %s WHERE id = %s", (on, investor_id)
-        )
+        cur.execute("UPDATE investor SET onboarding_date = %s WHERE id = %s", (on, investor_id))
     db.commit()
 
 
@@ -210,10 +208,15 @@ def test_fy_xirr_prefers_a_persisted_snapshot_over_live_recomputation(db, invest
     # would raise MissingPriceError and fy_xirr would come back None. The persisted row
     # below is the only way this test's fy_xirr can be non-null.
     dbsnapshots.upsert_snapshot(
-        db, investor, False,
+        db,
+        investor,
+        False,
         Snapshot(
-            as_of=FY_START, invested=Decimal("10000"), market_value=Decimal("15000"),
-            unrealised=Decimal("5000"), realised_to_date=Decimal("0"),
+            as_of=FY_START,
+            invested=Decimal("10000"),
+            market_value=Decimal("15000"),
+            unrealised=Decimal("5000"),
+            realised_to_date=Decimal("0"),
         ),
     )
 
@@ -361,10 +364,15 @@ def test_period_xirr_prefers_a_persisted_snapshot_over_live_recomputation(db, in
     )
     seed_price(db, ISIN_A, AS_OF, "200")
     dbsnapshots.upsert_snapshot(
-        db, investor, False,
+        db,
+        investor,
+        False,
         Snapshot(
-            as_of=ONBOARDING, invested=Decimal("10000"), market_value=Decimal("14000"),
-            unrealised=Decimal("4000"), realised_to_date=Decimal("0"),
+            as_of=ONBOARDING,
+            invested=Decimal("10000"),
+            market_value=Decimal("14000"),
+            unrealised=Decimal("4000"),
+            realised_to_date=Decimal("0"),
         ),
     )
 
@@ -417,10 +425,15 @@ def test_xirr_5y_blanks_independently_while_fy_1y_3y_still_compute(db, investor)
     seed_price(db, ISIN_A, AS_OF, "200")
     for target in (FY_START, years_before(AS_OF, 1), years_before(AS_OF, 3)):
         dbsnapshots.upsert_snapshot(
-            db, investor, False,
+            db,
+            investor,
+            False,
             Snapshot(
-                as_of=target, invested=Decimal("10000"), market_value=Decimal("12000"),
-                unrealised=Decimal("2000"), realised_to_date=Decimal("0"),
+                as_of=target,
+                invested=Decimal("10000"),
+                market_value=Decimal("12000"),
+                unrealised=Decimal("2000"),
+                realised_to_date=Decimal("0"),
             ),
         )
 
@@ -454,10 +467,15 @@ def test_xirr_1y_uses_the_snapshots_own_date_not_the_target_when_nearby(db, inve
     )
     seed_price(db, ISIN_A, AS_OF, "400")
     dbsnapshots.upsert_snapshot(
-        db, investor, False,
+        db,
+        investor,
+        False,
         Snapshot(
-            as_of=snapshot_date, invested=Decimal("10000"), market_value=Decimal("15000"),
-            unrealised=Decimal("5000"), realised_to_date=Decimal("0"),
+            as_of=snapshot_date,
+            invested=Decimal("10000"),
+            market_value=Decimal("15000"),
+            unrealised=Decimal("5000"),
+            realised_to_date=Decimal("0"),
         ),
     )
 
@@ -496,10 +514,14 @@ def test_a_persisted_snapshot_older_than_the_staleness_bound_is_not_used(db, inv
     )
     seed_price(db, ISIN_A, AS_OF, "200")  # nothing anywhere near target_1y
     dbsnapshots.upsert_snapshot(
-        db, investor, False,
+        db,
+        investor,
+        False,
         Snapshot(
-            as_of=target_1y - timedelta(days=10), invested=Decimal("10000"),
-            market_value=Decimal("15000"), unrealised=Decimal("5000"),
+            as_of=target_1y - timedelta(days=10),
+            invested=Decimal("10000"),
+            market_value=Decimal("15000"),
+            unrealised=Decimal("5000"),
             realised_to_date=Decimal("0"),
         ),
     )

@@ -77,12 +77,18 @@ def test_realised_splits_across_two_lots_with_separate_terms() -> None:
 
     first, second = realised
     assert (first.quantity, first.cost, first.proceeds, first.gain) == (
-        Decimal("100"), Decimal("20000"), Decimal("40000"), Decimal("20000"),
+        Decimal("100"),
+        Decimal("20000"),
+        Decimal("40000"),
+        Decimal("20000"),
     )
     assert (first.holding_days, first.term) == (416, Term.LONG)
 
     assert (second.quantity, second.cost, second.proceeds, second.gain) == (
-        Decimal("50"), Decimal("15000"), Decimal("20000"), Decimal("5000"),
+        Decimal("50"),
+        Decimal("15000"),
+        Decimal("20000"),
+        Decimal("5000"),
     )
     assert (second.holding_days, second.term) == (264, Term.SHORT)
 
@@ -177,9 +183,7 @@ def test_stt_is_carried_per_lot_through_a_fifo_split() -> None:
         txn("BUY", "100", "200", "2024-01-10", stt="100"),
         txn("BUY", "100", "300", "2024-06-10", stt="50"),
     ]
-    first, second = compute_realised(
-        [*buys_with_stt, txn("SELL", "150", "400", "2025-03-01")]
-    )
+    first, second = compute_realised([*buys_with_stt, txn("SELL", "150", "400", "2025-03-01")])
     assert first.cost_stt == Decimal("100")
     assert tax_cost(first) == Decimal("19900")
     assert second.cost_stt == Decimal("25")
@@ -242,12 +246,14 @@ def test_same_date_tie_between_lots_breaks_on_insertion_order() -> None:
     sell = txn("SELL", "150", "400", "2025-01-01")
     bonus_first_realised = compute_realised([*bonus_first, sell])
     assert (bonus_first_realised[1].cost, bonus_first_realised[1].gain) == (
-        Decimal("0"), Decimal("20000"),
+        Decimal("0"),
+        Decimal("20000"),
     )
 
     buy_first_realised = compute_realised([*buy_first, sell])
     assert (buy_first_realised[1].cost, buy_first_realised[1].gain) == (
-        Decimal("15000"), Decimal("5000"),
+        Decimal("15000"),
+        Decimal("5000"),
     )
 
 
@@ -268,13 +274,18 @@ def test_bonus_stripping_scenario_sells_original_at_a_loss_keeps_bonus_lot() -> 
     assert len(realised) == 1
     loss = realised[0]
     assert (loss.quantity, loss.cost, loss.proceeds, loss.gain) == (
-        Decimal("100"), Decimal("20000"), Decimal("15000"), Decimal("-5000"),
+        Decimal("100"),
+        Decimal("20000"),
+        Decimal("15000"),
+        Decimal("-5000"),
     )
     assert (loss.holding_days, loss.term) == (371, Term.LONG)
 
     (remaining,) = compute_lots(rows)
     assert (remaining.open_date, remaining.quantity_open, remaining.cost_per_unit) == (
-        date(2024, 6, 10), Decimal("100"), Decimal("0"),
+        date(2024, 6, 10),
+        Decimal("100"),
+        Decimal("0"),
     )
 
 

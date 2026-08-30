@@ -137,8 +137,10 @@ class ZerodhaContractNoteAdapter:
 
     def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult:
         try:
-            text = content.decode("utf-8") if content[:5] != b"%PDF-" else extract_text(
-                content, self.password
+            text = (
+                content.decode("utf-8")
+                if content[:5] != b"%PDF-"
+                else extract_text(content, self.password)
             )
         except PdfTextExtractionError as exc:
             return ParseResult(rejections=[Rejection(0, str(exc))])
@@ -325,4 +327,3 @@ def pro_rata_share(
         return total - allocated_so_far, total
     share = (total * turnover / total_turnover).quantize(Decimal("0.01"))
     return share, allocated_so_far + share
-
