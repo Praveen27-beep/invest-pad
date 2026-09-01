@@ -78,7 +78,7 @@ def _portfolio(
     unpriced = [h for h in holdings if h.isin not in prices]
 
     valued = value_holdings(priced, prices, as_of=as_of) if priced else []
-    meta = securities.lookup(connection, [h.isin for h in holdings])
+    meta = securities.lookup(connection, [h.isin for h in holdings] + [s.isin for s in skipped])
 
     return {
         "as_of": as_of,
@@ -150,6 +150,8 @@ def _skipped(book: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         {
             "isin": s.isin,
+            "symbol": securities.describe(book["meta"], s.isin)["symbol"],
+            "name": securities.display_name(book["meta"], s.isin),
             "message": s.message,
             "deficit": money(s.deficit) if s.deficit is not None else None,
             "as_of": s.as_of,

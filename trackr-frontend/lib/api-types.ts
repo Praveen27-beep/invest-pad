@@ -61,6 +61,8 @@ export interface UnpricedOut {
 // failing. `deficit`/`as_of` are only ever populated for the negative-holding case.
 export interface SkippedHoldingOut {
   isin: string;
+  symbol: string | null;
+  name: string | null;
   message: string;
   deficit: string | null;
   as_of: string | null;

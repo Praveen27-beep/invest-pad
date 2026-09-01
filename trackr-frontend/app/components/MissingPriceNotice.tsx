@@ -9,9 +9,13 @@ import Link from "next/link";
  */
 export function MissingPriceNotice({
   isins,
+  names,
   compact = false,
 }: {
   isins: string[];
+  /** Best-effort ISIN -> company name (ApiError.securityNames) -- an ISIN absent here
+   * falls back to itself, so the list below never shows a blank. */
+  names?: Record<string, string>;
   compact?: boolean;
 }) {
   const plural = isins.length > 1;
@@ -54,8 +58,8 @@ export function MissingPriceNotice({
       </p>
       <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-navy-600">
         {isins.map((isin) => (
-          <li key={isin} className="font-medium tabular-nums">
-            {isin}
+          <li key={isin} className="font-medium">
+            {names?.[isin] || isin}
           </li>
         ))}
       </ul>

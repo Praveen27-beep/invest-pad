@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAIChat } from "@/lib/ai-chat-context";
@@ -18,8 +17,6 @@ const PAGE_TITLES: Record<string, string> = {
 export function Header({ pathname }: { pathname: string }) {
   const { user, logout, asOf, setAsOf, advisedOnly, setAdvisedOnly } = useAuth();
   const { openChat } = useAIChat();
-  const router = useRouter();
-  const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState<"import" | "forward" | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -47,21 +44,6 @@ export function Header({ pathname }: { pathname: string }) {
         </div>
 
         <div className="flex flex-1 flex-wrap items-center justify-end gap-3 lg:gap-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              router.push(`/?tab=holdings&q=${encodeURIComponent(query)}`);
-            }}
-            className="min-w-[10rem] flex-1 sm:flex-none sm:w-64 lg:w-72"
-          >
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search symbol, ISIN or transaction ID"
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm text-navy-700 placeholder:text-navy-400 transition-colors focus:border-brass-500 focus:outline-none"
-            />
-          </form>
-
           <input
             type="date"
             value={asOf}

@@ -39,6 +39,7 @@ export function HoldingsTab() {
     return (
       <NegativeHoldingNotice
         isin={holdings.errorDetail.isin}
+        name={holdings.errorDetail.securityName}
         deficit={holdings.errorDetail.deficit}
         asOf={holdings.errorDetail.asOf}
       />

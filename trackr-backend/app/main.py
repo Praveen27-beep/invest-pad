@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from app import securities
 from app.auth.ops import (
     CronSecretInvalidError,
     CronSecretMissingError,
@@ -33,7 +34,7 @@ from app.auth.ops import (
 )
 from app.auth.service import EmailAlreadyRegisteredError, InvalidCredentialsError
 from app.config import get_settings
-from app.db.connection import DatabaseNotConfiguredError
+from app.db.connection import DatabaseNotConfiguredError, connect
 from app.db.consent import ConsentMissingError
 from app.db.crypto import InvalidPANError
 from app.db.grievance import AlreadyResolvedError
@@ -185,6 +186,22 @@ def _error(request: Request, status_code: int, message: str, **extra: Any) -> JS
 # --------------------------------------------------------------------------------------
 
 
+def _names_for(isins: list[str]) -> dict[str, str]:
+    """ISIN -> display name, for naming an error's ISINs to a person instead of showing
+    the raw code. Best-effort: a lookup failure degrades to an empty map (the caller
+    falls back to the ISIN itself) rather than turning an already-failing request into
+    an unhandled 500 over a cosmetic lookup."""
+    if not isins:
+        return {}
+    try:
+        with connect(get_settings().database_url) as conn:
+            meta = securities.lookup(conn, isins)
+    except Exception:
+        logger.warning("security name lookup failed for %s", isins, exc_info=True)
+        return {}
+    return {isin: securities.display_name(meta, isin) for isin in isins}
+
+
 @app.exception_handler(MissingPriceError)
 async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSONResponse:
     return _error(
@@ -192,17 +209,20 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
         409,
         "one or more held ISINs have no usable price within the staleness window",
         isins=exc.isins,
+        names=_names_for(exc.isins),
     )
 
 
 @app.exception_handler(NegativeHoldingError)
 async def negative_holding_handler(request: Request, exc: NegativeHoldingError) -> JSONResponse:
     deficit = -exc.quantity if exc.quantity is not None else None
+    names = _names_for([exc.isin] if exc.isin else [])
     return _error(
         request,
         409,
         f"holding for {exc.isin} went negative; buy history is incomplete",
         isin=exc.isin,
+        name=names.get(exc.isin) if exc.isin else None,
         deficit=str(deficit) if deficit is not None else None,
         as_of=str(exc.as_of) if exc.as_of is not None else None,
     )

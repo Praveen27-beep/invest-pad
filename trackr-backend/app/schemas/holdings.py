@@ -51,6 +51,8 @@ class SkippedHoldingOut(BaseModel):
     exactly what's wrong instead of the whole screen going blank over it."""
 
     isin: str
+    symbol: str | None = None
+    name: str | None = None
     message: str
     deficit: str | None = None
     as_of: date | None = None

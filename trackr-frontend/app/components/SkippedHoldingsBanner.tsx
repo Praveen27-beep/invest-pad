@@ -39,10 +39,12 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountList.length]);
 
+  const label = skipped.name || skipped.isin;
+
   function askAI() {
     openChat({
-      context: `Trackr+ is showing a "negative holding" error for ISIN ${skipped.isin}: ${skipped.message}`,
-      initialQuestion: `Why is ${skipped.isin} showing this error, and what should I do to fix it?`,
+      context: `Trackr+ is showing a "negative holding" error for ${label} (ISIN ${skipped.isin}): ${skipped.message}`,
+      initialQuestion: `Why is ${label} showing this error, and what should I do to fix it?`,
     });
   }
 
@@ -83,7 +85,7 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
     <li className="rounded-lg border border-negative/20 bg-surface px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-navy-700">
-          <span className="font-medium">{skipped.isin}</span> — {skipped.message}
+          <span className="font-medium">{label}</span> — {skipped.message}
         </span>
         {!done && (
           <div className="flex gap-2">

@@ -31,12 +31,15 @@ export function PerformanceTab() {
   if (!investorId) return <NoInvestorState />;
   if (performance.error) {
     const isins = performance.errorDetail?.isins;
-    if (isins && isins.length > 0) return <MissingPriceNotice isins={isins} />;
+    if (isins && isins.length > 0) {
+      return <MissingPriceNotice isins={isins} names={performance.errorDetail?.securityNames} />;
+    }
     const negIsin = performance.errorDetail?.isin;
     if (negIsin) {
       return (
         <NegativeHoldingNotice
           isin={negIsin}
+          name={performance.errorDetail?.securityName}
           deficit={performance.errorDetail?.deficit}
           asOf={performance.errorDetail?.asOf}
         />

@@ -92,6 +92,7 @@ function OverviewTab() {
     return (
       <NegativeHoldingNotice
         isin={blockingErrorDetail.isin}
+        name={blockingErrorDetail.securityName}
         deficit={blockingErrorDetail.deficit}
         asOf={blockingErrorDetail.asOf}
       />
@@ -183,7 +184,11 @@ function OverviewTab() {
             periodStart={p.period_start}
           />
         ) : performance.errorDetail?.isins?.length ? (
-          <MissingPriceNotice isins={performance.errorDetail.isins} compact />
+          <MissingPriceNotice
+            isins={performance.errorDetail.isins}
+            names={performance.errorDetail.securityNames}
+            compact
+          />
         ) : performance.error ? (
           <div className="rounded-xl border border-navy-100 bg-cream-50 p-5 sm:col-span-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-navy-400">XIRR</p>
