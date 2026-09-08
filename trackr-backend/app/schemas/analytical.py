@@ -80,6 +80,15 @@ class PriceRefreshResponse(BaseModel):
     prices_stored: int
     missing_isins: list[str]
     price_date: date
+    #: Rows upserted into ``index_level`` per TRI series on this run, keyed by storage
+    #: name. A series whose fetch failed is absent rather than zero: nothing was stored
+    #: AND nothing is known, which is not the same as "the source had no new rows".
+    index_levels_stored: dict[str, int] = {}
+    #: Series whose fetch or parse failed this run, with the reason. Reported rather than
+    #: raised: the benchmark line is a decoration on a chart whose subject is priced from
+    #: bhavcopy, and failing the whole price refresh over it would be the tail wagging
+    #: the dog. Present and non-empty is the signal to go and look.
+    index_failures: dict[str, str] = {}
 
 
 class SnapshotOut(BaseModel):
@@ -93,6 +102,25 @@ class SnapshotOut(BaseModel):
     market_value: str
     unrealised: str | None = None
     realised_to_date: str | None = None
+
+
+class BenchmarkPointOut(BaseModel):
+    """One point on the dashboard's benchmark line: what the portfolio's OWN cash flows
+    would be worth in the index on that date (docs/ENGINE_SPEC.md section 6, evaluated
+    per date -- see ``app.engine.benchmark.benchmark_series``).
+
+    Dated to a persisted snapshot's ``as_of`` so it lands on the same x-position as that
+    snapshot's market value. A snapshot date whose index level is missing has no point
+    here at all, rather than a null or a carried-forward one -- the chart draws the gap.
+    """
+
+    as_of: date
+    value: str
+
+
+class BenchmarkSeriesResponse(BaseModel):
+    name: str
+    points: list[BenchmarkPointOut]
 
 
 class SkippedSnapshotOut(BaseModel):

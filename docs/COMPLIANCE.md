@@ -153,6 +153,15 @@ Data-protection gates:
       a real cluster, including erasure refused under legal hold
 - [ ] Data Processing Agreements signed with host, email vendor, price vendor —
       **outside the codebase**, a contracting task
+- [ ] **DPA signed with the LLM extraction provider (Groq) before `LLM_PARSING_ENABLED=true`
+      in production.** A fourth Data Processor: `app/ingest/llm_adapter.py` transmits
+      *redacted* broker-document text — trade and charge lines only, with name, address,
+      PAN, UCC, phone, email and demat removed by `app/ingest/redaction.py`, which fails
+      closed and refuses to send at all if anything identifying survives. Data
+      minimisation is therefore already done in code; the contract is not, and code cannot
+      do it. `GROQ_API_KEY` and `LLM_PARSING_ENABLED` are deliberately separate settings so
+      that holding a credential is never mistaken for holding permission — see
+      `app/config.py::_validate_llm_parsing`
 - [ ] Breach playbook exists and can hit the 72-hour Board filing window —
       **outside the codebase**, an operational task
 - [x] Grievance intake with a 90-day clock — `grievance` table plus `db/grievance.py`.
@@ -169,7 +178,13 @@ Regulatory posture gates:
 - [ ] Exports labelled as records of holdings/performance, not advice
 - [ ] No auto-generated buy/sell recommendations to clients
 - [ ] Client access read-only by default
-- [ ] MITC in the advisory agreement, including AI-usage disclosure
+- [ ] MITC in the advisory agreement, including AI-usage disclosure — **now live rather
+      than prospective**: `LLM_PARSING_ENABLED=true` means a language model transcribes
+      client documents into candidate ledger rows. Nothing it produces is believed on its
+      own (`app/ingest/llm_verify.py` proves every value against the document before
+      staging, and `promote_batch` refuses unproved rows without an explicit
+      acknowledgement recorded in `audit_log`), but the disclosure obligation attaches to
+      the *use*, not to how carefully it is checked
 - [ ] Lawyer + CA review of DPDP and SEBI posture
 
 **Honest status as of Session 5b:** the data-protection scaffolding exists and is tested

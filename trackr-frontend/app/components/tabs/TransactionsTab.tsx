@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
 import { api } from "@/lib/api-client";
 import type { ImportSummaryOut, TransactionIn, TransactionOut } from "@/lib/api-types";
-import { formatDate, formatMoney } from "@/lib/format";
+import { EMPTY_VALUE, formatDate, formatMoney } from "@/lib/format";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { TransactionForm } from "../TransactionForm";
 
@@ -97,7 +97,7 @@ export function TransactionsTab() {
                     <td className="py-2 pr-3 text-right tabular-nums">{t.quantity}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatMoney(t.price, true)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatMoney(t.charges, true)}</td>
-                    <td className="py-2 text-xs text-navy-400">{t.source ?? "—"}</td>
+                    <td className="py-2 text-xs text-navy-400">{t.source ?? EMPTY_VALUE}</td>
                   </tr>
                 ))}
               </tbody>
@@ -107,8 +107,8 @@ export function TransactionsTab() {
       </Card>
 
       <p className="text-xs text-navy-400 border-t border-navy-100 pt-3">
-        The transaction ledger is append-only. There is no edit or delete here by design
-        — a mistake is corrected with a new, reversing transaction, so every number shown
+        The transaction ledger is append-only. There is no edit or delete here by design.
+        A mistake is corrected with a new, reversing transaction, so every number shown
         anywhere in Trackr+ stays reproducible by replaying the ledger from scratch.
       </p>
     </div>

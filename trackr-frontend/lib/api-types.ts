@@ -32,6 +32,9 @@ export interface HoldingOut {
   weight_pct: number | null;
   cagr: number | null;
   cost_estimated: boolean;
+  // True when `last_price` came from the intraday cache (yfinance), not bhavcopy --
+  // only ever set for as_of == today, before tonight's bhavcopy settles.
+  live: boolean;
 }
 
 export interface TotalsOut {
@@ -105,6 +108,10 @@ export interface HoldingsResponse {
   totals: TotalsOut;
   unpriced: UnpricedOut;
   skipped: SkippedHoldingOut[];
+  // ISO 8601 timestamp of the freshest intraday quote behind any `live` holding in
+  // this response, or null when nothing here is live (a past as_of, or today but
+  // every price already came from bhavcopy).
+  live_as_of: string | null;
 }
 
 export interface SummaryResponse {
@@ -119,6 +126,7 @@ export interface SummaryResponse {
   allocation: AllocationGroupOut[];
   allocation_by_sector: SectorAllocationGroupOut[];
   allocation_by_market_cap: MarketCapAllocationGroupOut[];
+  live_as_of: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +206,20 @@ export interface SnapshotOut {
   market_value: string;
   unrealised: string | null;
   realised_to_date: string | null;
+}
+
+/** One point on the benchmark line -- app/schemas/analytical.py::BenchmarkPointOut.
+ *  Dated to a persisted snapshot's `as_of`, so it shares an x-position with that
+ *  snapshot's market value. A snapshot date whose index level was missing has no point
+ *  here at all, rather than a null -- the chart draws that as a gap. */
+export interface BenchmarkPointOut {
+  as_of: string;
+  value: string;
+}
+
+export interface BenchmarkSeriesResponse {
+  name: string;
+  points: BenchmarkPointOut[];
 }
 
 // ---------------------------------------------------------------------------
@@ -302,7 +324,13 @@ export interface DividendSummaryOut {
 // ---------------------------------------------------------------------------
 
 export interface StageResultOut {
-  batch_id: string;
+  /**
+   * Null when the file was refused before any batch existed -- today only an identity
+   * mismatch, where the document named a PAN or client code that is not this account's
+   * and nothing was staged or stored. `notes` carries the reason, already redacted.
+   * Same shape and same reasoning as `FileOutcomeOut.batch_id` below.
+   */
+  batch_id: string | null;
   parsed: number;
   rejected: number;
   sha256: string;
@@ -311,6 +339,42 @@ export interface StageResultOut {
   // Rows written to holding_snapshot -- 0 for every current adapter (app.db.imports
   // .stage_batch's optional parse_declared_holdings hook has no active caller yet).
   declared_holdings?: number;
+}
+
+/**
+ * One file's fate in a mixed multi-file upload -- POST /ingest/files
+ * (app/schemas/ingest.py::FileOutcomeOut).
+ *
+ * Not a `StageResultOut`: a file can fail before any batch exists (wrong extension,
+ * contents that don't match the name, a locked PDF), so `batch_id` is nullable and the
+ * two fields that matter for a rejection are `reason` (what is wrong) and `hint` (what
+ * to do instead). Both are written for the person who picked the file.
+ */
+export interface FileOutcomeOut {
+  filename: string;
+  ok: boolean;
+  /** What the bytes actually are, from magic numbers -- `pdf`, `xlsx`, `text`, ... */
+  container: string;
+  /** What the document is -- `tradebook_csv`, `contract_note_pdf`, `cas_pdf`, ... */
+  document: string;
+  adapter: string | null;
+  batch_id: string | null;
+  parsed: number;
+  rejected: number;
+  reason: string | null;
+  hint: string | null;
+  /** A PDF we could not unlock. The fix is a PAN in Settings, not another file. */
+  encrypted: boolean;
+  notes: string[];
+}
+
+export interface FilesUploadOut {
+  files: FileOutcomeOut[];
+  accepted: number;
+  rejected: number;
+  /** Batches with rows waiting. Promoted with POST /ingest/stage/{id}/promote -- the
+   * route itself never writes to the ledger. */
+  staged_batch_ids: string[];
 }
 
 export interface RejectionOut {
@@ -410,6 +474,61 @@ export interface AccountOut {
   // app.ingest.addresses.forwarding_addresses. Empty when the broker has no adapter
   // yet; never fabricate one client-side.
   forwarding_addresses: string[];
+}
+
+/**
+ * One entry of GET /brokers -- app/brokers.py, served through app/routers/brokers.py.
+ *
+ * THE CLIENT MAY NOT SECOND-GUESS ANY OF THIS. Every capability below is derived on the
+ * server from a registry a real, tested parser is already in; the UI's job is to render
+ * what it is told, including the empty cases. A broker with `documents: []` still works
+ * end to end — the account exists, files are accepted and classified, and unrecognised
+ * ones are refused with a sentence. Hardcoding a broker list, or inferring a capability
+ * the response did not state, reintroduces exactly the bug this endpoint removed
+ * (docs/ONBOARDING_AS_IS_VS_TO_BE.md, loophole L7).
+ */
+export interface BrokerOut {
+  /** Written verbatim into `account.broker`. */
+  code: string;
+  name: string;
+  /** Document kinds a deterministic adapter handles. Empty is a valid, honest answer. */
+  documents: string[];
+  parses_contract_notes: boolean;
+  parses_tradebooks: boolean;
+  /** The same phrases a rejected upload uses, so promise and failure message agree. */
+  document_labels: string[];
+  /** True only with an email adapter AND a mail-receiving domain on this deployment.
+   *  False means no address exists — say so, never render one anyway. */
+  forwarding: boolean;
+  /** How this broker locks contract-note PDFs. "" when we have no documented rule. */
+  pdf_password: string;
+  console_steps: string[];
+}
+
+/**
+ * GET /investors/{id}/onboarding — how far along this account is, derived on read.
+ *
+ * REPLACES A localStorage KEY, which is the bug it exists to fix: "they finished setup"
+ * used to live in one browser, so the same account on a phone was offered the wizard
+ * again — and offered to create a second broker account with it. Every field here is
+ * computed from the database per request, so the answer is identical on a laptop, a
+ * phone, and a browser whose storage was cleared (docs/ONBOARDING_AS_IS_VS_TO_BE.md §4).
+ *
+ * The one thing deliberately NOT here is "I'll do this later" — that is a per-browser
+ * preference about being interrupted, not a fact about the account, and it stays in
+ * lib/onboarding.ts's own storage.
+ */
+export interface OnboardingStateOut {
+  terms_accepted: boolean;
+  consent: boolean;
+  accounts: number;
+  transactions: number;
+  /** Whether this deployment can receive mail at all. When false, omit the forwarding
+   *  step entirely rather than showing an address that cannot receive anything. */
+  forwarding_available: boolean;
+  /** consent && accounts > 0 && transactions > 0. Forwarding is never part of it. */
+  complete: boolean;
+  next_step: "permission" | "brokers" | "history" | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -545,6 +664,13 @@ export interface RegisterRequest {
   email: string;
   password: string;
   display_name?: string | null;
+  /**
+   * Which Terms + Privacy version was ticked. REQUIRED, and the server rejects any
+   * value that is not the one this build serves (app/auth/schemas.py) -- an acceptance
+   * of a version nobody was shown is a false record, which is worse than no record.
+   * Send `CURRENT_TOS_VERSION` from lib/terms.ts and nothing else.
+   */
+  tos_version: string;
 }
 
 export interface LoginRequest {

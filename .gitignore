@@ -73,3 +73,7 @@ trackr-frontend/*.tsbuildinfo
 # start.sh / stop.sh runtime state (PIDs and logs, written at repo root)
 .trackr-pids/
 .trackr-logs/
+
+# Design-tool scratch exports dropped at repo root -- not app code, never committed.
+/Trackr+ Design System*/
+/Trackr+ Standalone.html

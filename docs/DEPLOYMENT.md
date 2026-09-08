@@ -46,11 +46,11 @@ you'll paste each into Vercel's environment-variable settings in step 3.
 
 ```bash
 cd trackr-backend
-python -c "from app.db.crypto import generate_key; print(generate_key())"   # PORTFOLIO_ENCRYPTION_KEY
-python -c "import secrets; print(secrets.token_urlsafe(32))"                 # PORTFOLIO_PAN_PEPPER
-python -c "import secrets; print(secrets.token_urlsafe(32))"                 # JWT_SECRET
-python -c "import secrets; print(secrets.token_urlsafe(32))"                 # OPS_API_KEY
-python -c "import secrets; print(secrets.token_urlsafe(32))"                 # CRON_SECRET
+python3 -c "from app.db.crypto import generate_key; print(generate_key())"   # PORTFOLIO_ENCRYPTION_KEY
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"                 # PORTFOLIO_PAN_PEPPER
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"                 # JWT_SECRET
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"                 # OPS_API_KEY
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"                 # CRON_SECRET
 ```
 
 Five distinct values. Never reuse one across two of these — `app/db/crypto.py`'s own
@@ -67,7 +67,7 @@ docstring explains why the encryption key and the PAN pepper specifically must d
    ```bash
    export DATABASE_URL="<your pooled connection string>"
    cd trackr-backend
-   python - <<'PYEOF'
+   python3 - <<'PYEOF'
    import os, psycopg
    from app.db.migrate import migrate
    conn = psycopg.connect(os.environ["DATABASE_URL"])
@@ -108,6 +108,10 @@ docstring explains why the encryption key and the PAN pepper specifically must d
    | `PORTFOLIO_STORAGE_ENDPOINT` | your R2 account's S3 API endpoint |
    | (R2 access key / secret) | however `app/storage/s3.py` reads boto3 credentials in your setup — typically `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, boto3's own standard env vars, not Trackr-specific ones |
    | `INGEST_DOMAIN` | leave as `ingest.example.com` (the dev placeholder) until you set up email forwarding — see the last section. `DEBUG=false` normally requires a real value here, but nothing calls the ingest-address code path until an account actually needs a forwarding address, so this is safe to defer |
+| `GEMINI_API_KEY` | Ask-AI assistant. Unset = the assistant returns 503; the app still boots |
+| `LLM_PARSING_ENABLED` | `false` unless the Groq DPA is signed — see docs/COMPLIANCE.md |
+| `GROQ_API_KEY` | LLM document extraction. Unset (with the flag false) = the feature never runs |
+| `GROQ_MODEL` | Defaults to `openai/gpt-oss-20b`; swappable without a code change |
 
 3. Deploy. Vercel gives you a URL like `https://trackr-backend-yourname.vercel.app` —
    note it, the frontend needs it next. Confirm it's alive:
@@ -141,6 +145,14 @@ docstring explains why the encryption key and the PAN pepper specifically must d
   ]
 }
 ```
+
+`prices-refresh` does two jobs: bhavcopy for every held ISIN, and a trailing-window
+refresh of the NIFTY TRI levels behind the dashboard's benchmark line. The second is
+best-effort — its outcome comes back in the response as `index_levels_stored` and
+`index_failures`, and a failure there never fails the run. A non-empty `index_failures`
+on consecutive days means the index source has moved or started refusing requests, and
+the symptom to expect is the benchmark line quietly disappearing from the chart while
+every other figure stays correct.
 
 Times are UTC (Vercel Cron is always UTC) — 10:30/11:00 UTC is roughly 4:00/4:30pm IST,
 after NSE/BSE bhavcopy is normally published; adjust if you find it publishes later.

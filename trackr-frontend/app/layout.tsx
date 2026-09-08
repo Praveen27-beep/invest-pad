@@ -5,7 +5,7 @@ import { ThemeProvider } from "@/lib/theme-context";
 import { Shell } from "./components/Shell";
 
 export const metadata: Metadata = {
-  title: "Trackr+ — Portfolio Intelligence",
+  title: "Trackr+ Portfolio Intelligence",
   description: "Holdings, performance and XIRR, replayed from your transaction ledger.",
 };
 

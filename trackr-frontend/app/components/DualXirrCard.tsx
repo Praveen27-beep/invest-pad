@@ -70,13 +70,13 @@ export function DualXirrCard({
           <p className={`font-heading text-2xl tabular-nums ${signClass(xirrAll)}`}>
             {formatPercent(xirrAll)}
           </p>
-          <p className="mt-1 text-xs text-navy-400">Cash-flow — all external flows</p>
+          <p className="mt-1 text-xs text-navy-400">Cash-flow, all external flows</p>
         </div>
         <div>
           <p className={`font-heading text-2xl tabular-nums ${signClass(xirrHoldings)}`}>
             {formatPercent(xirrHoldings)}
           </p>
-          <p className="mt-1 text-xs text-navy-400">Holding period — excl. idle cash drag</p>
+          <p className="mt-1 text-xs text-navy-400">Holding period, excl. idle cash drag</p>
         </div>
       </div>
       {active && (

@@ -46,13 +46,25 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from app.ingest.base import ParseResult, Rejection
-from app.ingest.zerodha_contract_note import ISIN_PATTERN, SIDES, _decimal, apportion_charges
+from app.ingest.base import DocumentIdentity, ParseResult, Rejection
+from app.ingest.zerodha_contract_note import (
+    ISIN_PATTERN,
+    SIDES,
+    _decimal,
+    apportion_charges,
+    parse_identity,
+)
 
 #: "SYMBOL - SERIES / ISIN", the bulk shape's combined description cell -- same split
 #: app.ingest.zerodha_contract_note.TRADE_ROW performs on PDF text, applied here to an
 #: already-isolated cell instead of a whole line.
 SYMBOL_ISIN = re.compile(r"^(?P<symbol>[A-Z0-9&.\-]+?)\s*-\s*\w+\s*/\s*(?P<isin>IN[A-Z0-9]{10})$")
+
+#: How far into a sheet the client identity block sits. Read from a real per-FY export,
+#: where "PAN of Client:" and "UCC of Client:" are inside the first dozen rows of every
+#: sheet -- generous enough for layout drift, bounded so identity never scans a workbook
+#: of trades.
+IDENTITY_MAX_ROW = 25
 
 #: The clean single-note shape has exactly these three sheets, and only these -- an
 #: extra or missing sheet means it is not this shape, not a partial match to guess at.
@@ -131,6 +143,48 @@ class ZerodhaContractNoteXlsxAdapter:
         if frozenset(workbook.sheetnames) == CLEAN_SHEET_NAMES:
             return self._parse_clean(workbook, account_id)
         return self._parse_bulk(workbook, account_id)
+
+    def identity(self, content: bytes) -> DocumentIdentity:
+        """The client this workbook names -- see ``app.ingest.base.IdentifyingAdapter``.
+
+        The XLSX export states the same two identifiers as the PDF, worded "PAN of
+        Client:" / "UCC of Client:" and split across cells rather than printed on a line.
+        Flattening a sheet's cells back into text lets ``parse_identity`` -- already
+        proven against 40 real notes -- do the reading, instead of a second pair of
+        regexes that could drift away from it.
+
+        Only as many sheets as it takes: a bulk workbook is one client's trading days, so
+        the first sheet stating an identity settles the whole file. Reading all fifteen to
+        learn the same answer fifteen times is work for nothing.
+
+        Returns an empty identity when the workbook will not open. That is ``parse``'s
+        error to report, on the same bytes, moments later.
+        """
+        import io
+
+        try:
+            import openpyxl
+
+            # NOT read_only. In read-only mode openpyxl trusts the sheet dimension the
+            # workbook declares, and one of the five real per-FY exports declares a single
+            # row -- iter_rows then yields one row and the identity block is invisible.
+            # ``parse`` above loads the same way for the same reason; a check that reads
+            # the file differently from the parser is a check that can silently disagree
+            # with it.
+            workbook = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        except Exception:  # noqa: BLE001 - openpyxl raises assorted types; parse reports it
+            return DocumentIdentity()
+
+        for sheet_name in workbook.sheetnames:
+            # The identity block sits in the header of each sheet; the rest is trades.
+            rows = workbook[sheet_name].iter_rows(values_only=True, max_row=IDENTITY_MAX_ROW)
+            text = "\n".join(
+                " ".join(_cell_str(cell) for cell in row if cell is not None) for row in rows
+            )
+            identity = parse_identity(text)
+            if identity:
+                return identity
+        return DocumentIdentity()
 
     # -- bulk: one sheet per trading day ------------------------------------------
 

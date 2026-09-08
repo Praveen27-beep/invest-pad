@@ -9,8 +9,18 @@ const USER_KEY = "trackr.user";
 const INVESTOR_KEY = "trackr.investor_id";
 const ADVISED_ONLY_KEY = "trackr.advised_only";
 
+/**
+ * Today as NSE reckons it, not as the viewer's clock does.
+ *
+ * `toISOString()` is UTC, which disagrees with IST for the 5½ hours after midnight in
+ * India — so a user opening the app at 2am IST would ask the API for *yesterday*, and the
+ * backend (which resolves the trading day in IST, `app/prices/live.py::ist_today`) would
+ * treat that as a historical date and refuse to price it live. Every date on screen means
+ * a trading day; resolving it in the exchange's timezone is what makes that true.
+ */
 function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  // en-CA gives ISO-shaped YYYY-MM-DD, which is the only reason that locale is here.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 }
 
 interface AuthState {

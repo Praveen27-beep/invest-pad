@@ -23,6 +23,7 @@ UNKNOWN = {
     "asset_class": "EQ",
     "sector": None,
     "market_cap_bucket": None,
+    "exchange": None,
 }
 
 #: Display labels for the asset classes actually built. Phase 1 is EQ alone -- the other
@@ -37,7 +38,7 @@ def lookup(conn: Any, isins: list[str]) -> dict[str, dict[str, Any]]:
         return {}
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT isin, symbol, name, asset_class, sector, market_cap_bucket "
+            "SELECT isin, symbol, name, asset_class, sector, market_cap_bucket, exchange "
             "FROM security WHERE isin = ANY(%s)",
             (list(isins),),
         )
@@ -48,6 +49,7 @@ def lookup(conn: Any, isins: list[str]) -> dict[str, dict[str, Any]]:
                 "asset_class": row[3],
                 "sector": row[4],
                 "market_cap_bucket": row[5],
+                "exchange": row[6],
             }
             for row in cur.fetchall()
         }

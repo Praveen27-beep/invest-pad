@@ -105,7 +105,7 @@ export function PerformanceTab() {
             >
               <option value="NIFTY50_TRI">NIFTY 50 TRI</option>
               <option value="SENSEX_TRI" disabled>
-                SENSEX TRI — not yet available
+                SENSEX TRI (not yet available)
               </option>
             </select>
           </div>
@@ -126,7 +126,7 @@ export function PerformanceTab() {
             <p className="text-sm text-navy-500">
               No usable index level for one or more of this portfolio&apos;s cash-flow dates,
               so nothing is shown rather than an approximation. Comparing your XIRR against a
-              headline index CAGR wouldn&apos;t be valid either way — this is always the
+              headline index CAGR wouldn&apos;t be valid either way. This is always the
               cash-flow-replicated figure, apples to apples with your own buy/sell dates.
             </p>
           )}
@@ -134,7 +134,7 @@ export function PerformanceTab() {
 
         <Card title="Why no portfolio CAGR">
           <p className="text-sm text-navy-500">
-            CAGR assumes a single lump-sum investment held for a fixed period — that breaks
+            CAGR assumes a single lump-sum investment held for a fixed period, and that breaks
             down for a portfolio built from staggered trades. It isn&apos;t shown at the
             portfolio level for that reason; XIRR above (both variants) is the correct
             annualised measure here. CAGR still applies per holding.

@@ -25,7 +25,7 @@ Attachment content is contract-note TEXT, not a real PDF: app.ingest.zerodha_con
 .ZerodhaContractNoteAdapter.parse() only calls pdfplumber when the bytes start with
 ``%PDF-``, decoding anything else as UTF-8 directly (the same shortcut
 tests/test_zerodha_contract_note.py takes via parse_text()) -- and the investor fixture
-below has no PAN on file, so app.ingest.webhook._pdf_password resolves to "", matching an
+below has no PAN on file, so app.ingest.webhook.pdf_password resolves to "", matching an
 unencrypted document. That is enough to exercise the real adapter without pdfplumber or a
 password-protected PDF in the repository.
 """

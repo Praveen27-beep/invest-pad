@@ -100,6 +100,50 @@ weight_pct      = market_value ÷ Σ market_value
 forward silently beyond `MAX_PRICE_STALENESS_DAYS = 5`. A stale price shown as current
 is worse than no price.
 
+### Live intraday prices (today only)
+
+`last_price` above is a flat ISIN→Decimal mapping with no dates in it — the engine cannot
+tell, and does not need to tell, whether a given close came from bhavcopy or from an
+intraday quote. That distinction is drawn one layer up, in
+`app/routers/holdings.py::_portfolio`, before the mapping is built:
+
+- Applies **only when `as_of` is today, in IST** (`app/prices/live.py::ist_today` — the
+  server runs in UTC, NSE's trading day does not).
+- Three sources, in a strict order of authority, resolved per ISIN:
+  1. **Bhavcopy settled for today** — a `price` row dated exactly today. Once tonight's
+     cron lands the official file, that close is the number and the live quote for the
+     same ISIN is dropped. This is the whole "seamless handover": nothing is deleted or
+     migrated, the settled row simply outranks the cached quote from the next read on,
+     and the value it replaces is the same day's last traded price, so the figure barely
+     moves.
+  2. **The intraday quote**, for everything bhavcopy has not settled today. Through the
+     trading day that is the whole portfolio — which is the point: a dashboard opened at
+     11am reads live, not at yesterday's close.
+  3. **Yesterday's bhavcopy close, carried forward** inside `MAX_PRICE_STALENESS_DAYS`.
+     Reached when the intraday source is unreachable or has nothing for a scrip. Still an
+     honest, reproducible number; the ISIN is simply not flagged `live`.
+
+  The exact-date test in step 1 is load-bearing. Bhavcopy is published after the close, so
+  on any trading morning the newest stored row is *yesterday's* — asking "is anything
+  missing?" against the carry-forward lookup answers "no" every morning and the live quote
+  is never reached at all. `app/db/prices.py::prices_on_date` exists solely to ask the
+  narrower question.
+- Sourced from Yahoo Finance (`app/prices/yfinance_live.py`), cached briefly in `live_price`
+  (`docs/DATA_MODEL.md`) rather than fetched per request.
+- Quantized to paisa (2 decimal places, `ROUND_HALF_UP`) before it ever reaches this layer.
+  Confirmed empirically: Yahoo's own backend stores prices at float32 precision, so a real
+  close of ₹2320.10 routinely arrives as `2320.10009765625` — a binary artifact on Yahoo's
+  side, not a measurement of anything. NSE/BSE equities have no tick size finer than a
+  paisa, so quantizing recovers the real tradable price rather than preserving someone
+  else's rounding noise.
+- An ISIN neither bhavcopy nor the live cache can price still raises into the unpriced
+  bucket exactly as before — a second source failing is not a new failure mode, it's the
+  same one.
+- Every other `as_of` — any date once tonight's bhavcopy has landed for it, and every
+  historical date — is bhavcopy-only, unconditionally. This is what keeps
+  `fixtures/golden_portfolio.json` reproducible: those assertions are all historical
+  `as_of`, which this rule never touches.
+
 ---
 
 ## 3. FIFO lots and realised gains
@@ -397,8 +441,50 @@ This answers "what if I had bought the index on exactly the days I bought stocks
 apples to apples. Comparing portfolio XIRR against a headline index CAGR is not a
 valid comparison and must not be shown.
 
-MVP benchmarks: NIFTY 50 TRI, SENSEX TRI. Use **TRI** (total return) not price index —
-price indices exclude dividends and understate the benchmark.
+MVP benchmarks: NIFTY 50 TRI, NIFTY 500 TRI, SENSEX TRI. Use **TRI** (total return) not
+price index — price indices exclude dividends and understate the benchmark.
+
+**Where the levels come from.** `app/prices/index_sources.py` posts to niftyindices'
+own `getTotalReturnIndexString` web method, the same one their historical-data report
+calls, and stores what comes back in `index_level`. That path moved once already: the
+original `/Backpage.aspx/...` URL now answers 302 with an HTML page, which fails
+invisibly — a 200, a body that is not JSON, an empty `index_level`, and a benchmark line
+that simply never draws. The live path is `/BackPage/...` (no `.aspx`), and the parser
+accepts both the bare JSON array it returns today and the `{"d": "..."}` double
+encoding the retired path used, so a move back is not another outage.
+
+`/ops/prices/refresh` re-fetches a short trailing window for every fetchable series on
+the same daily beat as bhavcopy, so the chart reads stored rows rather than making an
+external call on a page load. A benchmark request still fetches on a cache miss, which
+is what makes the line self-healing; the cron is what makes it usually unnecessary.
+SENSEX TRI has no adapter and is refused with a 400 rather than guessed at.
+
+### The benchmark as a series (the Dashboard's chart line)
+
+The same replication, evaluated at every persisted snapshot date rather than only at
+`as_of` (`app/engine/benchmark.py::benchmark_series`):
+
+```
+units(t)  = Σ over flows on or before t of  -amount ÷ index_level(flow_date)
+value(t)  = units(t) × index_level(t)
+```
+
+Two consequences worth stating, because both are places a chart usually lies:
+
+- **Rebasing needs no separate step and no anchor date.** On the day of the first
+  contribution the units bought are worth exactly what was paid, so the line starts at
+  the invested cost by construction. A line rebased once at the start and left alone
+  would ignore every rupee added since, and would sit below a portfolio that merely
+  saved more — reading as outperformance that never happened.
+- **A plot date with no index level is omitted, not carried forward.** The chart draws
+  the gap, the same convention snapshots use. A missing level on a *flow* date is
+  different and raises `MissingIndexLevelError`: a flow priced at the wrong level
+  corrupts the unit count and therefore every later point.
+
+Default for the chart is **NIFTY 500 TRI**, not NIFTY 50: a retail equity portfolio is
+rarely large-cap-only, and holding a mid- or small-cap book against a 50-stock index
+reads as skill or failure that is really just a difference in universe. NIFTY 50 TRI
+remains the default for the single-figure benchmark XIRR above.
 
 ---
 

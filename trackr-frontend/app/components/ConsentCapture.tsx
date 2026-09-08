@@ -1,26 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/lib/api-client";
-import type { ConsentGrantOut, ConsentStatusOut } from "@/lib/api-types";
+import { CONSENT_NOTICE_TEXT } from "@/lib/consent";
+import { openOnboarding } from "@/lib/onboarding";
+import type { ConsentStatusOut } from "@/lib/api-types";
+import { Banner, Button, Icon } from "./ds";
 
-/** Must match trackr-backend/app/db/consent.py's CURRENT_NOTICE_VERSION -- bump both
- * together whenever the sentence below changes. */
-const NOTICE_VERSION = "2026-08-consent-v1";
-
-/** docs/COMPLIANCE.md §3, "The consent language that carries the legal weight" --
- * verbatim, not paraphrased. That sentence is what makes this a document-processing
- * service rather than a regulated data intermediary. */
-const NOTICE_TEXT =
-  "You will provide your own account statements (CAS, contract notes, broker exports) " +
-  "to me for portfolio tracking. I do not access your broker, depository or registrar " +
-  "accounts directly, and I do not hold your login credentials.";
-
-/** Required before POST /ingest/csv, POST /ingest/email or manual transaction entry
- * will process anything for this investor -- app.db.consent.require_consent refuses
- * with a 403 otherwise (CLAUDE.md rule 6 / docs/COMPLIANCE.md §1's consent-first
- * requirement). Mirrors AccountOnboarding.tsx's shape, but unlike accounts a real
- * GET endpoint exists here, so status is read fresh rather than cached client-side. */
+/**
+ * Consent, in Settings: status and withdrawal. Never a second way to grant it.
+ *
+ * WHY THIS NO LONGER GRANTS. There were two consent user interfaces — this one and the
+ * wizard's permission step — each with its own checkbox, its own copy of the notice text
+ * and its own copy of the version string. Two surfaces recording the same legal fact will
+ * drift, and a drifted notice version makes the consent record invalid rather than merely
+ * inconsistent (docs/ONBOARDING_AS_IS_VS_TO_BE.md, loophole L10). So there is now exactly
+ * one place in this product that grants consent: the setup flow. This screen shows what is
+ * on file, offers withdrawal, and sends anyone who needs to grant it to the one surface
+ * that does that — which is a link, not a duplicate implementation.
+ *
+ * WITHDRAWAL STAYS HERE, and belongs here. It is a management action on an existing
+ * record, not a second copy of the grant: it needs no notice text, no version and no
+ * checkbox, so there is nothing for it to drift against.
+ *
+ * WITHDRAWING IS NOT ERASING, and the copy below says so plainly rather than letting the
+ * more comfortable reading stand. Processing stops immediately; what is already stored is
+ * removed from the Privacy page, deliberately as a separate, deliberate act.
+ */
 export function ConsentCapture({
   investorId,
   token,
@@ -29,11 +35,10 @@ export function ConsentCapture({
   investorId: string;
   token: string | null;
   /** Lets a hosting page react (e.g. hide its own "consent required" banner) the
-   * moment consent is granted or withdrawn here, without re-fetching. */
+   * moment consent is withdrawn here, without re-fetching. */
   onStatusChange?: (hasLiveConsent: boolean) => void;
 }) {
   const [status, setStatus] = useState<ConsentStatusOut | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -50,42 +55,20 @@ export function ConsentCapture({
         if (!cancelled) setStatus(s);
       })
       .catch((err) => {
-        if (!cancelled)
-          setError(
-            err instanceof ApiError ? err.message : "Could not load consent status"
-          );
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Could not load consent status");
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [investorId, token]);
 
-  async function handleGrant() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post<ConsentGrantOut>(`/investors/${investorId}/consent`, {
-        token,
-        json: {
-          notice_version: NOTICE_VERSION,
-          evidence_ref: "in-app consent checkbox",
-        },
-      });
-      setStatus({ has_live_consent: true });
-      onStatusChange?.(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not record consent");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function handleWithdraw() {
     setBusy(true);
     setError(null);
     try {
       await api.post(`/investors/${investorId}/consent/withdraw`, { token });
-      setAcknowledged(false);
       setStatus({ has_live_consent: false });
       onStatusChange?.(false);
     } catch (err) {
@@ -96,66 +79,108 @@ export function ConsentCapture({
   }
 
   if (!investorId) {
-    return <p className="text-sm text-navy-400">Save an investor ID above before capturing consent.</p>;
+    return (
+      <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+        Create an investor above before capturing consent.
+      </p>
+    );
   }
 
   if (status === null) {
-    return (
-      <div className="space-y-2">
-        {error ? (
-          <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{error}</p>
-        ) : (
-          <p className="text-sm text-navy-400">Checking consent status…</p>
-        )}
-      </div>
+    return error ? (
+      <Banner tone="negative">{error}</Banner>
+    ) : (
+      <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+        Checking consent status…
+      </p>
     );
   }
 
   return (
-    <div className="space-y-3">
-      {error && <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{error}</p>}
+    <div style={{ display: "grid", gap: 12 }}>
+      {error && <Banner tone="negative">{error}</Banner>}
 
       {status.has_live_consent ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-positive/30 bg-positive/10 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-navy-900">Consent granted</p>
-            <p className="mt-0.5 text-xs text-navy-500">
-              Required for ingestion and manual transaction entry to process this investor&apos;s data.
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            padding: "12px 14px",
+            border: "1px solid var(--border)",
+            borderLeft: "2px solid var(--positive)",
+            background: "var(--surface)",
+          }}
+        >
+          <div style={{ minWidth: 200, flex: 1 }}>
+            <p
+              style={{
+                margin: 0,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                font: "var(--type-body)",
+                fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
+                color: "var(--text-primary)",
+              }}
+            >
+              <span style={{ color: "var(--positive)", display: "inline-flex" }}>
+                <Icon name="check" size={14} />
+              </span>
+              Permission granted
+            </p>
+            <p style={{ margin: "2px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+              Withdrawing stops us processing anything new, immediately. It does not delete
+              what is already stored — that is on the Privacy page, on purpose.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleWithdraw}
-            disabled={busy}
-            className="press-scale rounded-lg border border-navy-100 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-cream-200 disabled:opacity-60"
-          >
-            {busy ? "Withdrawing…" : "Withdraw consent"}
-          </button>
+          <Button variant="secondary" size="sm" onClick={() => void handleWithdraw()} disabled={busy}>
+            {busy ? "Withdrawing…" : "Withdraw"}
+          </Button>
         </div>
       ) : (
-        <div className="space-y-3 rounded-lg border border-brass-500/40 bg-brass-50 p-4">
-          <p className="text-xs text-navy-700">{NOTICE_TEXT}</p>
-          <label className="flex items-start gap-2 text-xs text-navy-700">
-            <input
-              type="checkbox"
-              checked={acknowledged}
-              onChange={(e) => setAcknowledged(e.target.checked)}
-              className="mt-0.5"
-            />
-            I have read and agree to the above.
-          </label>
-          <button
-            type="button"
-            onClick={handleGrant}
-            disabled={!acknowledged || busy}
-            className="press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:cursor-not-allowed disabled:opacity-50"
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            padding: "12px 14px",
+            border: "1px solid var(--border)",
+            borderLeft: "2px solid var(--warning)",
+            background: "var(--surface)",
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              font: "var(--type-body)",
+              fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
+              color: "var(--text-primary)",
+            }}
           >
-            {busy ? "Recording…" : "Grant consent"}
-          </button>
-          <p className="text-xs text-navy-400">
-            No client data can be imported or entered for this investor until this is granted --
-            docs/COMPLIANCE.md, consent-first.
+            No permission on file
           </p>
+          <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>
+            Nothing can be imported or entered for this investor until this is granted.
+          </p>
+          <p
+            style={{
+              margin: 0,
+              font: "var(--type-body-sm)",
+              color: "var(--text-secondary)",
+              background: "var(--surface-sunken)",
+              border: "1px solid var(--border)",
+              padding: "10px 12px",
+            }}
+          >
+            {CONSENT_NOTICE_TEXT}
+          </p>
+          <div>
+            <Button size="sm" onClick={() => openOnboarding("access")}>
+              Grant permission
+            </Button>
+          </div>
         </div>
       )}
     </div>

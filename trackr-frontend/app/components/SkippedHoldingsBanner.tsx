@@ -85,7 +85,7 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
     <li className="rounded-lg border border-negative/20 bg-surface px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-navy-700">
-          <span className="font-medium">{label}</span> — {skipped.message}
+          <span className="font-medium">{label}</span>: {skipped.message}
         </span>
         {!done && (
           <div className="flex gap-2">
@@ -105,13 +105,13 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
             </button>
           </div>
         )}
-        {done && <span className="text-xs font-medium text-positive">Added — recomputing…</span>}
+        {done && <span className="text-xs font-medium text-positive">Added, recomputing…</span>}
       </div>
 
       {open && !done && (
         <form onSubmit={submit} className="mt-3 space-y-2 border-t border-navy-50 pt-3">
           <p className="text-xs text-navy-500">
-            Don&apos;t have the original contract note? Enter what you know — quantity, an
+            Don&apos;t have the original contract note? Enter what you know: quantity, an
             average buy price, and roughly when. This is recorded as an estimated cost
             (flagged as such everywhere it&apos;s shown) so the gap closes without
             pretending to be an exact broker record.
@@ -162,7 +162,7 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
                   {accountList.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.broker}
-                      {a.label ? ` — ${a.label}` : ""}
+                      {a.label ? `: ${a.label}` : ""}
                     </option>
                   ))}
                 </select>
@@ -201,7 +201,7 @@ export function SkippedHoldingsBanner({
   return (
     <div className="rounded-lg border border-negative/30 bg-negative/10 px-4 py-3">
       <p className="text-sm font-medium text-negative">
-        {skipped.length} holding{skipped.length > 1 ? "s" : ""} excluded — buy history is
+        {skipped.length} holding{skipped.length > 1 ? "s" : ""} excluded, because buy history is
         incomplete
       </p>
       <p className="mt-1 text-xs text-navy-500">

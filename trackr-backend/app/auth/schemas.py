@@ -7,6 +7,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
+from app.terms import CURRENT_TOS_VERSION
+
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -14,6 +16,22 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     display_name: str | None = None
+
+    #: Which Terms + Privacy version the person ticked. REQUIRED, and validated against
+    #: the one this build actually serves: a client that sends a stale or invented
+    #: version has shown the person something other than what we would record, and a
+    #: mismatched acceptance is not a weaker record than none -- it is a false one.
+    tos_version: str
+
+    @field_validator("tos_version")
+    @classmethod
+    def _is_the_version_we_serve(cls, value: str) -> str:
+        if value.strip() != CURRENT_TOS_VERSION:
+            raise ValueError(
+                f"terms version {value!r} is not the current one ({CURRENT_TOS_VERSION}); "
+                "reload the page and accept the terms shown there"
+            )
+        return value.strip()
 
     @field_validator("email")
     @classmethod

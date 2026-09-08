@@ -16,12 +16,19 @@ from app.storage.base import DEFAULT_URL_TTL_SECONDS
 from app.storage.keys import content_hash, investor_prefix, object_key
 
 
-def find_by_hash(conn: Any, sha256: str) -> dict[str, Any] | None:
+def find_by_hash(conn: Any, sha256: str, investor_id: str) -> dict[str, Any] | None:
+    """This investor's document with these bytes, if they already sent them.
+
+    Scoped to the investor deliberately. Searched globally, the second investor to send
+    identical bytes -- a joint account's contract note, an identical NIL statement -- was
+    handed the first one's row: their document id, their storage_key, and no record of the
+    second upload at all. See migration 020.
+    """
     with conn.cursor() as cur:
         cur.execute(
             "SELECT id, investor_id, storage_key, doctype, byte_size, received_at "
-            "FROM document WHERE sha256 = %s",
-            (sha256,),
+            "FROM document WHERE sha256 = %s AND investor_id = %s",
+            (sha256, investor_id),
         )
         row = cur.fetchone()
         if row is None:
@@ -45,9 +52,11 @@ def store_document(
 ) -> dict[str, Any]:
     """Put the bytes in storage and record the pointer. Idempotent on content.
 
-    Re-storing an identical document returns the existing row and does not duplicate it.
-    That is not an optimisation: email forwarding delivers the same statement more than
-    once, and a client uploading their history sends overlapping files by necessity.
+    Re-storing an identical document FOR THE SAME INVESTOR returns the existing row and
+    does not duplicate it. That is not an optimisation: email forwarding delivers the same
+    statement more than once, and a client uploading their history sends overlapping files
+    by necessity. Another investor sending the same bytes gets their own row and their own
+    object -- see find_by_hash and migration 020.
 
     Order matters. The object is written FIRST, then the row. The reverse order can leave a
     row pointing at nothing, which looks like data loss; this order can at worst leave an
@@ -55,7 +64,7 @@ def store_document(
     """
     digest = content_hash(content)
 
-    existing = find_by_hash(conn, digest)
+    existing = find_by_hash(conn, digest, investor_id)
     if existing is not None:
         # find_by_hash returns the raw row, so ``id`` is a psycopg UUID object, not the
         # string the callers (and StageResultOut) expect. Stringify it before returning.

@@ -42,7 +42,15 @@ export function HoldingsTable({ holdings, dense = false }: { holdings: HoldingOu
               </td>
               <td className={`${pad} pr-3 text-right tabular-nums`}>{formatQuantity(h.quantity)}</td>
               <td className={`${pad} pr-3 text-right tabular-nums`}>{formatMoney(h.avg_cost, true)}</td>
-              <td className={`${pad} pr-3 text-right tabular-nums`}>{formatMoney(h.last_price, true)}</td>
+              <td className={`${pad} pr-3 text-right tabular-nums`}>
+                {h.live && (
+                  <span
+                    className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-positive align-middle"
+                    title="Live price"
+                  />
+                )}
+                {formatMoney(h.last_price, true)}
+              </td>
               <td className={`${pad} pr-3 text-right tabular-nums`}>{formatMoney(h.invested)}</td>
               <td className={`${pad} pr-3 text-right tabular-nums`}>{formatMoney(h.market_value)}</td>
               <td className={`${pad} pr-3 text-right tabular-nums ${signClass(h.unrealised)}`}>

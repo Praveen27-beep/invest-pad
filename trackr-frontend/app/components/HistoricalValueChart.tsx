@@ -44,6 +44,18 @@ interface ChartPoint {
   invested: number | null;
   market_value_raw: string | null;
   invested_raw: string | null;
+  // Only set on the bridging last-settled point and the appended live point below --
+  // a second series so the "not yet settled" segment renders visually distinct
+  // (dashed, its own dot) without touching the persisted market_value line at all.
+  market_value_live: number | null;
+  market_value_live_raw: string | null;
+  is_live: boolean;
+}
+
+export interface LiveValuePoint {
+  as_of: string;
+  live_as_of: string;
+  market_value: string;
 }
 
 /**
@@ -70,6 +82,9 @@ function buildChartData(rows: SnapshotOut[]): ChartPoint[] {
           invested: null,
           market_value_raw: null,
           invested_raw: null,
+          market_value_live: null,
+          market_value_live_raw: null,
+          is_live: false,
         });
       }
     }
@@ -84,9 +99,47 @@ function buildChartData(rows: SnapshotOut[]): ChartPoint[] {
       invested: row.invested !== null ? Number(row.invested) : null,
       market_value_raw: row.market_value,
       invested_raw: row.invested,
+      market_value_live: null,
+      market_value_live_raw: null,
+      is_live: false,
     });
   });
   return points;
+}
+
+/**
+ * Appends today's live estimate (from GET .../summary, which this chart's own
+ * /snapshots call never returns -- see the module docstring) as one extra point, only
+ * when the persisted series doesn't already end on that date. Once tonight's bhavcopy
+ * settles, list_snapshots grows a real row for today and this stops firing on its own
+ * -- no client-side bookkeeping needed to "turn it off".
+ */
+function appendLivePoint(points: ChartPoint[], live: LiveValuePoint | null | undefined): ChartPoint[] {
+  if (!live) return points;
+  const last = points[points.length - 1];
+  if (last?.as_of === live.as_of) return points;
+
+  // No persisted history yet (a brand-new portfolio, or tonight's snapshot job simply
+  // hasn't run for this range) -- nothing to bridge FROM, so the live point stands
+  // alone. Still strictly more informative than the blank "no snapshots" state.
+  const bridged = last
+    ? points.map((p, i) =>
+        i === points.length - 1
+          ? { ...p, market_value_live: p.market_value, market_value_live_raw: p.market_value_raw }
+          : p
+      )
+    : [...points];
+  bridged.push({
+    as_of: live.as_of,
+    market_value: null,
+    invested: null,
+    market_value_raw: null,
+    invested_raw: null,
+    market_value_live: Number(live.market_value),
+    market_value_live_raw: live.market_value,
+    is_live: true,
+  });
+  return bridged;
 }
 
 function ChartTooltip({
@@ -99,17 +152,37 @@ function ChartTooltip({
   const entry = active ? payload?.[0] : undefined;
   if (!entry) return null;
   const point = entry.payload;
-  if (point.market_value_raw === null) return null;
+  if (point.market_value_raw === null && !point.is_live) return null;
   return (
     <div className="rounded-lg border border-navy-100 bg-surface-raised px-3 py-2 text-xs shadow-glass">
       <p className="font-medium text-navy-700">{formatDate(point.as_of)}</p>
-      <p className="mt-1 text-navy-600">
-        Market value: <span className="font-medium">{formatMoney(point.market_value_raw)}</span>
-      </p>
+      {point.is_live ? (
+        <>
+          <p className="mt-1 text-navy-600">
+            Live estimate:{" "}
+            <span className="font-medium">{formatMoney(point.market_value_live_raw)}</span>
+          </p>
+          <p className="text-[11px] text-navy-400">Not yet settled by end-of-day pricing</p>
+        </>
+      ) : (
+        <p className="mt-1 text-navy-600">
+          Market value: <span className="font-medium">{formatMoney(point.market_value_raw)}</span>
+        </p>
+      )}
       {point.invested_raw !== null && (
         <p className="text-navy-400">Invested: {formatMoney(point.invested_raw)}</p>
       )}
     </div>
+  );
+}
+
+// Only the appended live point gets a visible dot on the market_value_live series --
+// the bridging real point already has its own (dot-less) mark on the settled line, so
+// drawing a second one there would just be visual noise.
+function LiveDot({ cx, cy, payload }: { cx?: number; cy?: number; payload?: ChartPoint }) {
+  if (!payload?.is_live || cx === undefined || cy === undefined) return null;
+  return (
+    <circle cx={cx} cy={cy} r={3.5} className="fill-brass-500" stroke="none" />
   );
 }
 
@@ -119,7 +192,7 @@ function ChartTooltip({
  * point. Replaces the honest disabled placeholder this component used to be before
  * daily snapshots were persisted (Phase 2 Session 1).
  */
-export function HistoricalValueChart() {
+export function HistoricalValueChart({ liveValue }: { liveValue?: LiveValuePoint | null }) {
   const { investorId, token, asOf, advisedOnly } = useAuth();
   const [range, setRange] = useState<RangeKey>("1Y");
   const start = startFor(range, asOf);
@@ -130,7 +203,10 @@ export function HistoricalValueChart() {
     token
   );
 
-  const chartData = useMemo(() => buildChartData(data ?? []), [data]);
+  const chartData = useMemo(
+    () => appendLivePoint(buildChartData(data ?? []), liveValue),
+    [data, liveValue]
+  );
 
   return (
     <div>
@@ -211,6 +287,19 @@ export function HistoricalValueChart() {
                 strokeWidth={2}
                 dot={false}
                 connectNulls={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="market_value_live"
+                className="text-brass-500"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeDasharray="4 3"
+                dot={LiveDot}
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+                isAnimationActive={false}
+                legendType="none"
               />
             </LineChart>
           </ResponsiveContainer>

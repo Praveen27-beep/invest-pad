@@ -52,6 +52,11 @@ const config: Config = {
       fontFamily: {
         heading: ["Newsreader", "Georgia", "serif"],
         body: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        // The two ledger faces. `label` is the letterspaced small-caps used on every
+        // KPI slip and LedgerGrid header; `figure` is the slip's footer number.
+        label: ["Archivo", "system-ui", "sans-serif"],
+        figure: ["Petrona", "Georgia", "serif"],
       },
       fontFeatureSettings: {
         tabular: '"tnum" 1',

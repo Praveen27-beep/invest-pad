@@ -217,10 +217,10 @@ def main() -> None:
         f" ({len(holdings)} securities x up to {PRICE_LOOKBACK_DAYS} trading days)"
     )
     print(login_note)
-    print(
-        f"\nSet NEXT_PUBLIC_DEFAULT_INVESTOR_ID={investor_id} in trackr-frontend/.env.local, "
-        "or log in and paste it into Settings."
-    )
+    # NOT "set NEXT_PUBLIC_DEFAULT_INVESTOR_ID": that build-time env var is gone.
+    # lib/auth-context.tsx takes the investor from the login response alone, precisely so
+    # two accounts in one browser cannot end up reading the same portfolio.
+    print(f"\nLog in and paste {investor_id} into Settings to view this portfolio.")
 
 
 if __name__ == "__main__":

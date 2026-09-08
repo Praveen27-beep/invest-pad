@@ -210,6 +210,43 @@ system. See `docs/BLUEPRINT_REVIEW.md` §Corrected-1.
 
 PK: `(isin, price_date)`. NSE wins on conflict (deeper liquidity).
 
+## `live_price` — intraday cache, not a ledger
+
+| column | type | notes |
+|---|---|---|
+| `isin` | text | FK -> `security.isin` |
+| `last_price` | numeric(20,6) | |
+| `fetched_at` | timestamptz | |
+
+PK: `isin` (one row per ISIN, no history — overwritten in place). Populated from Yahoo
+Finance (`app/prices/yfinance_live.py`) via `app/prices/live.py::refresh_and_get`, and
+consulted only for `as_of == today (IST)`, and only for the ISINs `price` has no row dated
+*exactly* today for — the narrower exact-date question, not the carry-forward one, since on
+any trading morning the newest `price` row is yesterday's and a carry-forward lookup would
+report nothing missing. See `docs/ENGINE_SPEC.md` §2. Never a substitute for `price`: once tonight's bhavcopy lands,
+that date is served from `price` exclusively and this table stops being read for it. A row
+older than its TTL (`app/db/live_prices.py::DEFAULT_MAX_AGE_SECONDS`) is treated as absent,
+the same posture `price`'s own staleness window takes, just on a minutes-not-days clock.
+
+## `index_level` — published index levels
+
+| column | type | notes |
+|---|---|---|
+| `index_name` | text | CHECK: `NIFTY50_TRI`, `NIFTY500_TRI`, `SENSEX_TRI` |
+| `level_date` | date | |
+| `close` | numeric(20,6) | |
+| `source` | text | `NIFTYINDICES_TRI` |
+
+PK: `(index_name, level_date)`. No ISIN and no FK into `security` — an index level cannot
+be joined against a security by construction, so it can never be mistaken for a price.
+`index_name` is a checked enum rather than a free-text symbol, which is why admitting a new
+index is a migration (`019_nifty500_index_name.sql`) and not a code-only change.
+
+NIFTY50_TRI backs `docs/ENGINE_SPEC.md` §6's single-figure benchmark XIRR; NIFTY500_TRI
+backs the Dashboard's benchmark line. TRI in both cases, never a price index. SENSEX_TRI is
+a valid value with no adapter behind it — no reliable free, machine-fetchable source
+exists, so the router refuses it with a 400 rather than this table ever holding a guess.
+
 ## `holding_snapshot` — reconciliation only
 
 CAS/broker-declared quantities, used to check the engine. **Not** a source of truth

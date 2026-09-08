@@ -26,6 +26,7 @@ a plan. Do not build ahead.
 | Daily EOD price pipe (NSE + BSE) | Both exchanges mandatory |
 | **Reconciliation vs CAS/broker holdings** | The corporate-action detector |
 | Gmail forwarding ingestion | Contract notes |
+| LLM-assisted extraction for unrecognised documents | **Added after the original Phase 1 table.** A recovery path for the two rows above, not a new capability: documents no deterministic parser claims currently produce zero rows. Off by default (`LLM_PARSING_ENABLED`), staging-only, and every value is proved against the document before it can be staged — see `docs/INGESTION.md`, "Extraction pipeline" |
 | Audit log | DPDP + SEBI record-keeping |
 | Client consent records | Before any client data lands |
 

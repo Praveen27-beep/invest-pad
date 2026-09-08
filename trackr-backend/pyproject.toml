@@ -51,6 +51,12 @@ dependencies = [
   # app/ingest/zerodha_contract_note.py) is the primary production ingestion route per
   # docs/INGESTION.md, and brokers forward contract notes as PDFs.
   "pdfplumber>=0.11",
+  # Intraday quotes for "today, before tonight's bhavcopy settles" (app/prices/live.py,
+  # app/prices/yfinance_live.py) -- bhavcopy has nothing to say about right now during
+  # market hours. Pulls in pandas/numpy transitively, unlike every other dependency
+  # above; verify the Vercel Python bundle stays under its size ceiling after adding
+  # this (see the `gmail` extra below, kept OUT of this list for exactly that ceiling).
+  "yfinance>=0.2",
 ]
 
 [project.optional-dependencies]

@@ -67,7 +67,7 @@ export function NegativeHoldingNotice({
   return (
     <div className="rounded-lg border border-negative/30 bg-negative/10 px-4 py-3">
       <p className="text-sm font-medium text-negative">
-        Portfolio can&apos;t be computed — {label} is short {short}{when}.
+        Portfolio can&apos;t be computed. {label} is short {short}{when}.
       </p>
       <p className="mt-1 text-xs text-navy-500">
         This means a sale for {label} was recorded before enough buys to cover it, not

@@ -44,7 +44,7 @@ export function MissingPriceNotice({
   return (
     <div className="rounded-lg border border-negative/30 bg-negative/10 px-4 py-3">
       <p className="text-sm font-medium text-negative">
-        Performance can&apos;t be computed — {isins.length} held security
+        Performance can&apos;t be computed. {isins.length} held security
         {plural ? "ies" : ""} {plural ? "have" : "has"} no usable price.
       </p>
       <p className="mt-1 text-xs text-navy-500">

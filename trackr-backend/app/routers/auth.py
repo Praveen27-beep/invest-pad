@@ -37,7 +37,9 @@ def register(
     conn: Any = Depends(get_conn),
     settings: Settings = Depends(get_settings),
 ) -> TokenResponse:
-    user = service.register(conn, body.email, body.password, body.display_name)
+    user = service.register(
+        conn, body.email, body.password, body.display_name, body.tos_version
+    )
     investor = create_personal_investor(
         conn, owner_user_id=user["id"], display_name=body.display_name
     )

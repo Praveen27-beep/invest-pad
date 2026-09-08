@@ -53,6 +53,12 @@ SETTINGS = Settings(
     portfolio_encryption_key="unused-in-this-suite",
     portfolio_pan_pepper="unused-in-this-suite",
     jwt_secret="test-jwt-secret-not-for-production",
+    # A domain that could really receive mail. The config DEFAULT here is
+    # ingest.example.com, an RFC 2606 reserved name, and app.ingest.addresses now
+    # derives no address at all for one of those -- so leaving the default would make
+    # every forwarding assertion below pass or fail for the wrong reason. The empty
+    # case has its own tests in tests/test_ingest_addresses.py.
+    ingest_domain="ingest.mei.capital",
 )
 
 

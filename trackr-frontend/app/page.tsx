@@ -1,132 +1,191 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
-import { formatMoney, formatDate } from "@/lib/format";
-import type { HoldingsResponse, PerformanceResponse, SummaryResponse, TransactionOut } from "@/lib/api-types";
-import { Card, ErrorState, LoadingState, NoInvestorState } from "./components/PageState";
-import { KpiCard } from "./components/KpiCard";
-import { DualXirrCard } from "./components/DualXirrCard";
+import { usePortfolioRefresh } from "@/lib/onboarding";
+import { formatDate, formatMoney, formatPercent, formatTimeIST } from "@/lib/format";
+import type {
+  HoldingOut,
+  HoldingsResponse,
+  PerformanceResponse,
+  SummaryResponse,
+} from "@/lib/api-types";
+import { ErrorState, NoInvestorState } from "./components/PageState";
 import { MissingPriceNotice } from "./components/MissingPriceNotice";
 import { NegativeHoldingNotice } from "./components/NegativeHoldingNotice";
-import { AllocationDonut, type AllocationSlice } from "./components/AllocationDonut";
-import { AllocationGroupsTable, type AllocationGroupRow } from "./components/AllocationGroupsTable";
-import { HistoricalValueChart } from "./components/HistoricalValueChart";
-import { HoldingsTable } from "./components/HoldingsTable";
 import { UnpricedBanner } from "./components/UnpricedBanner";
 import { SkippedHoldingsBanner } from "./components/SkippedHoldingsBanner";
-import { TabBar } from "./components/TabBar";
-import { HoldingsTab } from "./components/tabs/HoldingsTab";
-import { PerformanceTab } from "./components/tabs/PerformanceTab";
-import { ContributionTab } from "./components/tabs/ContributionTab";
+import { PageHeader } from "./components/PageHeader";
+import { PageBody } from "./components/Shell";
+import { SetupBanner } from "./components/SetupBanner";
+import { ValueChartCard } from "./components/ValueChartCard";
+import { DividendCard } from "./components/DividendCard";
+import {
+  ALLOC_RAMP,
+  AllocationArcs,
+  AllocationArcsSkeleton,
+  Banner,
+  Card,
+  LedgerGrid,
+  LedgerGridSkeleton,
+  LedgerSecurity,
+  LedgerSigned,
+  LinkAction,
+  SegmentedControl,
+  VintageKpi,
+  VintageKpiSkeleton,
+  VintageXirr,
+  ledgerFig,
+  type ArcSlice,
+  type LedgerColumn,
+} from "./components/ds";
 
-const DASHBOARD_TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "holdings", label: "Holdings" },
-  { key: "performance", label: "Performance" },
-  { key: "contribution", label: "Contribution" },
-];
-
-type AllocationGroupBy = "asset_class" | "sector" | "market_cap_bucket";
+type GroupBy = "asset_class" | "sector" | "market_cap";
 type ValueBasis = "current" | "invested";
+type XirrWindowKey = "fy" | "1y" | "3y";
 
-const GROUP_BY_LABEL: Record<AllocationGroupBy, string> = {
+const GROUP_BY_LABEL: Record<GroupBy, string> = {
   asset_class: "Asset class",
   sector: "Sector",
-  market_cap_bucket: "Market cap",
+  market_cap: "Market cap",
 };
 
-const PercentIcon = (
-  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-    <path d="M14.5 5.5 5.5 14.5M6.4 6.9a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8ZM13.6 16.3a1.4 1.4 0 1 0 0-2.8 1.4 1.4 0 0 0 0 2.8Z" />
-  </svg>
-);
-
-/** Sum of `invested` across a group's holdings -- real per-security data already on
- * the wire (HoldingOut.invested), just aggregated at display time for the "Invested"
- * basis toggle and the current-holdings table. Never a fabricated figure. */
+/** Sum of `invested` across a group's holdings — real per-security figures already on
+ *  the wire, aggregated at display time for the "Invested" basis. Never fabricated. */
 function sumInvested(children: { invested: string }[]): number {
   return children.reduce((sum, h) => sum + (Number(h.invested) || 0), 0);
 }
 
-function OverviewTab() {
+interface GroupRow {
+  key: string;
+  label: string;
+  invested: number;
+  marketValue: number;
+  weightPct: number | null;
+}
+
+/** ₹ in lakh, to two decimals — the scale the ledger cards read at. */
+const lakh = (n: number) => `₹${(n / 100_000).toFixed(2)}L`;
+
+export default function DashboardPage() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
-  const [allocationGroupBy, setAllocationGroupBy] = useState<AllocationGroupBy>("asset_class");
-  const [valueBasis, setValueBasis] = useState<ValueBasis>("current");
+  const [groupBy, setGroupBy] = useState<GroupBy>("asset_class");
+  const [basis, setBasis] = useState<ValueBasis>("current");
+  const [xirrWindow, setXirrWindow] = useState<XirrWindowKey>("fy");
+
   const query = { as_of: asOf, advised_only: advisedOnly || undefined };
+
+  /**
+   * How often the valued figures re-fetch while the dashboard is open.
+   *
+   * Polling only means anything for TODAY: an earlier `as_of` is served from bhavcopy,
+   * which cannot change under a viewer. Two minutes sits just above the server's own
+   * 180-second quote cache, so a poll usually costs one cheap cached read and only
+   * occasionally an actual upstream fetch — the cache, not this interval, is what bounds
+   * how hard the quote source is hit.
+   *
+   * `/snapshots` and the dividend card's ledger read are deliberately NOT polled: a daily
+   * snapshot row and a transaction ledger do not move during a session.
+   */
+  const isToday = asOf === new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+  const live = { refreshMs: isToday ? 120_000 : 0 };
 
   const summary = useFetch<SummaryResponse>(
     investorId ? `/investors/${investorId}/summary` : null,
     query,
-    token
+    token,
+    live
   );
   const performance = useFetch<PerformanceResponse>(
     investorId ? `/investors/${investorId}/performance` : null,
     { as_of: asOf },
-    token
+    token,
+    live
   );
   const holdings = useFetch<HoldingsResponse>(
     investorId ? `/investors/${investorId}/holdings` : null,
     query,
-    token
-  );
-  const transactions = useFetch<TransactionOut[]>(
-    investorId ? `/investors/${investorId}/transactions` : null,
-    undefined,
-    token
+    token,
+    live
   );
 
-  if (!investorId) return <NoInvestorState />;
+  /**
+   * Re-read everything the moment an import finishes, without a page reload.
+   *
+   * Every figure on this screen is derived from the transaction ledger on read
+   * (CLAUDE.md's one architectural rule), so a promoted batch invalidates all three
+   * responses at once and there is nothing to patch locally — re-fetching IS the update.
+   * `useFetch` keeps the current numbers on screen until the new ones land, so this
+   * repaints in place rather than blanking the dashboard.
+   *
+   * ValueChartCard and DividendCard own their own reads and subscribe to the same signal
+   * themselves, so they are not listed here.
+   */
+  const refreshAll = useCallback(() => {
+    summary.refetch();
+    performance.refetch();
+    holdings.refetch();
+  }, [summary, performance, holdings]);
+  usePortfolioRefresh(refreshAll);
 
-  // performance.error is deliberately excluded here: /performance can 409 with
-  // MissingPriceError (XIRR needs every held ISIN priced) even when /summary and
-  // /holdings succeed by partitioning the same unpriced holding out via UnpricedBanner.
-  // Blocking the whole dashboard on that would make UnpricedBanner unreachable in
-  // exactly the case it exists for -- so only a summary/holdings failure is fatal here.
-  const blockingErrorDetail = summary.errorDetail ?? holdings.errorDetail;
-  const blockingError = summary.error ?? holdings.error;
-  if (blockingErrorDetail?.isin) {
+  if (!investorId) {
     return (
-      <NegativeHoldingNotice
-        isin={blockingErrorDetail.isin}
-        name={blockingErrorDetail.securityName}
-        deficit={blockingErrorDetail.deficit}
-        asOf={blockingErrorDetail.asOf}
-      />
+      <>
+        <PageHeader title="Dashboard" subtitle="Holdings, performance and XIRR, replayed from your ledger." />
+        <PageBody>
+          <NoInvestorState />
+        </PageBody>
+      </>
     );
   }
-  if (blockingError) return <ErrorState message={blockingError} />;
 
-  if (summary.loading || performance.loading) return <LoadingState label="Loading portfolio…" />;
+  // performance.error is deliberately excluded from the blocking check: /performance
+  // can 409 with MissingPriceError (XIRR needs every held ISIN priced) even when
+  // /summary and /holdings succeed by partitioning that same holding out via
+  // UnpricedBanner. Blocking the whole dashboard on it would make the banner
+  // unreachable in exactly the case it exists for.
+  const blockingErrorDetail = summary.errorDetail ?? holdings.errorDetail;
+  const blockingError = summary.error ?? holdings.error;
 
+  if (blockingErrorDetail?.isin) {
+    return (
+      <PageBody>
+        <NegativeHoldingNotice
+          isin={blockingErrorDetail.isin}
+          name={blockingErrorDetail.securityName}
+          deficit={blockingErrorDetail.deficit}
+          asOf={blockingErrorDetail.asOf}
+        />
+      </PageBody>
+    );
+  }
+  if (blockingError) {
+    return (
+      <PageBody>
+        <ErrorState message={blockingError} />
+      </PageBody>
+    );
+  }
   const s = summary.data;
   const p = performance.data;
-  const recentTxns = (transactions.data ?? [])
-    .slice()
-    .sort((a, b) => (a.txn_date < b.txn_date ? 1 : -1))
-    .slice(0, 6);
-  const topHoldings = (holdings.data?.holdings ?? []).slice(0, 5);
+  const allHoldings = holdings.data?.holdings ?? [];
+  const topHoldings = allHoldings.slice(0, 5);
 
-  // AllocationDonut/AllocationGroupsTable are grouping-agnostic; adapt whichever of the
-  // three /summary arrays is currently selected into one normalised row shape here, at
-  // the call site. `invested` is summed from each group's real per-holding figures
-  // (never fabricated) so the "Invested" value-basis toggle and the holdings table's
-  // Invested column both have something real to show.
-  const groupRows: AllocationGroupRow[] =
-    allocationGroupBy === "sector"
+  // One normalised row shape from whichever of the three /summary allocation arrays is
+  // selected, adapted at the call site so the arcs and the table stay grouping-agnostic.
+  const groupRows: GroupRow[] =
+    groupBy === "sector"
       ? (s?.allocation_by_sector ?? []).map((g) => ({
-          key: g.sector,
+          key: g.sector ?? g.label,
           label: g.label,
           invested: sumInvested(g.children),
           marketValue: g.market_value ? Number(g.market_value) : 0,
           weightPct: g.weight_pct,
         }))
-      : allocationGroupBy === "market_cap_bucket"
+      : groupBy === "market_cap"
         ? (s?.allocation_by_market_cap ?? []).map((g) => ({
-            key: g.market_cap_bucket,
+            key: g.market_cap_bucket ?? g.label,
             label: g.label,
             invested: sumInvested(g.children),
             marketValue: g.market_value ? Number(g.market_value) : 0,
@@ -141,204 +200,365 @@ function OverviewTab() {
           }));
 
   const totalInvested = s?.invested ? Number(s.invested) : 0;
-  const allocationSlices: AllocationSlice[] =
-    valueBasis === "invested"
-      ? groupRows.map((r) => ({
-          key: r.key,
-          label: r.label,
-          weight_pct: totalInvested > 0 ? r.invested / totalInvested : null,
-        }))
-      : groupRows.map((r) => ({ key: r.key, label: r.label, weight_pct: r.weightPct }));
+
+  const arcSlices: ArcSlice[] = groupRows.map((r) => ({
+    label: r.label,
+    value:
+      basis === "invested"
+        ? totalInvested > 0
+          ? (r.invested / totalInvested) * 100
+          : 0
+        : (r.weightPct ?? 0) * 100,
+  }));
+
+  const maxWeight = Math.max(...arcSlices.map((a) => a.value), 1);
+
+  const groupTableRows = groupRows.map((r, i) => {
+    const gain = r.marketValue - r.invested;
+    const weight = basis === "invested" ? (totalInvested > 0 ? (r.invested / totalInvested) * 100 : 0) : (r.weightPct ?? 0) * 100;
+    return {
+      id: r.key,
+      label: r.label,
+      color: ALLOC_RAMP[i % ALLOC_RAMP.length] as string,
+      invested: lakh(r.invested),
+      gain: `${gain < 0 ? "−" : "+"}₹${Math.abs(gain / 100_000).toFixed(2)}L`,
+      current: lakh(r.marketValue),
+      weight: `${weight.toFixed(1)}%`,
+      weightPct: Math.min(100, (weight / maxWeight) * 100),
+    };
+  });
+
+  const totalMarketValue = groupRows.reduce((a, r) => a + r.marketValue, 0);
+  const totalGain = totalMarketValue - groupRows.reduce((a, r) => a + r.invested, 0);
+
+  // Column definitions are hoisted so the skeletons can be handed the identical array.
+  // A skeleton that guesses at the column widths is a skeleton that resizes the table
+  // the moment real data lands, which is the shift it exists to prevent.
+  const groupColumns: LedgerColumn[] = [
+    {
+      key: "label",
+      label: GROUP_BY_LABEL[groupBy],
+      figure: false,
+      render: (r) => (
+        <span style={{ display: "inline-flex", alignItems: "baseline", gap: 9, minWidth: 0 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              flexShrink: 0,
+              width: 3,
+              height: 11,
+              background: r.color as string,
+              transform: "translateY(1px)",
+            }}
+          />
+          <span
+            style={{
+              minWidth: 0,
+              fontFamily: "var(--font-label)",
+              fontSize: 12.5,
+              fontWeight: 500,
+              lineHeight: 1.35,
+              color: "var(--ledger-ink)",
+              textWrap: "pretty",
+            }}
+          >
+            {r.label as string}
+          </span>
+        </span>
+      ),
+    },
+    { key: "invested", label: "Invested", align: "right" },
+    {
+      key: "gain",
+      label: "Unrealised",
+      align: "right",
+      figure: false,
+      render: (r) => <LedgerSigned value={r.gain as string} />,
+    },
+    { key: "current", label: "Current", align: "right" },
+    {
+      key: "weight",
+      label: "Holding",
+      align: "right",
+      figure: false,
+      render: (r) => (
+        <span style={{ textAlign: "right" }}>
+          <span style={{ ...ledgerFig, display: "block" }}>{r.weight as string}</span>
+          <span
+            aria-hidden="true"
+            style={{
+              display: "block",
+              marginTop: 4,
+              marginLeft: "auto",
+              height: 2,
+              width: `${r.weightPct as number}%`,
+              maxWidth: "100%",
+              background: r.color as string,
+              opacity: 0.85,
+            }}
+          />
+        </span>
+      ),
+    },
+  ];
+
+  const topHoldingsColumns: LedgerColumn[] = [
+    {
+      key: "symbol",
+      label: "Security",
+      figure: false,
+      render: (r) => (
+        <LedgerSecurity
+          symbol={(r.symbol as string) ?? (r.isin as string)}
+          name={r.name as string}
+          flag={r.cost_estimated as boolean}
+        />
+      ),
+    },
+    {
+      key: "market_value",
+      label: "Current",
+      align: "right",
+      render: (r) => formatMoney(r.market_value as string | null),
+    },
+    {
+      key: "unrealised",
+      label: "Unrealised",
+      align: "right",
+      figure: false,
+      render: (r) => (
+        <LedgerSigned
+          value={formatMoney(r.unrealised as string | null)}
+          sub={formatPercent(r.unrealised_pct as number | null)}
+        />
+      ),
+    },
+    {
+      key: "weight_pct",
+      label: "Weight",
+      align: "right",
+      render: (r) => formatPercent(r.weight_pct as number | null),
+    },
+  ];
+
+  const xirrByWindow: Record<XirrWindowKey, number | null | undefined> = {
+    fy: p?.fy_xirr,
+    "1y": p?.xirr_1y,
+    "3y": p?.xirr_3y,
+  };
+  const activeXirr = xirrByWindow[xirrWindow];
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        <KpiCard label="Invested" value={formatMoney(s?.invested)} sublabel="Net of brokerage & STT" />
-        <KpiCard label="Current value" value={formatMoney(s?.market_value)} sublabel={`As of ${formatDate(s?.as_of)}`} />
-        <KpiCard
-          label="Unrealised P&L"
-          value={formatMoney(s?.unrealised)}
-          sublabel={s?.unrealised_pct != null ? `${(s.unrealised_pct * 100).toFixed(2)}%` : undefined}
-          subClass={(s?.unrealised_pct ?? 0) >= 0 ? "text-positive" : "text-negative"}
-          icon={PercentIcon}
-          trend={s?.unrealised_pct == null ? null : s.unrealised_pct >= 0 ? "up" : "down"}
-        />
-        <KpiCard
-          label="Realised P&L"
-          value={formatMoney(p?.realised_to_date)}
-          sublabel="Since inception"
-        />
-        {p ? (
-          <DualXirrCard
-            xirrAll={p.xirr_all}
-            xirrHoldings={p.xirr_holdings}
-            fyXirr={p.fy_xirr}
-            xirr1y={p.xirr_1y}
-            xirr3y={p.xirr_3y}
-            xirr5y={p.xirr_5y}
-            fyTwrr={p.fy_twrr}
-            twrr1y={p.twrr_1y}
-            twrr3y={p.twrr_3y}
-            twrr5y={p.twrr_5y}
-            periodXirr={p.period_xirr}
-            periodStart={p.period_start}
-          />
-        ) : performance.errorDetail?.isins?.length ? (
-          <MissingPriceNotice
-            isins={performance.errorDetail.isins}
-            names={performance.errorDetail.securityNames}
-            compact
-          />
-        ) : performance.error ? (
-          <div className="rounded-xl border border-navy-100 bg-cream-50 p-5 sm:col-span-2">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-navy-400">XIRR</p>
-            <p className="mt-2 text-sm text-navy-500">Performance is temporarily unavailable.</p>
+    <>
+      <PageHeader
+        title="Dashboard"
+        // Always a subtitle, never sometimes one: a line that appears once the summary
+        // resolves pushes the headline figure and the whole page down by its own height,
+        // which is the single most visible shift on this screen.
+        subtitle={
+          summary.loading
+            ? "Fetching prices…"
+            : s?.live_as_of
+              ? `Live · updated ${formatTimeIST(s.live_as_of)} IST`
+              : "Marked to the last published bhavcopy close"
+        }
+        headline={formatMoney(s?.market_value)}
+        changes={[
+          {
+            key: "unrealised",
+            label: "Unrealised",
+            value: `${formatMoney(s?.unrealised)} (${formatPercent(s?.unrealised_pct)})`,
+            negative: s?.unrealised_pct == null ? null : s.unrealised_pct < 0,
+          },
+          {
+            key: "realised",
+            label: "Realised · since inception",
+            value: formatMoney(p?.realised_to_date),
+            negative: p?.realised_to_date == null ? null : Number(p.realised_to_date) < 0,
+          },
+        ]}
+      />
+
+      <PageBody>
+        <SetupBanner />
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-section)" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: "var(--gap-grid)" }}>
+            {summary.loading ? (
+              <>
+                <VintageKpiSkeleton label="Invested" />
+                <VintageKpiSkeleton label="Current value" />
+                <VintageKpiSkeleton label="Unrealised P&L" />
+              </>
+            ) : (
+              <>
+                <VintageKpi
+                  label="Invested"
+                  value={formatMoney(s?.invested)}
+                  foot="Principal"
+                  footValue={`${allHoldings.length} holdings`}
+                />
+                <VintageKpi
+                  label="Current value"
+                  value={formatMoney(s?.market_value)}
+                  foot="Marked to market"
+                  footValue={formatDate(s?.as_of)}
+                />
+                <VintageKpi
+                  label="Unrealised P&L"
+                  value={formatMoney(s?.unrealised)}
+                  foot="On invested"
+                  footValue={formatPercent(s?.unrealised_pct)}
+                  negative={(s?.unrealised_pct ?? 0) < 0}
+                />
+              </>
+            )}
+            {performance.loading ? (
+              <VintageKpiSkeleton label="Return · XIRR" wide />
+            ) : p ? (
+              <VintageXirr
+                windows={[
+                  { key: "fy", label: "FY" },
+                  { key: "1y", label: "1Y" },
+                  { key: "3y", label: "3Y" },
+                ]}
+                activeWindow={xirrWindow}
+                onWindowChange={(k) => setXirrWindow(k as XirrWindowKey)}
+                value={formatPercent(activeXirr)}
+                caption={
+                  activeXirr == null
+                    ? "Not enough history for this window"
+                    : "Cash-flow · all external flows"
+                }
+                negative={(activeXirr ?? 0) < 0}
+              />
+            ) : performance.errorDetail?.isins?.length ? (
+              <MissingPriceNotice
+                isins={performance.errorDetail.isins}
+                names={performance.errorDetail.securityNames}
+                compact
+              />
+            ) : null}
           </div>
-        ) : null}
-      </div>
 
-      {p?.warning && (
-        <p className="rounded-lg bg-brass-50 px-4 py-2 text-xs text-navy-600">{p.warning}</p>
-      )}
-
-      {s && <UnpricedBanner unpriced={s.unpriced} />}
-      {s && <SkippedHoldingsBanner skipped={s.skipped} onFixed={() => { summary.refetch(); holdings.refetch(); }} />}
-
-      <div className="flex items-center justify-end gap-2 text-xs">
-        <span className="text-navy-400">View by</span>
-        <div className="flex overflow-hidden rounded-lg border border-navy-100">
-          {(Object.keys(GROUP_BY_LABEL) as AllocationGroupBy[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setAllocationGroupBy(key)}
-              className={`press-scale px-3 py-1.5 font-medium border-r border-navy-100 last:border-r-0 transition-colors ${
-                allocationGroupBy === key
-                  ? "bg-navy-900 text-cream-50"
-                  : "text-navy-500 hover:bg-cream-200"
-              }`}
-            >
-              {GROUP_BY_LABEL[key]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <div className="mb-4 flex items-start justify-between gap-2">
-            <div>
-              <h3 className="font-heading text-base text-navy-900">Portfolio allocation</h3>
-              <p className="text-xs text-navy-400">As on {formatDate(s?.as_of)}</p>
-            </div>
-            <select
-              value={valueBasis}
-              onChange={(e) => setValueBasis(e.target.value as ValueBasis)}
-              className="rounded-md border border-navy-100 bg-surface px-2 py-1 text-xs text-navy-700 transition-colors focus:border-brass-500 focus:outline-none"
-            >
-              <option value="current">Current value</option>
-              <option value="invested">Amount invested</option>
-            </select>
-          </div>
+          {p?.warning && <Banner tone="warning" title="Engine warning">{p.warning}</Banner>}
+          {s && <UnpricedBanner unpriced={s.unpriced} />}
           {s && (
-            <AllocationDonut
-              groups={allocationSlices}
-              centerValue={formatMoney(valueBasis === "invested" ? s.invested : s.market_value)}
-              centerLabel={valueBasis === "invested" ? "Amount invested" : "Current value"}
+            <SkippedHoldingsBanner
+              skipped={s.skipped}
+              onFixed={() => {
+                summary.refetch();
+                holdings.refetch();
+              }}
             />
           )}
-        </Card>
 
-        <Card className="lg:col-span-2">
-          <AllocationGroupsTable rows={groupRows} groupLabel={GROUP_BY_LABEL[allocationGroupBy]} />
-        </Card>
-      </div>
+          <ValueChartCard />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <HistoricalValueChart />
-        </Card>
-        <Card title="Reconciliation" action={<Link href="/portfolio?tab=reconcile" className="text-xs text-brass-600 underline">Open</Link>}>
-          <p className="text-sm text-navy-600">
-            Compare your computed holdings against a broker/depository statement to catch
-            missed corporate actions or drift.
-          </p>
-          <Link
-            href="/portfolio?tab=reconcile"
-            className="mt-4 inline-block press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-xs font-medium text-cream-50 hover:bg-navy-600"
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            <span style={{ font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>View by</span>
+            <SegmentedControl
+              options={(Object.keys(GROUP_BY_LABEL) as GroupBy[]).map((k) => ({ value: k, label: GROUP_BY_LABEL[k] }))}
+              value={groupBy}
+              onChange={setGroupBy}
+            />
+          </div>
+
+          {/*
+            Both panels are stretched to a shared minimum height and the grid tracks are
+            fixed, so switching Asset class → Sector → Market cap (which changes the row
+            COUNT) cannot resize the row and reflow the donut beside it. The two panels
+            move together or not at all.
+          */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(300px, 1fr) minmax(0, 1.6fr)",
+              gap: "var(--gap-grid)",
+              alignItems: "stretch",
+              // The arcs are 216px plus a legend row per category; the table is a header
+              // plus rows plus a total. Both settle around this, so pinning it stops the
+              // row growing and shrinking as the grouping changes the category COUNT --
+              // asset class has two, sector has a dozen.
+              minHeight: 430,
+            }}
           >
-            Run reconciliation
-          </Link>
-        </Card>
-      </div>
+            <Card
+              title="Portfolio allocation"
+              subtitle={`As on ${formatDate(s?.as_of)}`}
+              action={
+                <SegmentedControl
+                  size="sm"
+                  options={[
+                    { value: "current", label: "Current" },
+                    { value: "invested", label: "Invested" },
+                  ]}
+                  value={basis}
+                  onChange={setBasis}
+                />
+              }
+            >
+              {summary.loading ? (
+                <AllocationArcsSkeleton rings={5} />
+              ) : (
+                <AllocationArcs
+                  slices={arcSlices}
+                  centerValue={formatMoney(basis === "invested" ? s?.invested : s?.market_value)}
+                  centerLabel={basis === "invested" ? "Amount invested" : "Current value"}
+                />
+              )}
+            </Card>
 
-      <Card title="Top holdings" action={<Link href="/?tab=holdings" className="text-xs text-brass-600 underline">View all</Link>}>
-        {holdings.loading ? <LoadingState /> : <HoldingsTable holdings={topHoldings} dense />}
-      </Card>
+            {/* A column flex so the grid below the header can claim the card's leftover
+                height and hold its Total line against the bottom edge -- see LedgerGrid's
+                `fillHeight`. The row's height is set by whichever panel is taller, so
+                without it the summary floats mid-card under two asset-class rows. */}
+            <Card
+              title="Current holdings"
+              subtitle={`By ${GROUP_BY_LABEL[groupBy].toLowerCase()}`}
+              action={<LinkAction href="/holdings">View all</LinkAction>}
+              style={{ display: "flex", flexDirection: "column" }}
+            >
+              {summary.loading ? (
+                <LedgerGridSkeleton columns={groupColumns} rows={4} total fillHeight />
+              ) : (
+                <LedgerGrid
+                  fillHeight
+                  rows={groupTableRows}
+                  total={{
+                    id: "total",
+                    label: "Total",
+                    color: "var(--ledger-ink)",
+                    invested: lakh(groupRows.reduce((a, r) => a + r.invested, 0)),
+                    gain: `${totalGain < 0 ? "−" : "+"}₹${Math.abs(totalGain / 100_000).toFixed(2)}L`,
+                    current: lakh(totalMarketValue),
+                    weight: "100.0%",
+                    weightPct: 100,
+                  }}
+                  columns={groupColumns}
+                />
+              )}
+            </Card>
+          </div>
 
-      <Card title="Recent ledger entries" action={<Link href="/portfolio?tab=transactions" className="text-xs text-brass-600 underline">View all</Link>}>
-        {transactions.loading ? (
-          <LoadingState />
-        ) : recentTxns.length === 0 ? (
-          <p className="text-sm text-navy-400">No transactions yet.</p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-navy-100 text-left text-[11px] uppercase tracking-wide text-navy-400">
-                <th className="py-2 pr-3 font-medium">Date</th>
-                <th className="py-2 pr-3 font-medium">Type</th>
-                <th className="py-2 pr-3 font-medium">ISIN</th>
-                <th className="py-2 pr-3 font-medium text-right">Qty</th>
-                <th className="py-2 font-medium text-right">Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentTxns.map((t) => (
-                <tr key={t.id ?? `${t.isin}-${t.txn_date}`} className="border-b border-navy-50 last:border-0">
-                  <td className="py-2 pr-3">{formatDate(t.txn_date)}</td>
-                  <td className="py-2 pr-3">
-                    <span className="rounded bg-cream-200 px-1.5 py-0.5 text-xs font-medium text-navy-700">
-                      {t.txn_type}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-3 text-navy-600">{t.isin}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{t.quantity}</td>
-                  <td className="py-2 text-right tabular-nums">{formatMoney(t.price, true)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
-    </div>
-  );
-}
+          {/* Bar labels: the ticker where this screen already knows it, ISIN otherwise.
+              A dividend can come from a security that has since been sold, which is why
+              the map is a fallback and not a lookup that has to succeed. */}
+          <DividendCard
+            names={Object.fromEntries(allHoldings.map((h) => [h.isin, h.symbol ?? h.isin]))}
+          />
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const activeTab = searchParams.get("tab") ?? "overview";
-
-  function setActiveTab(key: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (key === "overview") params.delete("tab");
-    else params.set("tab", key);
-    const qs = params.toString();
-    router.push(qs ? `/?${qs}` : "/");
-  }
-
-  return (
-    <div className="space-y-6">
-      <TabBar tabs={DASHBOARD_TABS} active={activeTab} onChange={setActiveTab} />
-      {activeTab === "holdings" ? (
-        <HoldingsTab />
-      ) : activeTab === "performance" ? (
-        <PerformanceTab />
-      ) : activeTab === "contribution" ? (
-        <ContributionTab />
-      ) : (
-        <OverviewTab />
-      )}
-    </div>
+          <Card title="Top holdings" action={<LinkAction href="/holdings">View all</LinkAction>}>
+            {holdings.loading ? (
+              <LedgerGridSkeleton columns={topHoldingsColumns} rows={5} />
+            ) : (
+              <LedgerGrid
+                rows={topHoldings.map((h: HoldingOut) => ({ ...h, id: h.isin }))}
+                columns={topHoldingsColumns}
+              />
+            )}
+          </Card>
+        </div>
+      </PageBody>
+    </>
   );
 }

@@ -1,13 +1,32 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/lib/api-client";
 import { useFetch } from "@/lib/use-fetch";
-import type { AccountIn, AccountOut } from "@/lib/api-types";
+import type { AccountIn, AccountOut, BrokerOut } from "@/lib/api-types";
+import { Badge, Banner, Button, Field, Input, Select } from "./ds";
 import { EmailForwardingSetup } from "./EmailForwardingSetup";
 
 const EMPTY: AccountIn = { broker: "", dp_id: null, client_id: null, is_advised: true, label: null };
 
+/**
+ * Broker accounts, in Settings: the long-form version of the wizard's broker picker.
+ *
+ * TWO THINGS CHANGED. The broker was a free-text box that accepted anything — so `ZERODA`
+ * created an account nothing could parse and nothing warned about — and is now a picker
+ * fed by `GET /brokers`, the same registry the wizard uses. Free text is still reachable
+ * under "Someone else", because a broker we have not listed is a real thing a person may
+ * have and refusing them an account would be worse than a row with no adapter.
+ *
+ * And the fields are ordered by who needs them. Broker and label are what anyone adding a
+ * second account fills in; DP ID and client ID are identifiers most people would have to
+ * go and look up, and the client ID fills itself in from the first document that states
+ * it, so both sit behind a disclosure rather than in the way.
+ *
+ * Restyled onto the design-system tokens along with the rest of Settings — it was one of
+ * the last screens still written in the retired Tailwind class names, which resolved to
+ * roughly the right colours and the wrong shapes.
+ */
 export function AccountOnboarding({ investorId, token }: { investorId: string; token: string | null }) {
   // The server is the source of truth for which accounts exist. This used to be a
   // localStorage cache of POST responses, back when the contract had no GET -- but
@@ -19,25 +38,55 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
     undefined,
     token
   );
+  const [brokers, setBrokers] = useState<BrokerOut[]>([]);
   const [form, setForm] = useState<AccountIn>(EMPTY);
+  const [otherBroker, setOtherBroker] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<BrokerOut[]>("/brokers", { token })
+      .then((registry) => {
+        if (!cancelled) setBrokers(registry);
+      })
+      .catch(() => {
+        // Without the registry the "Someone else" free-text path still works, which is
+        // the honest degradation: fewer choices offered, nothing broken.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   function set<K extends keyof AccountIn>(key: K, value: AccountIn[K]) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  const chosenBroker = form.broker === "__other" ? otherBroker.trim().toUpperCase() : form.broker;
+
+  const options = useMemo(
+    () => [
+      { value: "", label: "Choose a broker…" },
+      ...brokers.map((b) => ({ value: b.code, label: b.name })),
+      { value: "__other", label: "Someone else…" },
+    ],
+    [brokers]
+  );
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!investorId) return;
+    if (!investorId || !chosenBroker) return;
     setSubmitting(true);
     setError(null);
     try {
       await api.post<AccountOut>(`/investors/${investorId}/accounts`, {
-        json: { ...form, broker: form.broker.trim().toUpperCase() },
+        json: { ...form, broker: chosenBroker },
         token,
       });
       setForm(EMPTY);
+      setOtherBroker("");
       accounts.refetch();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not add account");
@@ -47,88 +96,139 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
   }
 
   if (!investorId) {
-    return <p className="text-sm text-navy-400">Save an investor ID above before adding a broker account.</p>;
+    return (
+      <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+        Create an investor above before adding a broker account.
+      </p>
+    );
   }
 
-  const ingestDomain = process.env.NEXT_PUBLIC_INGEST_DOMAIN;
   const accountList = accounts.data ?? [];
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="space-y-3">
-        {error && <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{error}</p>}
+    <div style={{ display: "grid", gap: 20 }}>
+      <form onSubmit={handleSubmit} style={{ display: "grid", gap: 12 }}>
+        {error && <Banner tone="negative">{error}</Banner>}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Broker</label>
-            <input
-              required
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+          <Field label="Broker" htmlFor="account-broker">
+            <Select
+              id="account-broker"
               value={form.broker}
-              onChange={(e) => set("broker", e.target.value)}
-              placeholder="ZERODHA"
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm uppercase focus:border-brass-500 focus:outline-none"
+              onChange={(v) => set("broker", v)}
+              options={options}
+              style={{ width: "100%" }}
             />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Label (optional)</label>
-            <input
+          </Field>
+          {form.broker === "__other" && (
+            <Field label="Broker name" htmlFor="account-broker-other">
+              <Input
+                id="account-broker-other"
+                value={otherBroker}
+                onChange={setOtherBroker}
+                placeholder="NAME IT"
+                style={{ textTransform: "uppercase" }}
+              />
+            </Field>
+          )}
+          <Field label="Label" hint="Optional — how you'd refer to it." htmlFor="account-label">
+            <Input
+              id="account-label"
               value={form.label ?? ""}
-              onChange={(e) => set("label", e.target.value || null)}
+              onChange={(v) => set("label", v || null)}
               placeholder="Primary Zerodha"
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
             />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">DP ID (optional)</label>
-            <input
-              value={form.dp_id ?? ""}
-              onChange={(e) => set("dp_id", e.target.value || null)}
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm font-mono focus:border-brass-500 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Client ID (optional)</label>
-            <input
-              value={form.client_id ?? ""}
-              onChange={(e) => set("client_id", e.target.value || null)}
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm font-mono focus:border-brass-500 focus:outline-none"
-            />
-          </div>
+          </Field>
         </div>
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-60"
-        >
-          {submitting ? "Adding…" : "Add account"}
-        </button>
+        <details>
+          <summary style={{ cursor: "pointer", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+            Depository identifiers (optional)
+          </summary>
+          <div
+            style={{
+              display: "grid",
+              gap: 12,
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              marginTop: 10,
+            }}
+          >
+            <Field label="DP ID" htmlFor="account-dp">
+              <Input
+                id="account-dp"
+                value={form.dp_id ?? ""}
+                onChange={(v) => set("dp_id", v || null)}
+                style={{ fontFamily: "var(--font-mono)" }}
+              />
+            </Field>
+            <Field
+              label="Client ID"
+              hint="Your broker's own code for this account. Fills itself in from the first document that states it."
+              htmlFor="account-client"
+            >
+              <Input
+                id="account-client"
+                value={form.client_id ?? ""}
+                onChange={(v) => set("client_id", v || null)}
+                style={{ fontFamily: "var(--font-mono)" }}
+              />
+            </Field>
+          </div>
+        </details>
+
+        <div>
+          <Button type="submit" disabled={submitting || !chosenBroker}>
+            {submitting ? "Adding…" : "Add account"}
+          </Button>
+        </div>
       </form>
 
       {accounts.loading ? (
-        <p className="text-sm text-navy-400">Loading accounts…</p>
+        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          Loading accounts…
+        </p>
       ) : accounts.error ? (
-        <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{accounts.error}</p>
+        <Banner tone="negative">{accounts.error}</Banner>
       ) : accountList.length === 0 ? (
-        <p className="text-sm text-navy-400">
-          No accounts yet. Add one above — its real forwarding address will
-          appear here{ingestDomain ? ` (e.g. c001-zerodha-contractnote@${ingestDomain})` : ""}.
+        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          No accounts yet. Add one above and it becomes a place for files to land.
         </p>
       ) : (
-        <div className="space-y-4">
-          {accountList.map((a) => (
-            <div key={a.id} className="rounded-xl border border-navy-100 p-4">
-              <div className="mb-3">
-                <p className="text-sm font-medium text-navy-900">
-                  {a.label ?? a.broker} <span className="font-normal text-navy-400">({a.broker})</span>
-                </p>
-                <p className="text-xs text-navy-400 font-mono">{a.id}</p>
-              </div>
-              <EmailForwardingSetup account={a} />
-            </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          {accountList.map((account) => (
+            <AccountCard key={account.id} account={account} brokers={brokers} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function AccountCard({ account, brokers }: { account: AccountOut; brokers: BrokerOut[] }) {
+  const known = brokers.find((b) => b.code === account.broker.trim().toUpperCase());
+  return (
+    <div style={{ border: "1px solid var(--border)", background: "var(--surface)", padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <p
+          style={{
+            margin: 0,
+            font: "var(--type-body)",
+            fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
+            color: "var(--text-primary)",
+          }}
+        >
+          {account.label ?? known?.name ?? account.broker}
+        </p>
+        <Badge tone="neutral" mono>
+          {account.broker}
+        </Badge>
+        {known?.pdf_password && (
+          <span style={{ font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+            Locked PDFs open with {known.pdf_password.toLowerCase()}
+          </span>
+        )}
+      </div>
+      <EmailForwardingSetup account={account} />
     </div>
   );
 }

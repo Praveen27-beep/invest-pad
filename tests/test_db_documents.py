@@ -199,3 +199,65 @@ def test_versioning_columns_exist_for_rotation(db) -> None:
         )
         columns = {r[0] for r in cur.fetchall()}
     assert {"key_version", "pepper_version", "pan_hash_next"} <= columns
+
+
+def _other_investor(db: object, code: str = "C002") -> str:
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO investor (code, display_name) VALUES (%s,'Two') RETURNING id", (code,)
+        )
+        return str(cur.fetchone()[0])
+
+
+def test_the_same_document_stores_independently_for_another_investor(db, store, investor) -> None:
+    """Regression: document.sha256 was UNIQUE across the whole table, so the second
+    investor to send identical bytes was handed the FIRST investor's row -- someone
+    else's document id, someone else's storage key, already_present=True. Their own
+    upload was never recorded at all. A content hash identifies bytes, not a tenant."""
+    other = _other_investor(db)
+
+    mine = store_one(db, store, investor)
+    theirs = documents.store_document(
+        db,
+        store,
+        investor_id=other,
+        investor_code="C002",
+        doctype="CAS",
+        content=PDF,
+        received=date(2026, 3, 31),
+        filename="cas.pdf",
+    )
+
+    assert theirs["already_present"] is False
+    assert str(theirs["id"]) != str(mine["id"])
+    assert theirs["storage_key"] != mine["storage_key"]
+    assert len(documents.documents_for_investor(db, investor)) == 1
+    assert len(documents.documents_for_investor(db, other)) == 1
+
+    # The whole point of the hash short-circuit still holds within one investor.
+    assert store_one(db, store, investor)["already_present"] is True
+
+
+def test_erasure_spares_another_investors_identical_document(db, store, investor) -> None:
+    """The sharp end of the global UNIQUE: two investors legitimately hold the same bytes
+    (a joint account's contract note, an identical NIL statement). Sharing one row meant
+    erasing one investor deleted the object the other's record still pointed at."""
+    other = _other_investor(db)
+    mine = store_one(db, store, investor)
+    theirs = documents.store_document(
+        db,
+        store,
+        investor_id=other,
+        investor_code="C002",
+        doctype="CAS",
+        content=PDF,
+        received=date(2026, 3, 31),
+        filename="cas.pdf",
+    )
+
+    privacy.erase_investor(db, investor, store=store)
+
+    assert not store.exists(mine["storage_key"]), "the erased investor's object must go"
+    survivors = documents.documents_for_investor(db, other)
+    assert len(survivors) == 1
+    assert store.exists(theirs["storage_key"]), "the other investor's bytes must survive"

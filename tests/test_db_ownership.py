@@ -20,6 +20,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from app.terms import CURRENT_TOS_VERSION
 
 pytestmark = pytest.mark.db
 
@@ -106,7 +107,18 @@ def account_for(db):
 
 
 def _register(client, email: str) -> dict:
-    res = client.post("/auth/register", json={"email": email, "password": "password-1"})
+    res = client.post(
+        "/auth/register",
+        json={
+            "email": email,
+            "password": "password-1",
+            # Registration will not create an account without an accepted terms
+            # version any more (app.auth.schemas.RegisterRequest) -- an acceptance is
+            # a record, and a login with none is a login we cannot prove was shown
+            # anything. See migration 021.
+            "tos_version": CURRENT_TOS_VERSION,
+        },
+    )
     assert res.status_code == 201, res.text
     return res.json()
 
@@ -296,12 +308,20 @@ def test_register_is_rate_limited_per_ip(client) -> None:
         for i in range(5):
             res = client.post(
                 "/auth/register",
-                json={"email": f"rate-limit-{i}@example.com", "password": "password-1"},
+                json={
+                    "email": f"rate-limit-{i}@example.com",
+                    "password": "password-1",
+                    "tos_version": CURRENT_TOS_VERSION,
+                },
             )
             assert res.status_code == 201, res.text
         blocked = client.post(
             "/auth/register",
-            json={"email": "rate-limit-6@example.com", "password": "password-1"},
+            json={
+                "email": "rate-limit-6@example.com",
+                "password": "password-1",
+                "tos_version": CURRENT_TOS_VERSION,
+            },
         )
         assert blocked.status_code == 429
     finally:

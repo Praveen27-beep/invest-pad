@@ -83,7 +83,7 @@ def test_upstox_lowercases_the_pan() -> None:
 
 
 def test_only_the_three_documented_brokers_have_a_case_rule() -> None:
-    """A broker missing here isn't a bug -- ``_pdf_password`` treats absence as 'no
+    """A broker missing here isn't a bug -- ``pdf_password`` treats absence as 'no
     documented password rule' and falls back to an empty password -- but pinning the
     exact set means a silent fourth entry doesn't slip in unnoticed."""
     assert set(PDF_PASSWORD_CASE) == {"zerodha", "groww", "upstox"}

@@ -1,19 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
-import type {
-  AccountOut,
-  BatchSummaryOut,
-  ConsentStatusOut,
-  StageResultOut,
-} from "@/lib/api-types";
 import { useFetch } from "@/lib/use-fetch";
-import { Card, NoInvestorState } from "../PageState";
+import type { AccountOut, BatchSummaryOut, BrokerOut, ConsentStatusOut, StageResultOut } from "@/lib/api-types";
+import { Banner, Button, Card, Input } from "../ds";
 import { ConsentCapture } from "../ConsentCapture";
 import { StagingBatch } from "../StagingBatch";
+import { FileUploadStep } from "../onboarding/FileUploadStep";
 
 function summaryFromBatchRow(row: BatchSummaryOut): StageResultOut {
   return {
@@ -26,30 +22,25 @@ function summaryFromBatchRow(row: BatchSummaryOut): StageResultOut {
   };
 }
 
-type SourceType = "csv" | "contract_note_xlsx";
-
-const SOURCE_TYPES: { id: SourceType; label: string; endpoint: string; adapter: string; accept: string }[] = [
-  { id: "csv", label: "Zerodha tradebook (CSV)", endpoint: "/ingest/csv", adapter: "zerodha_tradebook", accept: ".csv" },
-  {
-    id: "contract_note_xlsx",
-    label: "Contract note (XLSX)",
-    endpoint: "/ingest/xlsx",
-    adapter: "zerodha_contract_note_xlsx",
-    accept: ".xlsx",
-  },
-];
-
+/**
+ * The upload flow, reused unchanged from the onboarding wizard's `FileUploadStep`.
+ *
+ * This used to be its own form here: a hardcoded two-way choice between "Zerodha
+ * tradebook (CSV)" and "Contract note (XLSX)", with a disabled "Adapter" dropdown that
+ * only ever showed one working option. Every broker other than Zerodha silently had
+ * nowhere to go. `FileUploadStep` already solves this the right way — one drop zone,
+ * `POST /ingest/files` classifies each file itself and routes it to whichever adapter
+ * (or none, with a plain sentence) actually applies — and it already reads the broker
+ * registry (`GET /brokers`) instead of naming brokers in this component, so a broker
+ * added there needs no change here. Reusing it rather than re-solving the same problem
+ * a second time is also what keeps the two screens from drifting apart.
+ */
 export function ImportTab() {
   const { investorId, token } = useAuth();
-  const [accountId, setAccountId] = useState("");
-  const [sourceType, setSourceType] = useState<SourceType>("csv");
-  const [files, setFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [stagedSummary, setStagedSummary] = useState<string | null>(null);
+  const router = useRouter();
   const [batches, setBatches] = useState<StageResultOut[]>([]);
   const [searchBatchId, setSearchBatchId] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [hasLiveConsent, setHasLiveConsent] = useState<boolean | null>(null);
 
   // The staged-batch list lives on the SERVER, not in this component's state -- a
@@ -63,7 +54,7 @@ export function ImportTab() {
       });
       setBatches(rows.map(summaryFromBatchRow));
     } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
+      if (err instanceof ApiError) setLoadError(err.message);
     }
   }, [investorId, token]);
 
@@ -71,12 +62,12 @@ export function ImportTab() {
     void refreshBatches();
   }, [refreshBatches]);
 
-  // Real GET endpoints now exist for both; no more localStorage caching or pasted IDs.
   const accounts = useFetch<AccountOut[]>(
     investorId ? `/investors/${investorId}/accounts` : null,
     undefined,
     token
   );
+  const brokers = useFetch<BrokerOut[]>(investorId ? "/brokers" : null, undefined, token);
 
   useEffect(() => {
     if (!investorId) return;
@@ -94,63 +85,12 @@ export function ImportTab() {
     };
   }, [investorId, token]);
 
-  // Exactly one account selects itself -- the common case is one broker, one login.
-  useEffect(() => {
-    const first = accounts.data?.[0];
-    if (first && !accountId) {
-      setAccountId(first.id);
-    }
-  }, [accounts.data, accountId]);
-
-  if (!investorId) return <NoInvestorState />;
-
-  const accountList = accounts.data ?? [];
-
-  async function handleUpload(e: React.FormEvent) {
-    e.preventDefault();
-    if (files.length === 0) {
-      setError("Choose at least one file");
-      return;
-    }
-    if (!accountId) {
-      setError("Choose the account these trades belong to");
-      return;
-    }
-    setUploading(true);
-    setError(null);
-    setStagedSummary(null);
-    try {
-      const source = SOURCE_TYPES.find((s) => s.id === sourceType)!;
-      const formData = new FormData();
-      formData.set("investor_id", investorId);
-      formData.set("account_id", accountId);
-      formData.set("adapter", source.adapter);
-      for (const file of files) formData.append("files", file);
-
-      const results = await api.post<StageResultOut[]>(source.endpoint, { formData, token });
-      // Re-read the server's list rather than splicing local state -- a duplicate
-      // comes back pointing at its existing batch, and the server list is the truth.
-      await refreshBatches();
-      const parsed = results.reduce((n, r) => n + r.parsed, 0);
-      const rejected = results.reduce((n, r) => n + r.rejected, 0);
-      const declaredHoldings = results.reduce((n, r) => n + (r.declared_holdings ?? 0), 0);
-      const notes = results.flatMap((r) => r.notes);
-      setStagedSummary(
-        `${files.length} file(s) uploaded — ${parsed} row(s) staged` +
-          (rejected ? `, ${rejected} rejected` : "") +
-          (declaredHoldings ? `, ${declaredHoldings} declared holding(s) recorded for reconciliation` : "") +
-          ". Review " +
-          (batches.length ? "the batch(es) below." : "below — the staged batch card is under this form.") +
-          (notes.length ? ` Server notes: ${notes.join("; ")}` : "")
-      );
-      setFiles([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } catch (err) {
-      if (err instanceof ApiError) setError(err.message);
-      else setError("Upload failed");
-    } finally {
-      setUploading(false);
-    }
+  if (!investorId) {
+    return (
+      <Banner tone="info">
+        No investor selected. Set one up in Settings to import trades.
+      </Banner>
+    );
   }
 
   function handleLoadBatch(e: React.FormEvent) {
@@ -160,212 +100,73 @@ export function ImportTab() {
     setBatches((prev) => {
       if (prev.some((b) => b.batch_id === trimmed)) return prev;
       return [
-        {
-          batch_id: trimmed,
-          parsed: 0,
-          rejected: 0,
-          sha256: "",
-          document_id: null,
-          notes: [],
-        },
+        { batch_id: trimmed, parsed: 0, rejected: 0, sha256: "", document_id: null, notes: [] },
         ...prev,
       ];
     });
     setSearchBatchId("");
-    setError(null);
+    setLoadError(null);
   }
 
   return (
-    <div className="space-y-6">
-      <Card title="Upload a statement">
-        <form onSubmit={handleUpload} className="space-y-4">
-          {error && <p className="rounded-lg bg-brass-50 border border-brass-200 px-3 py-2 text-sm text-brass-700">{error}</p>}
-          {stagedSummary && (
-            <p className="rounded-lg border border-positive/30 bg-positive/10 px-3 py-2 text-sm text-navy-900">
-              {stagedSummary}
-            </p>
-          )}
-
+    <div style={{ display: "grid", gap: 20 }}>
+      <Card title="Upload a statement" subtitle="From any broker — we work out what each file is.">
+        <div style={{ display: "grid", gap: 16 }}>
           {hasLiveConsent === false && (
-            <div className="rounded-lg border border-brass-300 bg-cream-50 p-4">
-              <p className="text-sm font-medium text-navy-900 mb-2">
-                One step first: record consent for this investor
-              </p>
-              <p className="text-xs text-navy-500 mb-3">
-                Indian data-protection law (DPDP) requires an explicit OK before this app
-                processes anyone&apos;s statements — including your own. It&apos;s a
-                one-time click per investor.
-              </p>
-              <ConsentCapture
-                investorId={investorId}
-                token={token}
-                onStatusChange={(live) => setHasLiveConsent(live)}
-              />
-            </div>
+            <Banner tone="warning" title="One step first: record consent for this investor">
+              Indian data-protection law (DPDP) requires an explicit OK before this app processes
+              anyone&apos;s statements, including your own. It&apos;s a one-time click per investor.
+              <div style={{ marginTop: 10 }}>
+                <ConsentCapture
+                  investorId={investorId}
+                  token={token}
+                  onStatusChange={(live) => setHasLiveConsent(live)}
+                />
+              </div>
+            </Banner>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Statement type</label>
-            <div className="flex gap-2">
-              {SOURCE_TYPES.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setSourceType(s.id);
-                    setFiles([]);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }}
-                  className={`press-scale rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                    sourceType === s.id
-                      ? "border-brass-500 bg-brass-50 text-navy-900"
-                      : "border-navy-100 text-navy-600 hover:bg-cream-50"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            {sourceType === "contract_note_xlsx" && (
-              <p className="mt-2 text-[11px] text-navy-400">
-                Contract notes are the only source of charges (brokerage, STT, GST,
-                stamp duty) — this is what a tradebook CSV can&apos;t give you. The
-                date range comes from what you download from Console (e.g. one file
-                per financial year); there&apos;s no range picker here, upload
-                whatever you exported.
-              </p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-navy-600 mb-1">Account</label>
-              {accounts.loading ? (
-                <select disabled className="w-full rounded-lg border border-navy-100 bg-cream-50 px-3 py-2 text-sm text-navy-400">
-                  <option>Loading accounts…</option>
-                </select>
-              ) : accountList.length === 0 ? (
-                <div className="rounded-lg border border-brass-200 bg-cream-50 px-3 py-2 text-sm text-brass-700">
-                  No broker account yet.{" "}
-                  <Link href="/settings" className="underline font-medium">
-                    Add one in Settings
-                  </Link>{" "}
-                  (takes a few seconds), then come back.
-                </div>
-              ) : (
-                <select
-                  required
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
-                  className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm text-navy-700 focus:border-brass-500 focus:outline-none"
-                >
-                  {accountList.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.broker}
-                      {a.label ? ` — ${a.label}` : ""}
-                      {a.client_id ? ` (${a.client_id})` : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-navy-600 mb-1">Adapter</label>
-              <select
-                disabled
-                value={SOURCE_TYPES.find((s) => s.id === sourceType)!.adapter}
-                className="w-full rounded-lg border border-navy-100 bg-cream-50 px-3 py-2 text-sm text-navy-700"
-              >
-                {sourceType === "csv" && (
-                  <>
-                    <option value="zerodha_tradebook">Zerodha tradebook (CSV)</option>
-                    <option value="generic_csv" disabled>
-                      Generic CSV — not implemented yet
-                    </option>
-                  </>
-                )}
-                {sourceType === "contract_note_xlsx" && (
-                  <option value="zerodha_contract_note_xlsx">
-                    Zerodha contract note (XLSX)
-                  </option>
-                )}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Files</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept={SOURCE_TYPES.find((s) => s.id === sourceType)!.accept}
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-              className="block w-full text-sm text-navy-600 file:mr-3 file:rounded-lg file:border-0 file:bg-navy-700 file:px-4 file:py-2 file:text-cream-50 file:text-sm"
+          {hasLiveConsent !== false && (
+            <FileUploadStep
+              accounts={accounts.data ?? []}
+              brokers={brokers.data ?? []}
+              onStaged={() => void refreshBatches()}
+              onTypeInstead={() => router.push("/transactions")}
             />
-            {files.length > 0 && (
-              <p className="mt-1 text-xs font-medium text-navy-700">
-                {files.length === 1 ? files[0]?.name : `${files.length} files selected`}
-              </p>
-            )}
-            <p className="mt-1 text-[11px] text-navy-400">
-              {sourceType === "csv" &&
-                "Console caps each tradebook export at 365 days — upload several files at once for a longer history. A re-uploaded file is simply matched to its existing batch; nothing is uploaded twice."}
-              {sourceType === "contract_note_xlsx" &&
-                "Upload one or more contract-note exports (e.g. one per financial year) to backfill history. A re-uploaded file is simply matched to its existing batch; nothing is uploaded twice."}
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            disabled={uploading || accountList.length === 0 || hasLiveConsent === false}
-            title={
-              hasLiveConsent === false
-                ? "Record consent above first"
-                : accountList.length === 0
-                  ? "Add a broker account in Settings first"
-                  : undefined
-            }
-            className="press-scale rounded-lg bg-navy-700 transition-colors px-5 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-60"
-          >
-            {uploading ? "Uploading…" : "Upload & stage"}
-          </button>
-        </form>
+          )}
+        </div>
       </Card>
 
-      {batches.length > 0 && (
-        <Card title="Review staged batches">
-          <div className="space-y-4">
+      <Card title="Review staged batches" subtitle="Nothing here reaches the ledger until you promote it.">
+        {loadError && <Banner tone="negative">{loadError}</Banner>}
+        {batches.length === 0 ? (
+          <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+            Nothing staged yet — upload a file above, or look one up by batch ID below.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
             {batches.map((b) => (
               <StagingBatch key={b.batch_id} stageResult={b} />
             ))}
           </div>
-        </Card>
-      )}
-
-      <Card title="Review existing batch by ID">
-        <form onSubmit={handleLoadBatch} className="flex gap-3">
-          <input
-            type="text"
-            value={searchBatchId}
-            onChange={(e) => setSearchBatchId(e.target.value)}
-            placeholder="e.g. c195c00f-264c-4fae-ad45-d1135da22ed2"
-            className="flex-1 rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm font-mono focus:border-brass-500 focus:outline-none"
-          />
-          <button
-            type="submit"
-            className="press-scale rounded-lg border border-navy-200 bg-cream-100 px-4 py-2 text-sm font-medium text-navy-700 hover:bg-cream-200"
-          >
-            Load Batch
-          </button>
-        </form>
+        )}
       </Card>
 
-      <p className="text-xs text-navy-400">
-        Nothing here writes to the ledger automatically — every row is staged first and
-        only reaches the transaction ledger once you promote its batch.
-      </p>
+      <Card title="Look up an existing batch" subtitle="Have a batch ID from somewhere else? Pull it in here.">
+        <form onSubmit={handleLoadBatch} style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <Input
+              value={searchBatchId}
+              onChange={setSearchBatchId}
+              placeholder="e.g. c195c00f-264c-4fae-ad45-d1135da22ed2"
+              style={{ fontFamily: "var(--font-mono)" }}
+            />
+          </div>
+          <Button type="submit" variant="secondary">
+            Load batch
+          </Button>
+        </form>
+      </Card>
     </div>
   );
 }

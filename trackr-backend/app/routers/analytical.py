@@ -22,7 +22,7 @@ see ``_benchmark``.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -39,7 +39,8 @@ from app.db.prices import (
     held_isins,
     latest_prices,
     missing_prices,
-    price_dates_present,
+    price_dates_settled,
+    record_absent_prices,
     upsert_prices,
 )
 from app.db.repository import (
@@ -47,7 +48,12 @@ from app.db.repository import (
     list_investor_ids,
     load_transactions,
 )
-from app.engine.benchmark import compute_benchmark, required_index_dates
+from app.engine.benchmark import (
+    benchmark_series,
+    compute_benchmark,
+    required_index_dates,
+    required_series_index_dates,
+)
 from app.engine.contribution import compute_contribution
 from app.engine.errors import MissingIndexLevelError, MissingPriceError, NegativeHoldingError
 from app.engine.holdings import MAX_PRICE_STALENESS_DAYS, compute_holdings
@@ -65,13 +71,14 @@ from app.engine.xirr import (
 )
 from app.prices.alerts import Notifier, get_notifier
 from app.prices.index_sources import (
-    NIFTY_TRI_INDEX_NAME,
+    TRI_INDICES,
     IndexSourceFetchFailed,
     IndexSourceFormatError,
     fetch_and_store,
 )
 from app.prices.pipe import NSE_BHAVCOPY_EARLIEST, backfill_days, fetch_day, trading_days
 from app.schemas.analytical import (
+    BenchmarkSeriesResponse,
     ContributionResponse,
     PerformanceResponse,
     PriceRefreshResponse,
@@ -83,7 +90,20 @@ from app.schemas.analytical import (
 #: literal here so FastAPI 422s on anything else before ``performance`` even runs --
 #: SENSEX_TRI still reaches the handler (it IS a valid enum member), where it gets a
 #: deliberate 400 rather than the generic validation error.
-BenchmarkName = Literal["NIFTY50_TRI", "SENSEX_TRI"]
+BenchmarkName = Literal["NIFTY50_TRI", "NIFTY500_TRI", "SENSEX_TRI"]
+
+#: What the dashboard's benchmark line plots unless a caller says otherwise. NIFTY 500
+#: rather than NIFTY 50: a retail equity portfolio is rarely large-cap-only, and holding
+#: a mid- or small-cap book against a 50-stock index reads as skill (or failure) that is
+#: really just a difference in universe. NIFTY 50 remains the default for section 6's
+#: single-figure XIRR comparison, which is a different question and a different endpoint.
+DEFAULT_SERIES_BENCHMARK = "NIFTY500_TRI"
+
+#: How far back the daily index refresh re-fetches. The TRI endpoint answers a range in
+#: one call for the same cost as a single day, so a trailing window closes the gap left
+#: by a missed or failed run without needing a separate backfill job. Two weeks covers a
+#: long exchange holiday plus a few consecutive failures.
+INDEX_REFRESH_LOOKBACK_DAYS = 14
 
 logger = logging.getLogger("app")
 
@@ -232,6 +252,62 @@ def _window_twrr(
     return compute_twrr(chain, transactions)
 
 
+def _reject_unsourced_benchmark(name: str) -> None:
+    """400 for a contract enum member with no data source behind it.
+
+    ``SENSEX_TRI`` is a valid contract enum member with no reliable free, machine-
+    fetchable source (BSE's own archive is a JS-only page, Asia Index has no documented
+    API, third-party aggregators are unfit as a system-of-record source). Rejected
+    explicitly, BEFORE any database access, rather than guessing at a number or silently
+    returning null -- a caller asking for a benchmark that does not exist yet needs to be
+    told plainly, unlike one whose data genuinely has a gap.
+    """
+    if name not in TRI_INDICES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"{name} is not yet available: no reliable public TRI data source exists",
+        )
+
+
+def _index_levels(
+    connection: Any,
+    name: str,
+    dates_needed: list[date],
+    investor_id: str,
+    request_id: str | None,
+) -> dict[date, Decimal] | None:
+    """Levels for ``dates_needed``, fetching once on a cache miss -- or ``None`` when the
+    external source is unreachable or has changed shape.
+
+    On a cache miss, one live ``fetch_and_store`` covers the whole date range in a single
+    call (the source answers a range, not one day at a time), then the same read is
+    retried. A fetch failure (``IndexSourceFetchFailed``/``IndexSourceFormatError``) is
+    caught HERE, logged with structured context, and turned into ``None`` so the caller
+    can omit an optional field rather than 500 the whole request -- exactly like
+    ``_window_xirr`` catches ``MissingPriceError``.
+    """
+    if not dates_needed:
+        return {}
+    index = TRI_INDICES[name]
+    levels = get_index_levels(connection, index.storage_name, dates_needed)
+    if all(d in levels for d in dates_needed):
+        return levels
+    try:
+        fetch_and_store(connection, min(dates_needed), max(dates_needed), index=index)
+    except (IndexSourceFetchFailed, IndexSourceFormatError) as exc:
+        logger.warning(
+            "benchmark omitted: %s fetch failed for %s (investor_id=%s request_id=%s): %s",
+            name,
+            dates_needed,
+            investor_id,
+            request_id,
+            exc,
+            exc_info=True,
+        )
+        return None
+    return get_index_levels(connection, index.storage_name, dates_needed)
+
+
 def _benchmark(
     request: Request,
     connection: Any,
@@ -243,52 +319,22 @@ def _benchmark(
     """``benchmark``'s value, or ``None`` -- section 6's cash-flow replication, computed
     only when a caller asked for it (the ``benchmark`` query param).
 
-    ``SENSEX_TRI`` is a valid contract enum member with no reliable free, machine-
-    fetchable source behind it (confirmed in Plan Mode -- BSE's own archive is a JS-only
-    page, Asia Index has no documented API, third-party aggregators are unfit as a
-    system-of-record source). Rejected here with an explicit 400, BEFORE any database
-    access, rather than this function ever guessing at a number or silently returning
-    null for it -- a caller asking for a benchmark that does not exist yet needs to be
-    told that plainly, unlike a caller who asked for nothing (the ``None`` early return
-    in ``performance`` below) or one whose data genuinely has a gap (the
-    ``MissingIndexLevelError`` catch below, which DOES degrade to null, because in that
-    case the rest of the response is still valid and the gap is a data problem, not a
-    "this isn't built" problem).
+    An unsourced name 400s (``_reject_unsourced_benchmark``) and an unreachable source
+    degrades to ``None`` (``_index_levels``) -- the two are deliberately different: a
+    caller asking for a benchmark that does not exist yet needs telling plainly, whereas
+    a transient gap should leave the rest of this response valid.
 
-    On a cache miss, one live ``fetch_and_store`` covers the whole date range needed in
-    a single call (the source answers a range, not one day at a time) -- then the same
-    read is retried. Both ``MissingIndexLevelError`` (a genuine data gap) and a live
-    fetch failure (``IndexSourceFetchFailed``/``IndexSourceFormatError`` -- the external
-    source unreachable, or its undocumented response shape having changed) are caught
-    HERE ONLY, exactly like ``_window_xirr`` catches ``MissingPriceError``:
-    logged with structured context, turned into ``None`` so the rest of the performance
-    response stays valid. An optional field's external dependency hiccupping must never
-    500 the whole request.
+    ``MissingIndexLevelError`` -- a genuine data gap in a source that answered fine -- is
+    caught HERE, exactly like ``_window_xirr`` catches ``MissingPriceError``: logged with
+    structured context and turned into ``None``. An optional field's external dependency
+    hiccupping must never 500 the whole request.
     """
-    if name == "SENSEX_TRI":
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "SENSEX_TRI is not yet available: no reliable public TRI data source exists",
-        )
-
+    _reject_unsourced_benchmark(name)
     request_id = getattr(getattr(request, "state", None), "request_id", None)
     dates_needed = required_index_dates(transactions, as_of)
-    levels = get_index_levels(connection, NIFTY_TRI_INDEX_NAME, dates_needed)
-    if any(d not in levels for d in dates_needed):
-        try:
-            fetch_and_store(connection, min(dates_needed), max(dates_needed))
-        except (IndexSourceFetchFailed, IndexSourceFormatError) as exc:
-            logger.warning(
-                "benchmark omitted: %s fetch failed for %s (investor_id=%s request_id=%s): %s",
-                name,
-                dates_needed,
-                investor_id,
-                request_id,
-                exc,
-                exc_info=True,
-            )
-            return None
-        levels = get_index_levels(connection, NIFTY_TRI_INDEX_NAME, dates_needed)
+    levels = _index_levels(connection, name, dates_needed, investor_id, request_id)
+    if levels is None:
+        return None
 
     try:
         result = compute_benchmark(transactions, levels, as_of, name)
@@ -567,6 +613,79 @@ def list_snapshots(
 
 
 @router.get(
+    "/investors/{investor_id}/benchmark-series",
+    response_model=BenchmarkSeriesResponse,
+    dependencies=[Depends(require_owned_investor)],
+)
+def benchmark_series_endpoint(
+    request: Request,
+    investor_id: str,
+    start: date,
+    end: date,
+    name: BenchmarkName = DEFAULT_SERIES_BENCHMARK,
+    advised_only: bool = False,
+    connection: Any = Depends(get_conn),
+) -> dict[str, Any]:
+    """The benchmark line for the Dashboard's value chart -- docs/ENGINE_SPEC.md section
+    6's cash-flow replication, valued at every persisted snapshot date in ``[start, end]``
+    instead of only at ``as_of``.
+
+    Points are dated to SNAPSHOT dates, not to every calendar day in the range, so each
+    one lands on the same x-position as that snapshot's market value and the two lines are
+    read against each other honestly. A range with no snapshots returns no points, exactly
+    as ``/snapshots`` returns no rows -- the chart has nothing to draw the line beside.
+
+    Why replication rather than "rebase the index to invested cost on day one": a rebased
+    line ignores every rupee contributed after the anchor, so a portfolio that simply kept
+    saving would appear to beat the index for doing nothing. Replicating the real cash
+    flows buys index units on the days money actually arrived, which is the only version
+    of this line that stays comparable to market value across a contribution.
+
+    Degrades to an empty ``points`` list rather than erroring when the index source is
+    unreachable or a level is genuinely missing, for the same reason ``_benchmark`` returns
+    ``None``: this is a decoration on a chart whose real subject -- the portfolio's own
+    value -- is already drawn from ``/snapshots``.
+    """
+    if start > end:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "start must be on or before end")
+
+    _reject_unsourced_benchmark(name)
+
+    rows = snapshots.list_snapshots_range(connection, investor_id, advised_only, start, end)
+    if not rows:
+        return {"name": name, "points": []}
+
+    transactions = load_transactions(
+        connection, investor_id=investor_id, advised_only=advised_only
+    )
+    dates = [row.as_of for row in rows]
+    dates_needed = required_series_index_dates(transactions, dates)
+    request_id = getattr(getattr(request, "state", None), "request_id", None)
+    levels = _index_levels(connection, name, dates_needed, investor_id, request_id)
+    if levels is None:
+        return {"name": name, "points": []}
+
+    try:
+        series = benchmark_series(transactions, levels, dates, name)
+    except MissingIndexLevelError as exc:
+        logger.warning(
+            "benchmark series omitted: no usable %s level for %s "
+            "(investor_id=%s request_id=%s)",
+            name,
+            exc.dates,
+            investor_id,
+            request_id,
+            exc_info=True,
+        )
+        return {"name": name, "points": []}
+
+    return {
+        "name": name,
+        "points": [{"as_of": point_date, "value": money(value)} for point_date, value in series],
+    }
+
+
+@router.get(
     "/investors/{investor_id}/contribution",
     response_model=ContributionResponse,
     dependencies=[Depends(require_owned_investor)],
@@ -634,6 +753,46 @@ def contribution(
     }
 
 
+def _refresh_index_levels(
+    connection: Any, price_date: date
+) -> tuple[dict[str, int], dict[str, str]]:
+    """Keep every fetchable TRI series current, on the same daily beat as bhavcopy.
+
+    Without this the only thing that ever wrote ``index_level`` was a benchmark request
+    finding a cache miss and fetching inline. That works, and it is why the chart
+    self-heals, but it puts an uncached external HTTP call on a dashboard load and makes
+    the benchmark line's presence depend on whether niftyindices happens to be reachable
+    at the moment somebody opens the page. Refreshing on a schedule means the read path
+    almost always hits rows that are already there.
+
+    ``INDEX_REFRESH_LOOKBACK_DAYS`` rather than just ``price_date`` because the endpoint
+    answers a range as cheaply as a day, and a short trailing window closes any gap left
+    by a missed or failed run without a separate backfill. Upserts, so re-fetching days
+    already stored costs nothing but re-writing the same numbers.
+
+    Never raises. A TRI failure is recorded and returned; bhavcopy is what the ledger is
+    actually priced from, and the benchmark line going stale must not fail the job that
+    keeps every valuation in the product correct.
+    """
+    start = price_date - timedelta(days=INDEX_REFRESH_LOOKBACK_DAYS)
+    stored: dict[str, int] = {}
+    failures: dict[str, str] = {}
+    for name, index in TRI_INDICES.items():
+        try:
+            stored[name] = fetch_and_store(connection, start, price_date, index=index)
+        except (IndexSourceFetchFailed, IndexSourceFormatError) as exc:
+            failures[name] = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "index level refresh failed for %s over %s..%s: %s",
+                name,
+                start,
+                price_date,
+                exc,
+                exc_info=True,
+            )
+    return stored, failures
+
+
 def _refresh_prices(connection: Any, settings: Settings) -> dict[str, Any]:
     """Fetch NSE + BSE bhavcopy and upsert prices for every ISIN the ledger holds.
 
@@ -651,11 +810,14 @@ def _refresh_prices(connection: Any, settings: Settings) -> dict[str, Any]:
     wanted = set(held_isins(connection))
     stored = upsert_prices(connection, [p for p in result.prices if p.isin in wanted])
     missing = missing_prices(connection, sorted(wanted), price_date)
+    index_stored, index_failures = _refresh_index_levels(connection, price_date)
 
     return {
         "prices_stored": stored,
         "missing_isins": missing,
         "price_date": price_date,
+        "index_levels_stored": index_stored,
+        "index_failures": index_failures,
     }
 
 
@@ -700,8 +862,11 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
 
     1. Price step -- mirrors ``refresh_prices``'s body, looped over ``[start, end]``
        via ``backfill_days`` (which itself clamps to ``NSE_BHAVCOPY_EARLIEST``, the
-       archive's real floor) rather than the ledger's. ``price_dates_present`` skips
-       dates already stored.
+       archive's real floor) rather than the ledger's. ``price_dates_settled`` skips
+       dates every wanted security already has an answer for -- a price OR a recorded
+       absence, scoped to dates on/after each security's first transaction. Skipping on
+       "this date has some price row" instead, as it once did, meant a newly-bought
+       security never got any history at all.
     2. Snapshot step -- for every investor, for BOTH ``advised_only`` values (docs/
        ENGINE_SPEC.md section 8 / this table's own comment: the two are genuinely
        different ledgers, not a display filter), compute and upsert one snapshot per
@@ -711,14 +876,37 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
        DATE, exactly like ``_window_xirr`` does today: logged, skipped, never aborts the
        rest of the run.
     """
-    already_priced = price_dates_present(connection, start, end)
-    price_results = backfill_days(start, end, already_present=already_priced, notifier=notifier)
+    settled = price_dates_settled(connection, start, end)
+    price_results = backfill_days(start, end, already_present=settled, notifier=notifier)
     wanted = set(held_isins(connection))
     price_dates_fetched = 0
     for result in price_results:
         stored = upsert_prices(connection, [p for p in result.prices if p.isin in wanted])
         if stored:
             price_dates_fetched += 1
+        # Whatever the archive answered with but did not mention is absent, not pending.
+        # Recording that is what lets this date count as settled next time instead of
+        # being re-fetched forever -- see app.db.prices.price_dates_settled.
+        #
+        # BOTH CONDITIONS ARE LOAD-BEARING, and neither is redundant.
+        #
+        #   `result.fetched`   -- some data actually came back. Empty on a weekend, a
+        #                         holiday, or a wholesale failure, where calling every
+        #                         security absent would settle the date forever and
+        #                         permanently lose the prices it should have had.
+        #   `result.succeeded` -- and NO exchange errored. A half-answer is the dangerous
+        #                         case: with BSE down, every BSE-only security is missing
+        #                         from a perfectly healthy-looking NSE file. Recording
+        #                         those as absent would be a permanent, silent lie about a
+        #                         real holding -- this portfolio has one of each
+        #                         (app.prices.pipe.merge names KALYANI-M and KDL-SM), which
+        #                         is the entire reason both exchanges are fetched.
+        #
+        # Being wrong in the other direction just costs one more fetch next run.
+        if result.fetched and result.succeeded:
+            record_absent_prices(
+                connection, result.price_date, sorted(wanted - {p.isin for p in result.prices})
+            )
 
     snapshots_written = 0
     skipped: list[dict[str, Any]] = []
@@ -745,13 +933,21 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
                     day_prices = latest_prices(connection, isins, on_date)
                     snap = compute_snapshot(transactions, day_prices, on_date)
                 except (MissingPriceError, NegativeHoldingError) as exc:
+                    # NO exc_info HERE, deliberately. This is an expected, handled skip on
+                    # a loop that runs once per trading day per investor per advised_only
+                    # flag -- a single unpriceable security used to emit a full traceback
+                    # for every one of those, burying a multi-year backfill under hundreds
+                    # of identical stack dumps that named no cause the message did not
+                    # already carry. The message names the ISINs, the date and the
+                    # investor, which is everything actionable; the traceback only ever
+                    # said "raised by value_holdings", which is where it always comes from.
+                    # The full list also comes back in the response as skipped_missing_price.
                     logger.warning(
                         "snapshot omitted: %s on/before %s (investor_id=%s advised_only=%s)",
                         exc,
                         on_date,
                         investor_id,
                         advised_only,
-                        exc_info=True,
                     )
                     skipped.append(
                         {

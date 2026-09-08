@@ -22,10 +22,17 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth.dependencies import get_current_user, require_owned_investor
 from app.config import Settings, get_settings
 from app.database import get_conn
-from app.db import repository
+from app.db import consent, repository
 from app.db.repository import create_account, create_investor, set_investor_pan
-from app.ingest.addresses import forwarding_addresses
-from app.schemas.investors import AccountIn, AccountOut, InvestorIn, InvestorOut, SetPanIn
+from app.ingest.addresses import forwarding_addresses, forwarding_enabled
+from app.schemas.investors import (
+    AccountIn,
+    AccountOut,
+    InvestorIn,
+    InvestorOut,
+    OnboardingStateOut,
+    SetPanIn,
+)
 
 router = APIRouter(prefix="/investors", tags=["onboarding"])
 
@@ -72,6 +79,85 @@ def list_accounts(
         )
         account["investor_id"] = investor_id
     return accounts
+
+
+@router.get(
+    "/{investor_id}/onboarding",
+    response_model=OnboardingStateOut,
+    dependencies=[Depends(require_owned_investor)],
+)
+def onboarding_state(
+    investor_id: str,
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """How far along this investor's setup is -- derived on read, storing nothing.
+
+    THERE IS NO ``setup_complete`` COLUMN, and adding one would be the bug. Every fact
+    below is already in the database for its own reasons, so completeness is a question
+    the ledger can answer rather than a flag something has to remember to set. That is
+    CLAUDE.md's one architectural rule applied to onboarding, and it is what makes the
+    answer identical on a laptop, a phone, and a browser whose storage was cleared.
+
+    WHAT "COMPLETE" MEANS, and what it deliberately excludes. Consent, an account, and at
+    least one transaction. Email forwarding is NOT part of it: plenty of people will
+    upload a file once a quarter and never touch forwarding, and that is a finished setup
+    rather than an abandoned one (docs/ONBOARDING_AS_IS_VS_TO_BE.md section 6). Counting
+    it would make declining an optional feature read as failing setup.
+
+    The one thing NOT derived here is "I'll do this later" -- that is a per-browser
+    preference about being interrupted, not a fact about the account, and it stays in the
+    client's own storage where it belongs.
+    """
+    if not repository.investor_exists(connection, investor_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"no such investor: {investor_id}")
+
+    with connection.cursor() as cur:
+        cur.execute("SELECT count(*) FROM account WHERE investor_id = %s", (investor_id,))
+        accounts = int(cur.fetchone()[0])
+        # Through account, because that is how the ledger is scoped -- ``transaction``
+        # has no investor_id column and must not grow one: an investor owns accounts,
+        # accounts own trades, and duplicating the link would be a second thing to keep
+        # true. Counted rather than fetched: this endpoint answers "is there anything
+        # here", and a 324-row ledger should not cross the wire to say "yes".
+        cur.execute(
+            """
+            SELECT count(*) FROM transaction t
+            JOIN account a ON a.id = t.account_id
+            WHERE a.investor_id = %s
+            """,
+            (investor_id,),
+        )
+        transactions = int(cur.fetchone()[0])
+        cur.execute("SELECT tos_version FROM app_user WHERE id = %s", (current_user["id"],))
+        row = cur.fetchone()
+
+    has_consent = consent.has_live_consent(connection, investor_id)
+    complete = has_consent and accounts > 0 and transactions > 0
+
+    # The first thing that is not done, so the wizard resumes where the person stopped
+    # instead of walking them back through screens they already finished. Ordered by
+    # dependency, not by preference: nothing can be uploaded without consent, and nothing
+    # has anywhere to land without an account.
+    if not has_consent:
+        next_step = "permission"
+    elif accounts == 0:
+        next_step = "brokers"
+    elif transactions == 0:
+        next_step = "history"
+    else:
+        next_step = None
+
+    return {
+        "terms_accepted": bool(row and row[0]),
+        "consent": has_consent,
+        "accounts": accounts,
+        "transactions": transactions,
+        "forwarding_available": forwarding_enabled(settings.ingest_domain),
+        "complete": complete,
+        "next_step": next_step,
+    }
 
 
 @router.put(

@@ -17,9 +17,10 @@ from decimal import Decimal
 from typing import Any
 
 from app.db import audit, documents, holdings, precedence, repository
+from app.db import identity as db_identity
 from app.engine.dedupe import make_dedupe_key
 from app.engine.types import ImportSummary, Source, Transaction, TxnType
-from app.ingest.base import REVIEW_THRESHOLD, ParseResult
+from app.ingest.base import CONFIDENCE_UNCERTAIN, REVIEW_THRESHOLD, ParseResult
 from app.storage.keys import content_hash
 
 ACTION_BATCH_STAGED = "IMPORT_BATCH_STAGED"
@@ -27,6 +28,15 @@ ACTION_BATCH_PROMOTED = "IMPORT_BATCH_PROMOTED"
 ACTION_BATCH_DISCARDED = "IMPORT_BATCH_DISCARDED"
 ACTION_BATCH_REPARSED = "IMPORT_BATCH_REPARSED"
 ACTION_ROWS_EXCLUDED = "IMPORT_ROWS_EXCLUDED"
+
+#: Rows at or BELOW this need an explicit acknowledgement before they reach the ledger.
+#:
+#: Deliberately CONFIDENCE_UNCERTAIN (0.5) and NOT ``REVIEW_THRESHOLD`` (0.9), which is
+#: the advisory flag ``review_batch`` uses. Contract-note rows score CONFIDENCE_DERIVED
+#: (0.8) because charges are apportioned rather than read, and they promote today with no
+#: ceremony -- gating on 0.9 would block every contract note this system has ever parsed.
+#: 0.5 is reserved for rows a parser could not vouch for at all.
+PROMOTE_FLOOR = CONFIDENCE_UNCERTAIN
 
 STATUS_STAGED = "STAGED"
 STATUS_PROMOTED = "PROMOTED"
@@ -39,6 +49,28 @@ class BatchNotFoundError(LookupError):
 
 class BatchAlreadyResolvedError(ValueError):
     """Promoted or discarded batches are final. Re-promoting would double-count."""
+
+
+class UnreviewedRowsError(ValueError):
+    """This batch holds rows no parser could vouch for, and nobody has said to take them.
+
+    Raised by ``promote_batch`` BEFORE anything is written, so a refused promotion leaves
+    the ledger and the batch exactly as they were.
+
+    Refusing rather than silently skipping is the whole point. A version that promoted
+    the confident rows and dropped the rest would report "inserted 7" to somebody who
+    uploaded 12, and the five that never made it would be discoverable only by counting.
+    An import that partially happened without saying so is worse than one that refused.
+    """
+
+    def __init__(self, batch_id: str, count: int) -> None:
+        self.batch_id = batch_id
+        self.count = count
+        super().__init__(
+            f"batch {batch_id} has {count} row(s) at or below confidence "
+            f"{PROMOTE_FLOOR} that no parser could verify -- promote with "
+            f"acknowledge_uncertain=true to accept them"
+        )
 
 
 class DuplicateUploadError(ValueError):
@@ -121,6 +153,10 @@ def stage_batch(
             and named a batch the ownership guard would refuse to serve -- a cross-tenant
             dead end that leaked someone else's batch id. A file hash identifies bytes,
             not a tenant.
+        app.db.identity.IdentityMismatchError: the document names an owner who is not
+            this account's -- raised before anything is stored or inserted, so a
+            refused document leaves no rows and no stored object behind. Only adapters
+            defining ``identity`` can raise this; see app.ingest.base.IdentifyingAdapter.
     """
     digest = content_hash(content)
 
@@ -134,6 +170,20 @@ def stage_batch(
         raise DuplicateUploadError(digest, str(existing[0]))
 
     result: ParseResult = adapter.parse(content, account_id=account_id, filename=filename)
+
+    # Identity check BEFORE store_document: a note belonging to somebody else must not be
+    # written into this investor's document store on its way to being refused. Optional
+    # protocol -- an adapter whose source carries no PAN (every tradebook CSV) simply does
+    # not define ``identity`` and is skipped, exactly as parse_declared_holdings is below.
+    identity_notes: list[str] = []
+    if hasattr(adapter, "identity"):
+        identity_notes = db_identity.verify(
+            conn,
+            adapter.identity(content),
+            investor_id=investor_id,
+            account_id=account_id,
+            actor_uid=actor_uid,
+        )
 
     document_id = None
     if store is not None:
@@ -169,7 +219,7 @@ def stage_batch(
                 document_id,
                 result.parsed,
                 result.rejected,
-                json.dumps(result.notes),
+                json.dumps(result.notes + identity_notes),
             ),
         )
         batch_id = str(cur.fetchone()[0])
@@ -446,7 +496,9 @@ def review_batch(conn: Any, batch_id: str) -> dict[str, Any]:
     }
 
 
-def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
+def promote_batch(
+    conn: Any, batch_id: str, actor_uid: str, acknowledge_uncertain: bool = False
+) -> ImportSummary:
     """The second explicit action. Writes staged rows to the ledger.
 
     Requires ``actor_uid``: an unattributed promotion of client financial data is a record
@@ -455,10 +507,24 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
     Reuses ``db.repository.save_transactions``, so the UNIQUE INDEX on ``dedupe_key``
     stays the enforcement rather than this module reimplementing it.
 
+    ``acknowledge_uncertain`` defaults False, so every existing caller keeps its exact
+    behaviour: rows at CONFIDENCE_DERIVED (0.8) and CONFIDENCE_CERTAIN (1.0) promote
+    untouched. It gates only rows at or below ``PROMOTE_FLOOR`` -- today that means rows
+    a parser could not verify against the document they came from (app/ingest/llm_verify).
+
+    It is batch-level, not row-level: acknowledging accepts every uncertain row in the
+    batch at once. A reviewer who wants to accept four of five has to discard and re-stage.
+    That is a real limitation and a deliberate one -- the per-row APPROVED transition it
+    would take instead is a schema change, an endpoint, and a UI, and none of that should
+    be smuggled in as a side effect of adding a parser.
+
     Raises:
         BatchAlreadyResolvedError: already promoted or discarded. Re-promoting would be a
             no-op at the ledger thanks to the unique index, but it would misreport counts
             and imply a second review that never happened.
+        UnreviewedRowsError: the batch holds rows at or below ``PROMOTE_FLOOR`` and
+            ``acknowledge_uncertain`` is False. Counted and raised before any write, so
+            the ledger and the batch are untouched.
     """
     if not actor_uid:
         raise ValueError("promotion requires an actor: who is putting this in the ledger?")
@@ -470,6 +536,17 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
             raise BatchNotFoundError(batch_id)
         if row[0] != STATUS_STAGED:
             raise BatchAlreadyResolvedError(f"batch {batch_id} is {row[0]}")
+
+        # Counted before anything is written, and before the rows are even read: a
+        # refusal must leave no trace beyond the exception itself.
+        cur.execute(
+            "SELECT count(*) FROM import_row "
+            "WHERE batch_id = %s AND status = 'STAGED' AND confidence <= %s",
+            (batch_id, PROMOTE_FLOOR),
+        )
+        uncertain = cur.fetchone()[0]
+        if uncertain and not acknowledge_uncertain:
+            raise UnreviewedRowsError(batch_id, uncertain)
 
         cur.execute(
             "SELECT id, payload FROM import_row "
@@ -585,6 +662,11 @@ def promote_batch(conn: Any, batch_id: str, actor_uid: str) -> ImportSummary:
             "skipped_duplicates": summary.skipped_duplicates,
             "excluded_by_precedence": len(excluded),
             "superseded": len(superseded),
+            # A COUNT, never a value -- audit.py: "diff must never contain a PAN, a demat
+            # number or ciphertext". This is also the record that answers, later, whether
+            # a human was told these rows came from a parser that could not verify them:
+            # the SEBI AI-usage disclosure obligation in docs/COMPLIANCE.md section 2.
+            "acknowledged_uncertain": uncertain if acknowledge_uncertain else 0,
         },
     )
     return summary

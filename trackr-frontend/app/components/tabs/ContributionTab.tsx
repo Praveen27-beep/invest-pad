@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
-import { formatMoney, signClass } from "@/lib/format";
+import { EMPTY_VALUE, formatMoney, signClass } from "@/lib/format";
 import type { ContributionResponse } from "@/lib/api-types";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { KpiCard } from "../KpiCard";
@@ -57,7 +57,7 @@ export function ContributionTab() {
       <Card title="Which holdings contributed most?">
         <p className="mb-4 text-sm text-navy-500">
           Each holding&apos;s rupee share of the portfolio&apos;s total gain over the selected
-          period (docs/ENGINE_SPEC.md section 10) — price appreciation plus dividends, net of
+          period: price appreciation plus dividends, net of
           any buying or selling done in the window. A position sold entirely during the window
           still appears, marked <span className="font-medium">Exited</span>, because it is
           often exactly the answer to &quot;which investments destroyed value?&quot;
@@ -147,7 +147,7 @@ export function ContributionTab() {
                 contribution.data?.contributions[0]
                   ? (contribution.data.contributions[0].symbol ??
                     contribution.data.contributions[0].isin)
-                  : "—"
+                  : EMPTY_VALUE
               }
               subValue={
                 contribution.data?.contributions[0]

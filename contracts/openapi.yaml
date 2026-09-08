@@ -105,6 +105,116 @@ paths:
         '409':
           description: code is already in use
 
+  /brokers:
+    get:
+      tags: [onboarding]
+      summary: Every broker the UI may offer, with honest capability flags
+      description: |
+        THE ONE REGISTRY. Three screens used to hold their own idea of what a broker is
+        -- the onboarding wizard hardcoded "ZERODHA", the Import screen hardcoded
+        "Zerodha tradebook (CSV)", and the upload help named Zerodha Console. Each was
+        right about Zerodha and silently wrong about everyone else. The backend is the
+        only side that knows which adapters exist, so it is the only side that answers.
+
+        EVERY CAPABILITY IS DERIVED SERVER-SIDE and none may be claimed optimistically:
+        `documents` comes from the deterministic upload registry, `forwarding` from the
+        email adapter registry AND this deployment's INGEST_DOMAIN, `pdf_password` by
+        applying the broker's own password transform. A broker with `documents: []` is a
+        valid, honest entry -- the account exists, files are accepted and classified,
+        and forwarding is simply not offered. See app/brokers.py.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Ordered by how common the broker is, not alphabetically
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    code: { type: string, description: "written verbatim into account.broker" }
+                    name: { type: string }
+                    documents:
+                      type: array
+                      items: { type: string }
+                      description: |
+                        Document kinds a deterministic adapter handles --
+                        tradebook_csv, contract_note_pdf, ... Empty is a valid answer
+                        and means "files accepted and classified, nothing parsed yet".
+                    parses_contract_notes: { type: boolean }
+                    parses_tradebooks: { type: boolean }
+                    document_labels:
+                      type: array
+                      items: { type: string }
+                      description: the same phrases a rejected upload uses
+                    forwarding:
+                      type: boolean
+                      description: |
+                        True only when this broker has an email adapter AND the
+                        deployment has a mail-receiving domain. False means no address
+                        exists to show -- never render one anyway.
+                    pdf_password:
+                      type: string
+                      description: 'how this broker locks contract notes; "" when undocumented'
+                    console_steps:
+                      type: array
+                      items: { type: string }
+        '401': { description: missing/invalid bearer token }
+
+  /investors/{investor_id}/onboarding:
+    get:
+      tags: [onboarding]
+      summary: How far along this investor's setup is -- derived on read
+      description: |
+        THERE IS NO setup_complete COLUMN and there must never be one. Onboarding
+        progress is derivable from rows the database already holds, so it is derived
+        like everything else here (CLAUDE.md's one architectural rule). This endpoint
+        replaces a localStorage key that lived in one browser -- the same account on a
+        phone was offered the wizard again, and offered to create a second broker
+        account with it.
+
+        `complete` is `consent && accounts > 0 && transactions > 0`. Email forwarding is
+        deliberately NOT part of it: plenty of people will upload a file once a quarter
+        and never touch forwarding, and that is a finished setup rather than an
+        abandoned one. `next_step` is the first fact that is false, so a client resumes
+        rather than restarts.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Computed per request; nothing is stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [terms_accepted, consent, accounts, transactions, forwarding_available,
+                   complete, next_step]
+                properties:
+                  terms_accepted:
+                    type: boolean
+                    description: |
+                      app_user.tos_version is set. False for accounts created before
+                      that column existed -- never back-filled.
+                  consent: { type: boolean, description: live DPDP consent }
+                  accounts: { type: integer }
+                  transactions: { type: integer }
+                  forwarding_available:
+                    type: boolean
+                    description: |
+                      This deployment can receive mail at all. When false a client omits
+                      the forwarding step rather than showing a dead address.
+                  complete: { type: boolean }
+                  next_step:
+                    type: string
+                    nullable: true
+                    enum: [permission, brokers, history, null]
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login }
+        '404': { description: no investor with this id }
+
   /investors/{investor_id}/pan:
     put:
       tags: [onboarding]
@@ -399,14 +509,14 @@ paths:
         - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
         - name: benchmark
           in: query
-          schema: { type: string, enum: [NIFTY50_TRI, SENSEX_TRI] }
+          schema: { type: string, enum: [NIFTY50_TRI, NIFTY500_TRI, SENSEX_TRI] }
           description: |
             Cash-flow-replicated index return (docs/ENGINE_SPEC.md section 6). Omitted
-            entirely -- never computed by default -- unless supplied. NIFTY50_TRI is
-            implemented (app.prices.index_sources, an NSE Indices TRI feed). SENSEX_TRI
-            is a valid enum value with no reliable free, machine-fetchable TRI source
-            behind it yet, so requesting it returns 400 rather than a null or guessed
-            benchmark.
+            entirely -- never computed by default -- unless supplied. NIFTY50_TRI and
+            NIFTY500_TRI are implemented (app.prices.index_sources, an NSE Indices TRI
+            feed). SENSEX_TRI is a valid enum value with no reliable free, machine-
+            fetchable TRI source behind it yet, so requesting it returns 400 rather than
+            a null or guessed benchmark.
       responses:
         '200':
           content:
@@ -443,6 +553,62 @@ paths:
                 items: { $ref: 'https://mei.capital/schema/snapshot.schema.json' }
         '400':
           description: start is after end
+
+  /investors/{investor_id}/benchmark-series:
+    get:
+      tags: [derived]
+      summary: The benchmark line for the Dashboard's portfolio-value chart
+      description: |
+        docs/ENGINE_SPEC.md section 6's cash-flow replication, valued at every persisted
+        snapshot date in [start, end] instead of only at as_of. Points are dated to
+        SNAPSHOT dates, not to every calendar day, so each lands on the same x-position
+        as that snapshot's market value in /snapshots and the two lines can be read
+        against each other honestly.
+
+        Replication, NOT "rebase the index to invested cost on day one": a rebased line
+        ignores every rupee contributed after the anchor, so a portfolio that simply kept
+        saving would appear to beat the index for doing nothing. Because the replication
+        buys index units on the days money actually arrived, the line starts at exactly
+        the amount first contributed -- "rebased to your invested cost" falls out of it
+        rather than needing a separate step.
+
+        A snapshot date whose index level is missing has no point at all, rather than a
+        null or a carried-forward one; the caller draws the gap, same convention as
+        /snapshots. An unreachable index source returns 200 with an empty points array,
+        never an error -- the chart's real subject, the portfolio's own value, comes from
+        /snapshots and is already drawn.
+      parameters:
+        - { name: investor_id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: start, in: query, required: true, schema: { type: string, format: date } }
+        - { name: end, in: query, required: true, schema: { type: string, format: date } }
+        - name: name
+          in: query
+          schema: { type: string, enum: [NIFTY50_TRI, NIFTY500_TRI, SENSEX_TRI], default: NIFTY500_TRI }
+          description: |
+            NIFTY 500 by default: a retail equity portfolio is rarely large-cap-only, and
+            holding a mid- or small-cap book against a 50-stock index reads as skill (or
+            failure) that is really just a difference in universe. NIFTY50_TRI remains the
+            default for /performance's single-figure benchmark XIRR, a different question.
+        - { name: advised_only, in: query, schema: { type: boolean, default: false }, description: Restrict to accounts flagged is_advised. }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, points]
+                properties:
+                  name: { type: string }
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      required: [as_of, value]
+                      properties:
+                        as_of: { type: string, format: date }
+                        value: { type: string, description: Decimal as a string -- never a float. }
+        '400':
+          description: start is after end, or a benchmark name with no data source behind it
 
   /investors/{investor_id}/lots:
     get:
@@ -540,6 +706,15 @@ paths:
         back as its own entry naming the existing batch_id (notes say so), and the
         remaining files in the same request still stage. Only an investor-level refusal
         (401/403/consent) fails the request as a whole.
+
+        VALIDATION IS THE ONE EXCEPTION, and it is all-or-nothing on purpose. Every file
+        is checked against the declared `adapter` before anything stages -- by extension
+        AND by content, so a contract note renamed `.csv` is refused here rather than
+        parsed into rejections 200 rows later. A wrong file means the wrong things were
+        picked, and half-importing the selection leaves the caller guessing which half;
+        so a mismatch is a 422 naming every offending file, with nothing staged. Callers
+        that want per-file routing instead of a declared slot should use POST
+        /ingest/files.
       security: [{ bearerAuth: [] }]
       requestBody:
         content:
@@ -564,7 +739,11 @@ paths:
                   type: object
                   required: [batch_id, parsed, rejected, sha256, document_id, notes]
                   properties:
-                    batch_id:    { type: string, format: uuid }
+                    # Null when the file was refused before any batch existed: the
+                    # document named a PAN or client code that is not this account's
+                    # (docs/INGESTION.md, "Tenant isolation"). Nothing was staged and
+                    # nothing was stored; `notes` carries the redacted reason.
+                    batch_id:    { type: string, format: uuid, nullable: true }
                     parsed:      { type: integer }
                     rejected:    { type: integer }
                     sha256:      { type: string }
@@ -572,7 +751,95 @@ paths:
                     notes:       { type: array, items: { type: string } }
         '401': { description: missing/invalid bearer token }
         '403': { description: investor not owned by this login }
-        '422': { description: unknown adapter }
+        '422':
+          description: |
+            Unknown adapter, or one or more files failed validation -- `detail` names
+            each offending file and what to do about it. Nothing staged.
+
+  /ingest/files:
+    post:
+      tags: [ingestion]
+      summary: Upload a mixed set of broker files and let the server route each one
+      description: |
+        The onboarding path. Unlike /ingest/csv and /ingest/xlsx, no `adapter` is
+        declared: each file is classified by its contents and sent to the adapter that
+        can read it. A first-time user has a downloads folder, not a taxonomy.
+
+        TWO TIERS OF CHECK, both server-side:
+          * extension -- `.pdf`, `.csv`, `.xlsx` and nothing else;
+          * content -- magic bytes for the container, then structure for the document
+            (a CSV's header row, a workbook's sheet names, a PDF's first page). This is
+            what separates a tradebook from a contract note from a CAS, and what catches
+            a file whose name does not match its bytes.
+
+        PER-FILE OUTCOMES. One unreadable file never fails the request: it comes back
+        with `ok: false` plus `reason` (what is wrong) and `hint` (what to do instead),
+        and every other file still stages. A duplicate is `ok: true` naming its existing
+        batch.
+
+        STAGING ONLY. Nothing reaches the ledger here. Promote the returned
+        `staged_batch_ids` with POST /ingest/stage/{batch_id}/promote -- routing files
+        automatically is a convenience, committing them automatically is not.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                investor_id: { type: string, format: uuid }
+                account_id:  { type: string, format: uuid }
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        '202':
+          description: One outcome per file, in upload order, plus the batches ready to promote
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files, accepted, rejected, staged_batch_ids]
+                properties:
+                  accepted: { type: integer }
+                  rejected: { type: integer }
+                  staged_batch_ids:
+                    type: array
+                    items: { type: string, format: uuid }
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [filename, ok, container, document]
+                      properties:
+                        filename:  { type: string }
+                        ok:        { type: boolean }
+                        container:
+                          type: string
+                          description: What the bytes are, from magic numbers -- never from the extension.
+                          enum: [pdf, xlsx, xls, zip, text, binary, empty]
+                        document:
+                          type: string
+                          description: What the document is, from its structure.
+                          enum:
+                            - tradebook_csv
+                            - tradebook_xlsx
+                            - contract_note_csv
+                            - contract_note_xlsx
+                            - contract_note_pdf
+                            - cas_pdf
+                            - unknown
+                        adapter:   { type: string, nullable: true }
+                        batch_id:  { type: string, format: uuid, nullable: true }
+                        parsed:    { type: integer }
+                        rejected:  { type: integer }
+                        reason:    { type: string, nullable: true, description: What is wrong, in one sentence. }
+                        hint:      { type: string, nullable: true, description: What to do instead, in one sentence. }
+                        encrypted: { type: boolean, description: A PDF we could not unlock. The fix is a PAN, not another file. }
+                        notes:     { type: array, items: { type: string } }
+        '401': { description: missing/invalid bearer token }
+        '403': { description: investor not owned by this login, or no live consent }
+        '404': { description: account does not belong to this investor }
 
   /ingest/batches:
     get:
@@ -642,11 +909,18 @@ paths:
   /ops/prices/refresh:
     post:
       tags: [ops]
-      summary: Fetch NSE + BSE bhavcopy and upsert prices
+      summary: Fetch NSE + BSE bhavcopy and upsert prices, and refresh NIFTY TRI levels
       description: |
         Runs daily ~18:30 IST. BOTH exchanges are mandatory - some SME/BSE-only
         scrips have no NSE symbol at all, and an unpriced holding makes XIRR
         uncomputable. Failure must alert, never silently serve stale prices.
+
+        The same run refreshes index_level for every fetchable TRI series over a short
+        trailing window, so the dashboard's benchmark line reads rows that are already
+        stored instead of making an uncached external call on a page load. That part is
+        best-effort and reported, never raised: a TRI source being down leaves the
+        benchmark line stale, which must not fail the job that keeps every valuation in
+        the product correct.
       responses:
         '200':
           content:
@@ -657,6 +931,20 @@ paths:
                   prices_stored: { type: integer }
                   missing_isins: { type: array, items: { type: string } }
                   price_date:    { type: string, format: date }
+                  index_levels_stored:
+                    type: object
+                    description: |
+                      Rows upserted per TRI series, keyed by index_level.index_name. A
+                      series whose fetch failed is ABSENT rather than zero: nothing was
+                      stored and nothing is known, which is not the same as the source
+                      having had no new rows.
+                    additionalProperties: { type: integer }
+                  index_failures:
+                    type: object
+                    description: |
+                      Series whose fetch or parse failed this run, with the reason.
+                      Non-empty is the signal to go and look.
+                    additionalProperties: { type: string }
 
   /ops/snapshots/run:
     post:

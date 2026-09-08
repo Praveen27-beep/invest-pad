@@ -29,18 +29,28 @@ def create_user(
     email: str,
     password_hash: str,
     display_name: str | None = None,
+    tos_version: str | None = None,
 ) -> dict[str, Any]:
     """Insert a new user. Raises ``psycopg.errors.UniqueViolation`` if the email is
     already registered -- the UNIQUE constraint is the enforcement, not a prior SELECT,
-    for the same race-condition reason ``transaction.dedupe_key`` is enforced that way."""
+    for the same race-condition reason ``transaction.dedupe_key`` is enforced that way.
+
+    ``tos_version`` is the Terms + Privacy version this person ticked at registration
+    (app.terms.CURRENT_TOS_VERSION). Stamped in the same INSERT as the account itself,
+    never in a follow-up UPDATE: an account that exists without an acceptance beside it,
+    even for one statement, is an account we cannot prove was shown anything.
+
+    ``tos_accepted_at`` is set from the same value rather than taken as an argument --
+    the caller cannot backdate an acceptance, and NULL version means NULL timestamp.
+    """
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app_user (email, password_hash, display_name)
-            VALUES (%s, %s, %s)
+            INSERT INTO app_user (email, password_hash, display_name, tos_version, tos_accepted_at)
+            VALUES (%s, %s, %s, %s::text, CASE WHEN %s::text IS NULL THEN NULL ELSE now() END)
             RETURNING id, email, display_name, is_active, created_at
             """,
-            (email, password_hash, display_name),
+            (email, password_hash, display_name, tos_version, tos_version),
         )
         row = cur.fetchone()
         return _row_dict(cur, row)

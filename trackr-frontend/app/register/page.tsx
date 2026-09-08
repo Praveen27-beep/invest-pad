@@ -5,8 +5,30 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api-client";
-import { PasswordInput } from "../components/PasswordInput";
+import { CURRENT_TOS_VERSION } from "@/lib/terms";
+import { AuthLayout, AuthError, authFormStyle } from "../components/AuthLayout";
+import { Button, Checkbox, Field, Input, PasswordInput } from "../components/ds";
 
+/**
+ * Create an account.
+ *
+ * TWO THINGS CHANGED HERE, and they are the two smallest fixes with the largest effect
+ * on a new user's first minute (docs/ONBOARDING_AS_IS_VS_TO_BE.md, screen 0).
+ *
+ * **The terms tick, which had no record anywhere.** There are two permissions in this
+ * product and only one of them was ever stored. DPDP processing consent belongs to an
+ * investor, is withdrawable, and is enforced on every ingestion path. Terms + Privacy is
+ * a contract with the LOGIN — one per user, forever, not withdrawable — and it lived
+ * nowhere at all. It is asked here because this is the moment the relationship starts,
+ * and it is the ONE step in the whole flow that is not skippable. The version is sent
+ * with the registration and stamped onto `app_user`, so what was accepted is recorded
+ * rather than assumed.
+ *
+ * **Where this lands.** It used to push to `/settings` — the most technical screen in the
+ * app, all investor codes and family group IDs, shown to someone who has not yet seen a
+ * single number. Now it lands on the dashboard: empty on day one, but it is the product,
+ * and the setup wizard opens over it.
+ */
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
@@ -14,6 +36,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -23,11 +46,23 @@ export default function RegisterPage() {
       setError("Passwords don't match");
       return;
     }
+    if (!acceptedTerms) {
+      setError("Please accept the Terms and Privacy Policy to continue");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await register({ email, password, display_name: displayName || null });
-      router.push("/settings");
+      await register({
+        email,
+        password,
+        display_name: displayName || null,
+        tos_version: CURRENT_TOS_VERSION,
+      });
+      // The dashboard, not Settings. The wizard opens over it (components/Shell.tsx),
+      // so the first screen is the thing they signed up for rather than a form asking
+      // for a family group ID.
+      router.push("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create account");
     } finally {
@@ -36,75 +71,52 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm animate-fade-in-up">
-        <div className="mb-8 text-center">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-navy-700 text-cream-50 font-heading">
-            T+
-          </span>
-          <h1 className="mt-3 font-heading text-2xl text-navy-900">Create an account</h1>
-          <p className="text-sm text-navy-400">Trackr+ portfolio intelligence</p>
-        </div>
+    <AuthLayout title="Create an account" subtitle="Trackr+ portfolio intelligence">
+      <form onSubmit={onSubmit} style={authFormStyle}>
+        <AuthError message={error} />
+        <Field label="Name" hint="Optional." htmlFor="name">
+          <Input id="name" value={displayName} onChange={setDisplayName} />
+        </Field>
+        <Field label="Email" htmlFor="email">
+          <Input id="email" type="email" required autoComplete="email" value={email} onChange={setEmail} />
+        </Field>
+        <Field label="Password" hint="At least 8 characters." htmlFor="password">
+          <PasswordInput id="password" required autoComplete="new-password" value={password} onChange={setPassword} />
+        </Field>
+        <Field label="Confirm password" htmlFor="confirm">
+          <PasswordInput
+            id="confirm"
+            required
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={setConfirmPassword}
+          />
+        </Field>
 
-        <form onSubmit={onSubmit} className="glass-card rounded-xl border border-navy-100 p-6 space-y-4">
-          {error && (
-            <p className="rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">{error}</p>
-          )}
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Name (optional)</label>
-            <input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Email</label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Password</label>
-            <PasswordInput
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={password}
-              onChange={setPassword}
-            />
-            <p className="mt-1 text-[11px] text-navy-400">At least 8 characters.</p>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-navy-600 mb-1">Confirm password</label>
-            <PasswordInput
-              required
-              minLength={8}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={setConfirmPassword}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full press-scale rounded-lg bg-navy-700 transition-colors py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-60"
-          >
-            {submitting ? "Creating…" : "Create account"}
-          </button>
-        </form>
+        <Checkbox
+          id="accept-terms"
+          checked={acceptedTerms}
+          onChange={setAcceptedTerms}
+          style={{ alignItems: "flex-start", font: "var(--type-body-sm)" }}
+          label={
+            <span style={{ display: "block", lineHeight: 1.5 }}>
+              I accept the{" "}
+              <Link href="/terms" target="_blank">
+                Terms of Service and Privacy Policy
+              </Link>
+              .
+            </span>
+          }
+        />
 
-        <p className="mt-4 text-center text-sm text-navy-400">
-          Already have an account?{" "}
-          <Link href="/login" className="text-brass-600 underline">
-            Sign in
-          </Link>
-        </p>
-      </div>
-    </div>
+        <Button type="submit" fullWidth disabled={submitting || !acceptedTerms}>
+          {submitting ? "Creating…" : "Create account"}
+        </Button>
+      </form>
+
+      <p style={{ margin: "14px 0 0", textAlign: "center", font: "var(--type-body)", color: "var(--text-tertiary)" }}>
+        Already have an account? <Link href="/login">Sign in</Link>
+      </p>
+    </AuthLayout>
   );
 }

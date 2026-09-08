@@ -70,3 +70,67 @@ class AccountOut(BaseModel):
     # app.ingest.addresses.forwarding_addresses. Empty for a broker with no adapter
     # yet, never a fabricated address for one that doesn't exist.
     forwarding_addresses: list[str] = []
+
+
+class BrokerOut(BaseModel):
+    """One entry of GET /brokers -- app.brokers.describe's output.
+
+    Every capability field is DERIVED on the server from a registry a real parser is
+    already in (app/brokers.py's module docstring says which). None of them may be
+    overridden per deployment, and none may be set optimistically: a picker that promises
+    a parser that does not exist is the exact failure this endpoint was added to stop
+    (docs/ONBOARDING_AS_IS_VS_TO_BE.md, loophole L7).
+    """
+
+    code: str
+    name: str
+    #: Document kinds a deterministic adapter handles -- "tradebook_csv",
+    #: "contract_note_pdf", ... Empty is a valid, honest answer.
+    documents: list[str] = []
+    parses_contract_notes: bool = False
+    parses_tradebooks: bool = False
+    #: The same human phrases a rejected upload uses, so the promise and the failure
+    #: message cannot describe the same file differently.
+    document_labels: list[str] = []
+    #: True only when this broker has an email adapter AND this deployment has a
+    #: mail-receiving domain. False means no address exists to show, not "not yet".
+    forwarding: bool = False
+    #: How this broker locks contract-note PDFs, in a sentence. "" when we have no
+    #: documented rule for it -- which is a thing to say, not a thing to guess.
+    pdf_password: str = ""
+    console_steps: list[str] = []
+
+
+class OnboardingStateOut(BaseModel):
+    """GET /investors/{id}/onboarding -- how far along this investor is, derived on read.
+
+    THE POINT OF THIS ENDPOINT is that there is no ``setup_complete`` column and there
+    must never be one. CLAUDE.md's one architectural rule is that state is derived rather
+    than stored, and onboarding progress already IS derivable from facts the database
+    holds for other reasons. Storing a duplicate boolean beside them is how the two start
+    disagreeing.
+
+    IT REPLACES A localStorage KEY, which is the bug it exists to fix: "they finished
+    setup" used to live in one browser, so the same account on a phone was offered the
+    wizard again -- and offered to create a second broker account with it
+    (docs/ONBOARDING_AS_IS_VS_TO_BE.md section 4, loophole L4).
+    """
+
+    #: Terms + Privacy accepted at registration. False for accounts created before
+    #: app_user.tos_version existed -- never back-filled (migration 021).
+    terms_accepted: bool
+    #: Live DPDP consent for this investor. Ingestion 403s without it.
+    consent: bool
+    accounts: int
+    transactions: int
+    #: Whether this deployment can offer email forwarding at all
+    #: (app.ingest.addresses.forwarding_enabled). When False the wizard omits that step
+    #: entirely rather than showing an address that cannot receive mail.
+    forwarding_available: bool
+    #: consent AND an account AND at least one transaction. Forwarding is deliberately
+    #: NOT part of this: declining it is a finished setup, not an abandoned one
+    #: (docs/ONBOARDING_AS_IS_VS_TO_BE.md section 6).
+    complete: bool
+    #: The first unfinished step -- "permission", "brokers", "history" -- or None when
+    #: complete. What the wizard opens on, so it resumes rather than restarts.
+    next_step: str | None = None

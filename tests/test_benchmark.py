@@ -12,7 +12,12 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from app.engine.benchmark import compute_benchmark, required_index_dates
+from app.engine.benchmark import (
+    benchmark_series,
+    compute_benchmark,
+    required_index_dates,
+    required_series_index_dates,
+)
 from app.engine.errors import MissingIndexLevelError
 from app.engine.types import Transaction, TxnType
 
@@ -133,3 +138,79 @@ def test_price_index_levels_understate_the_benchmark_versus_tri() -> None:
     assert tri.xirr is not None and price.xirr is not None
     assert tri.xirr > price.xirr
     assert tri.terminal_value > price.terminal_value
+
+
+# --- benchmark_series -------------------------------------------------------------------
+
+SNAP_A = date(2024, 3, 1)
+SNAP_B = date(2024, 9, 1)
+
+
+def test_required_series_index_dates_is_flow_dates_plus_the_requested_dates() -> None:
+    """The router fetches exactly this set. Flows AFTER the last requested date are
+    excluded -- they cannot affect any point being plotted, and fetching for them would
+    widen the range an external source is asked for on every chart load."""
+    dates = required_series_index_dates([a_buy(), a_sell()], [SNAP_A, SNAP_B])
+    assert dates == [BUY_DATE, SNAP_A, SELL_DATE, SNAP_B]
+
+
+def test_the_line_starts_at_exactly_the_amount_contributed() -> None:
+    """"Rebased to your invested cost" falls out of the replication rather than needing a
+    separate rebasing step: on the day of the only contribution, the units bought are worth
+    exactly what was paid, whatever the index level happened to be."""
+    levels = {BUY_DATE: Decimal("22000"), SNAP_A: Decimal("22000")}
+    series = benchmark_series([a_buy()], levels, [BUY_DATE, SNAP_A], "NIFTY500_TRI")
+    assert series[0] == (BUY_DATE, Decimal("20000"))
+
+
+def test_a_later_contribution_buys_more_units_rather_than_being_ignored() -> None:
+    """The failure mode a naive "rebase once at the start" line has: money added later
+    must lift the benchmark too, or a portfolio that simply saved more would appear to
+    beat the index for doing nothing."""
+    second_buy = a_buy(day=SNAP_A, quantity="100", price="200")
+    levels = {
+        BUY_DATE: Decimal("20000"),
+        SNAP_A: Decimal("20000"),
+        SNAP_B: Decimal("20000"),
+    }
+    series = dict(
+        benchmark_series([a_buy(), second_buy], levels, [BUY_DATE, SNAP_A, SNAP_B], "NIFTY500_TRI")
+    )
+    assert series[BUY_DATE] == Decimal("20000")
+    assert series[SNAP_A] == Decimal("40000")
+    assert series[SNAP_B] == Decimal("40000")
+
+
+def test_the_line_tracks_the_index_between_contributions() -> None:
+    levels = {BUY_DATE: Decimal("20000"), SNAP_A: Decimal("22000")}
+    series = dict(benchmark_series([a_buy()], levels, [BUY_DATE, SNAP_A], "NIFTY500_TRI"))
+    assert series[SNAP_A] == Decimal("22000")
+
+
+def test_dates_before_the_first_contribution_have_no_point() -> None:
+    """Zero would draw the line along the axis as though the benchmark had lost
+    everything, when in fact nothing had been invested yet."""
+    early = date(2023, 12, 1)
+    levels = {early: Decimal("19000"), BUY_DATE: Decimal("20000")}
+    series = benchmark_series([a_buy()], levels, [early, BUY_DATE], "NIFTY500_TRI")
+    assert [d for d, _ in series] == [BUY_DATE]
+
+
+def test_a_snapshot_date_with_no_index_level_is_omitted_not_carried_forward() -> None:
+    """Same posture as app.db.prices: a gap is drawn as a gap. Carrying the previous
+    level forward would show a flat benchmark on a day the index actually moved."""
+    levels = {BUY_DATE: Decimal("20000"), SNAP_B: Decimal("24000")}
+    series = benchmark_series([a_buy()], levels, [BUY_DATE, SNAP_A, SNAP_B], "NIFTY500_TRI")
+    assert [d for d, _ in series] == [BUY_DATE, SNAP_B]
+
+
+def test_a_missing_level_on_a_FLOW_date_raises_instead() -> None:
+    """A flow priced at the wrong level corrupts the unit count and therefore every later
+    point -- unlike a missing plot date, which costs one point and nothing else."""
+    with pytest.raises(MissingIndexLevelError) as exc:
+        benchmark_series([a_buy()], {SNAP_A: Decimal("22000")}, [SNAP_A], "NIFTY500_TRI")
+    assert BUY_DATE in exc.value.dates
+
+
+def test_no_transactions_means_no_line() -> None:
+    assert benchmark_series([], {SNAP_A: Decimal("22000")}, [SNAP_A], "NIFTY500_TRI") == []

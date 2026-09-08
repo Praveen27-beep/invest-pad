@@ -1,38 +1,29 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TabBar } from "../components/TabBar";
-import { TransactionsTab } from "../components/tabs/TransactionsTab";
-import { ImportTab } from "../components/tabs/ImportTab";
-import { ReconcileTab } from "../components/tabs/ReconcileTab";
 
-const PORTFOLIO_TABS = [
-  { key: "transactions", label: "Transactions" },
-  { key: "import", label: "Import" },
-  { key: "reconcile", label: "Reconcile" },
-];
+/**
+ * Legacy route. Transactions, Import and Reconcile each have their own page now, so
+ * this only exists to keep older links (and anyone's bookmarks) working — it forwards
+ * `?tab=` to the route that replaced it rather than 404ing.
+ */
+const TAB_ROUTES: Record<string, string> = {
+  transactions: "/transactions",
+  import: "/import",
+  reconcile: "/reconcile",
+};
 
 export default function PortfolioPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeTab = searchParams.get("tab") ?? "transactions";
+  const tab = searchParams.get("tab") ?? "transactions";
+  const isin = searchParams.get("isin");
 
-  function setActiveTab(key: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", key);
-    router.push(`/portfolio?${params.toString()}`);
-  }
+  useEffect(() => {
+    const base = TAB_ROUTES[tab] ?? "/transactions";
+    router.replace(isin ? `${base}?isin=${encodeURIComponent(isin)}` : base);
+  }, [tab, isin, router]);
 
-  return (
-    <div className="space-y-6">
-      <TabBar tabs={PORTFOLIO_TABS} active={activeTab} onChange={setActiveTab} />
-      {activeTab === "import" ? (
-        <ImportTab />
-      ) : activeTab === "reconcile" ? (
-        <ReconcileTab />
-      ) : (
-        <TransactionsTab />
-      )}
-    </div>
-  );
+  return null;
 }

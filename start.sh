@@ -214,28 +214,74 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 section "Step 3.5 — Daily snapshots"
 
-(cd "$BACKEND_DIR" && python - <<'PYEOF'
+# TODAY ONLY, by default. This used to hardcode a start of 2024-01-01 on every single
+# boot -- which is not the daily catch-up its own heading claims, it is the resumable
+# HISTORICAL BACKFILL: ~660 trading days of bhavcopy walked, and one snapshot attempted
+# per day per investor per advised_only flag. The ops endpoint it borrows from
+# (app/routers/analytical.py::run_snapshots) defaults start and end to today for exactly
+# this reason, calling that "the cheap daily catch-up".
+#
+# The backfill is still one command away, and it is still resumable, so it costs nothing
+# to leave it out of the hot path:
+#
+#     TRACKR_SNAPSHOT_START=2024-01-01 ./start.sh
+#
+# Run it once after importing history; after that the daily catch-up keeps up on its own.
+SNAPSHOT_START="${TRACKR_SNAPSHOT_START:-}"
+if [[ -n "$SNAPSHOT_START" ]]; then
+    step "historical backfill from $SNAPSHOT_START (resumable — safe to interrupt)"
+else
+    step "today's catch-up (set TRACKR_SNAPSHOT_START=YYYY-MM-DD for a historical backfill)"
+fi
+
+# `if (...)` rather than `(...) || warn` followed by an unconditional ok: printing an
+# error and then "ok" on the next line is what made the old version of this step so
+# confusing to read. One outcome, one line.
+if (cd "$BACKEND_DIR" && SNAPSHOT_START="$SNAPSHOT_START" python - <<'PYEOF'
 import sys, os, psycopg
 from datetime import date
-from app.config import get_settings
 from app.prices.alerts import LoggingNotifier
 from app.routers.analytical import _run_snapshots
 
 url = os.environ["DATABASE_URL"]
+raw_start = os.environ.get("SNAPSHOT_START", "").strip()
+try:
+    start = date.fromisoformat(raw_start) if raw_start else date.today()
+except ValueError:
+    print(f"  TRACKR_SNAPSHOT_START={raw_start!r} is not YYYY-MM-DD", file=sys.stderr)
+    sys.exit(1)
+
 try:
     conn = psycopg.connect(url)
-    settings = get_settings()
-    res = _run_snapshots(conn, date(2024, 1, 1), date.today(), LoggingNotifier())
+    res = _run_snapshots(conn, start, date.today(), LoggingNotifier())
     conn.commit()
     conn.close()
-    written = res.get("snapshots_written", 0)
-    fetched = res.get("price_dates_fetched", 0)
-    print(f"  snapshots written: {written}, price dates fetched: {fetched}")
 except Exception as exc:
-    print(f"  snapshots step note: {exc}", file=sys.stderr)
+    # Snapshots are a stored convenience -- every figure in this product is still
+    # derivable from the ledger on read without them -- so a failure here must not stop
+    # the stack coming up. It is reported, not swallowed: the exit code below is what
+    # turns it into a visible [warn] rather than a line nobody reads under an [ok].
+    print(f"  snapshots step failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+written = res.get("snapshots_written", 0)
+fetched = res.get("price_dates_fetched", 0)
+skipped = res.get("skipped_missing_price", []) or []
+print(f"  snapshots written: {written}, price dates fetched: {fetched}")
+if skipped:
+    # One line naming the securities, not one traceback per skipped day. A snapshot that
+    # cannot be priced is expected and handled (a missing price NEVER defaults to zero,
+    # CLAUDE.md rule 4) -- but which securities, and how many days, is worth saying once.
+    unpriced = sorted({i for s in skipped for i in (s.get("isins") or []) if i})
+    print(f"  {len(skipped)} day(s) skipped for want of a price: {', '.join(unpriced)}")
 PYEOF
-)
-ok "daily snapshots processing complete"
+); then
+    ok "daily snapshots up to date"
+else
+    warn "snapshots step did not complete — see the message above."
+    warn "The stack is still usable: every figure is derived from the ledger on read,"
+    warn "so snapshots are a stored convenience, not a prerequisite."
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 4 — FRONTEND (Next.js)

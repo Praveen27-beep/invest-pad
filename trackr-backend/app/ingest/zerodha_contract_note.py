@@ -27,7 +27,13 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.engine.types import Source, Transaction, TxnType
-from app.ingest.base import CONFIDENCE_DERIVED, ParseResult, Rejection, StagedRow
+from app.ingest.base import (
+    CONFIDENCE_DERIVED,
+    DocumentIdentity,
+    ParseResult,
+    Rejection,
+    StagedRow,
+)
 
 #: INE = equity, INF = mutual fund. Deliberately NOT [A-Z0-9]: that admits INZ000031633,
 #: Zerodha's SEBI registration, which is printed on every note.
@@ -47,6 +53,28 @@ TRADE_ROW = re.compile(
 #: notes in this project are the older kind.
 TRADE_DATE = re.compile(r"Trade\s*date\s*:\s*(\d{2}/\d{2}/\d{4})", re.I)
 CONTRACT_NUMBER = re.compile(r"Contract\s*Note\s*no\.?\s*:\s*(\S+)", re.I)
+
+#: The client's own identifiers, printed in the header block of every note.
+#:
+#: THE LABEL IS LOAD-BEARING, exactly as the ISIN prefix is above. A contract note is a
+#: note *cum tax invoice*, so it also carries the broker's GSTIN -- and a GSTIN embeds a
+#: PAN (`29AABCZ1234M1ZX`). All 40 real notes in this project contain exactly two
+#: PAN-shaped tokens: the client's and Zerodha's own. A bare `[A-Z]{5}\d{4}[A-Z]` match
+#: therefore has a coin-flip chance of verifying a document against the BROKER's identity,
+#: which would pass for every investor alike and verify nothing at all. Anchoring on the
+#: label yields exactly one match on all 40.
+#:
+#: The value pattern stays strict (5 letters, 4 digits, 1 letter) so a loose label match
+#: still cannot admit a non-PAN, and the label side stays loose ("PAN:", "PAN No:",
+#: "PAN of Client") because that wording is the part that varies between brokers.
+CLIENT_PAN = re.compile(
+    r"\bPAN\b\s*(?:of\s*Client)?\s*(?:No\.?)?\s*[:\-]?\s*([A-Z]{5}\d{4}[A-Z])", re.I
+)
+
+#: UCC -- Zerodha's Unique Client Code, the broker's own handle for the account. Checked
+#: against ``account.client_id``. Alphanumeric and short; bounded so a runaway match
+#: cannot swallow the rest of the line.
+CLIENT_UCC = re.compile(r"\bUCC\b\s*(?:of\s*Client)?\s*[:\-]?\s*([A-Z0-9]{3,12})\b", re.I)
 
 #: Every charge line states its value as a bracketed negative. What sits between the label
 #: and that value varies: a currency marker in its own brackets ("(Rs)", "(₹)"), a footnote
@@ -100,6 +128,25 @@ def extract_text(content: bytes, password: str = "") -> str:
         raise PdfTextExtractionError(f"could not read PDF: {exc}") from exc
 
 
+def parse_identity(text: str) -> DocumentIdentity:
+    """Read the client identifiers off a note's header block.
+
+    Pure text in, plain strings out -- no hashing, no database. The comparison against
+    the destination account lives in ``app.db.identity``; keeping it out of here is what
+    lets this module stay framework-free per docs/ARCHITECTURE.md.
+
+    An absent identifier comes back empty rather than raising. A note that states nothing
+    is a note this cannot vouch for, which is a different outcome from one that states
+    somebody else -- and only the caller can decide what to do about either.
+    """
+    pan = CLIENT_PAN.search(text)
+    ucc = CLIENT_UCC.search(text)
+    return DocumentIdentity(
+        pan=pan.group(1).upper() if pan else "",
+        client_code=ucc.group(1).upper() if ucc else "",
+    )
+
+
 def parse_charges(text: str) -> dict[str, Decimal]:
     """Note-level charge components. Absent lines are simply absent, never assumed zero."""
     flat = " ".join(text.split())
@@ -135,19 +182,42 @@ class ZerodhaContractNoteAdapter:
     def __init__(self, password: str = ""):
         self.password = password
 
+    def _text(self, content: bytes) -> str:
+        """Bytes -> text, however the bytes arrived. Shared by ``parse`` and
+        ``identity`` so the two can never disagree about what the document says.
+
+        Raises:
+            PdfTextExtractionError: the PDF would not open (a wrong password is the
+                usual cause) or yielded nothing.
+            UnicodeDecodeError: not a PDF and not decodable text either.
+        """
+        if content[:5] != b"%PDF-":
+            return content.decode("utf-8")
+        return extract_text(content, self.password)
+
     def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult:
         try:
-            text = (
-                content.decode("utf-8")
-                if content[:5] != b"%PDF-"
-                else extract_text(content, self.password)
-            )
+            text = self._text(content)
         except PdfTextExtractionError as exc:
             return ParseResult(rejections=[Rejection(0, str(exc))])
         except UnicodeDecodeError:
             return ParseResult(rejections=[Rejection(0, "not a readable contract note")])
 
         return self.parse_text(text, account_id, filename)
+
+    def identity(self, content: bytes) -> DocumentIdentity:
+        """The client this note names -- see ``app.ingest.base.IdentifyingAdapter``.
+
+        Returns an empty identity when the document cannot be read at all. That is not
+        this method's error to report: ``parse`` is called on the same bytes moments
+        later and rejects them with the real reason. Raising here instead would replace
+        "could not read PDF" with an identity complaint about a file that was never
+        readable in the first place.
+        """
+        try:
+            return parse_identity(self._text(content))
+        except (PdfTextExtractionError, UnicodeDecodeError):
+            return DocumentIdentity()
 
     def parse_text(self, text: str, account_id: str, filename: str = "") -> ParseResult:
         if CONTRACT_NOTE_MARKER not in text.upper():
@@ -257,7 +327,20 @@ def apportion_charges(
     total_stt: Decimal,
     account_id: str,
     contract_number: str | None,
+    confidence: Decimal = CONFIDENCE_DERIVED,
 ) -> list[StagedRow]:
+    """Spread note-level charges across a note's trades, pro rata by turnover.
+
+    ``confidence`` defaults to CONFIDENCE_DERIVED, which is what both deterministic
+    callers want and what every row this function has ever produced has scored. It is a
+    parameter so the LLM path (app/ingest/llm_verify.py) can reuse this apportionment at
+    CONFIDENCE_UNCERTAIN instead of growing a second copy that could drift from it. The
+    arithmetic is identical either way; only the claim being made about it differs.
+
+    A candidate may carry an ``evidence`` key. When present it is merged into the row's
+    ``raw`` payload, which is where a staged row records where each of its numbers came
+    from and what proved it -- see app/ingest/llm_verify.py.
+    """
     turnovers = [c["quantity"] * c["price"] for c in candidates]
     total_turnover = sum(turnovers, Decimal("0"))
 
@@ -294,12 +377,13 @@ def apportion_charges(
                     source_ref=candidate["trade_id"],
                 ),
                 # Never CERTAIN: the charge figure is apportioned, not read.
-                confidence=CONFIDENCE_DERIVED,
+                confidence=confidence,
                 raw={
                     "symbol": candidate["symbol"],
                     "exchange": candidate["exchange"],
                     "order_id": candidate["order_id"],
                     "contract_number": contract_number,
+                    **(candidate.get("evidence") or {}),
                 },
             )
         )

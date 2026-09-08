@@ -109,4 +109,92 @@ def compute_benchmark(
     return Benchmark(name=name, xirr=_solve(final_flows), terminal_value=terminal)
 
 
-__all__ = ["compute_benchmark", "required_index_dates"]
+def required_series_index_dates(
+    transactions: list[Transaction], dates: list[date]
+) -> list[date]:
+    """Every date ``benchmark_series`` needs an index level for.
+
+    Same contract as ``required_index_dates``, for the series rather than the single
+    terminal figure: the cash-flow dates that fall on or before the LAST requested date,
+    plus the requested dates themselves. Kept as its own function, and called by the
+    router before ``benchmark_series``, for the same reason -- this module does no I/O.
+    """
+    if not dates:
+        return []
+    last = max(dates)
+    rows = ordered(transactions, last)
+    flows = _transaction_flows(rows)
+    needed = {d for d, _ in flows}
+    needed.update(dates)
+    return sorted(needed)
+
+
+def benchmark_series(
+    transactions: list[Transaction],
+    index_levels: dict[date, Decimal],
+    dates: list[date],
+    name: str,
+) -> list[tuple[date, Decimal]]:
+    """``compute_benchmark``'s replication, valued at every date in ``dates`` instead of
+    only at ``as_of`` -- the line a chart draws beside market value and invested cost.
+
+    This is section 6's rule and not a second, chart-only one. The portfolio's own cash
+    flows buy and redeem index units on exactly the days they happened (units accumulate
+    with the flow sign FLIPPED, for the reason ``compute_benchmark`` sets out at length),
+    and each point is those units held at that date, marked at that date's index level::
+
+        units(t)  = sum over flows on or before t of  -amount / index_level(flow_date)
+        value(t)  = units(t) * index_level(t)
+
+    Rebasing therefore needs no separate step and no anchor date: at the first
+    contribution the line starts at exactly the amount contributed, which is what "rebased
+    to your invested cost" means, and it stays comparable after every later contribution
+    because those bought units too. A line rebased once at the start and left alone would
+    silently ignore every rupee added since, and would sit below a portfolio that simply
+    saved more.
+
+    A date whose level is missing is OMITTED from the result rather than carried forward
+    or interpolated -- the same posture ``app.db.prices`` takes, and the reason the plot
+    can draw a genuine gap. Missing levels for the FLOW dates are a different matter and
+    do raise, because a flow priced at the wrong level corrupts every later point.
+
+    Raises:
+        MissingIndexLevelError: a cash-flow date has no level. Never defaulted.
+    """
+    if not dates:
+        return []
+
+    targets = sorted(set(dates))
+    rows = ordered(transactions, targets[-1])
+    flows = sorted(_transaction_flows(rows))
+    if not flows:
+        return []
+
+    missing = sorted({d for d, _ in flows} - set(index_levels))
+    if missing:
+        raise MissingIndexLevelError(name, missing)
+
+    out: list[tuple[date, Decimal]] = []
+    units = ZERO
+    cursor = 0
+    for target in targets:
+        while cursor < len(flows) and flows[cursor][0] <= target:
+            flow_date, amount = flows[cursor]
+            units += -amount / index_levels[flow_date]
+            cursor += 1
+        level = index_levels.get(target)
+        # Before the first contribution there is nothing invested and nothing to
+        # replicate; a zero there would draw a line along the axis as if the benchmark
+        # had lost everything.
+        if level is None or units == ZERO:
+            continue
+        out.append((target, units * level))
+    return out
+
+
+__all__ = [
+    "benchmark_series",
+    "compute_benchmark",
+    "required_index_dates",
+    "required_series_index_dates",
+]

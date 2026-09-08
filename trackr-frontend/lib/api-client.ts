@@ -4,7 +4,22 @@
  * validation errors) is shaped `{ detail: string }` -- ApiError surfaces that string.
  */
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+/**
+ * Where the API lives. The localhost default is a DEVELOPMENT convenience only.
+ *
+ * It used to apply everywhere, which meant a deployment missing
+ * `NEXT_PUBLIC_API_BASE_URL` silently pointed every request at the viewer's own machine
+ * and failed as a connection error on each screen, with nothing anywhere naming the
+ * cause. A missing base URL in a production build is a deployment fault, so it says so
+ * once, plainly, rather than being papered over with a value that cannot be right.
+ *
+ * `NODE_ENV` is inlined by Next at build time, so this costs nothing at runtime and the
+ * dev fallback is not even present in a production bundle.
+ */
+const DEV_API_BASE_URL = "http://localhost:8000";
+const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production" ? "" : DEV_API_BASE_URL);
 
 export class ApiError extends Error {
   status: number;
@@ -84,6 +99,12 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
 }
 
 function buildUrl(path: string, query?: RequestOptions["query"]): string {
+  if (!BASE_URL) {
+    throw new Error(
+      "NEXT_PUBLIC_API_BASE_URL is not set for this build, so there is no API to call. " +
+        "Set it in the deployment's environment and redeploy."
+    );
+  }
   const url = new URL(path, BASE_URL);
   if (query) {
     for (const [key, value] of Object.entries(query)) {

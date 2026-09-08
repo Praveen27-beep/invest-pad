@@ -58,6 +58,7 @@ from app.routers import (
     analytical,
     assistant,
     auth,
+    brokers,
     consent,
     grievance,
     holdings,
@@ -525,6 +526,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 
 app.include_router(auth.router)
+app.include_router(brokers.router)
 app.include_router(investors.router)
 app.include_router(holdings.router)
 app.include_router(transactions.router)

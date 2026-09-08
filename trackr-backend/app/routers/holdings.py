@@ -24,11 +24,12 @@ from fastapi import APIRouter, Depends, Query
 from app import securities
 from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money, rate
-from app.db.prices import latest_prices
+from app.db.prices import latest_prices, prices_on_date
 from app.db.repository import load_transactions
 from app.engine.holdings import compute_holdings_partitioned
 from app.engine.types import ZERO, Holding
 from app.engine.valuation import value_holdings
+from app.prices.live import ist_now, ist_today, refresh_and_get
 from app.schemas.holdings import HoldingsResponse, SummaryResponse
 
 #: What an unclassified sector group is labelled. security.sector is NULL for any ISIN
@@ -73,7 +74,45 @@ def _portfolio(
     transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
     holdings, skipped = compute_holdings_partitioned(transactions, as_of=as_of)
 
-    prices = latest_prices(connection, [h.isin for h in holdings], as_of)
+    isins = [h.isin for h in holdings]
+    prices = latest_prices(connection, isins, as_of)
+
+    # Today only: three sources, in a strict order of authority.
+    #
+    #   1. Bhavcopy SETTLED FOR TODAY (`prices_on_date`, exact date -- not the
+    #      carry-forward `latest_prices` does). Once tonight's cron lands the official
+    #      file, that close is the number, and the live quote for the same ISIN is
+    #      dropped. This is the "seamless transition" in one line: nothing is deleted or
+    #      migrated, the settled row simply outranks the cached quote from the next read
+    #      on. The value it replaces is the same day's last traded price, so the figure
+    #      barely moves -- no flash, and every historical snapshot stays keyed to
+    #      bhavcopy alone.
+    #   2. The intraday yfinance quote (app.prices.live) for everything bhavcopy has not
+    #      settled today. Through the trading day that is the whole portfolio, which is
+    #      exactly the point: a dashboard opened at 11am reads live, not at yesterday's
+    #      close.
+    #   3. Yesterday's bhavcopy close, carried forward inside the staleness window --
+    #      what `latest_prices` already returned. Reached when yfinance is unreachable
+    #      or has nothing for a scrip. Still an honest, reproducible number; the ISIN
+    #      simply isn't flagged live.
+    #
+    # Anything none of the three cover falls to the unpriced bucket, unchanged.
+    #
+    # Every other `as_of` is bhavcopy-only, unconditionally: this is the entire boundary
+    # that keeps historical replay (and fixtures/golden_portfolio.json) untouched by
+    # live pricing.
+    live_isins: set[str] = set()
+    if as_of == ist_today():
+        settled = prices_on_date(connection, isins, as_of)
+        unsettled = [isin for isin in isins if isin not in settled]
+        if unsettled:
+            live_prices = refresh_and_get(connection, unsettled)
+            if live_prices:
+                live_isins = set(live_prices)
+                # Carried-forward closes lose to a live quote; today's settled bhavcopy
+                # wins over both. Dict order encodes exactly that precedence.
+                prices = {**prices, **live_prices, **settled}
+
     priced = [h for h in holdings if h.isin in prices]
     unpriced = [h for h in holdings if h.isin not in prices]
 
@@ -88,6 +127,8 @@ def _portfolio(
         "meta": meta,
         "invested": sum((h.invested for h in valued), ZERO),
         "market_value": sum((h.market_value for h in valued), ZERO),
+        "live_isins": live_isins,
+        "live_as_of": ist_now().isoformat() if live_isins else None,
     }
 
 
@@ -108,6 +149,7 @@ def _row(book: dict[str, Any], holding: Holding) -> dict[str, Any]:
         "weight_pct": rate(holding.weight_pct),
         "cagr": rate(holding.cagr),
         "cost_estimated": holding.cost_estimated,
+        "live": holding.isin in book.get("live_isins", set()),
     }
 
 
@@ -272,6 +314,7 @@ def summary(
         "allocation": _allocation(book),
         "allocation_by_sector": _sector_allocation(book),
         "allocation_by_market_cap": _market_cap_allocation(book),
+        "live_as_of": book["live_as_of"],
     }
 
 
@@ -319,4 +362,5 @@ def holdings(
         },
         "unpriced": _unpriced(book),
         "skipped": _skipped(book),
+        "live_as_of": book["live_as_of"],
     }

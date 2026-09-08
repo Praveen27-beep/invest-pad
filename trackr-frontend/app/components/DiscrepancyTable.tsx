@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { DiscrepancyOut } from "@/lib/api-types";
 import { EmptyState } from "./PageState";
+import { EMPTY_VALUE } from "@/lib/format";
 
 export function DiscrepancyTable({ rows }: { rows: DiscrepancyOut[] }) {
   if (rows.length === 0) {
@@ -26,7 +27,7 @@ export function DiscrepancyTable({ rows }: { rows: DiscrepancyOut[] }) {
             <td className="py-2 pr-3 text-right tabular-nums">{r.computed_qty}</td>
             <td className="py-2 pr-3 text-right tabular-nums">{r.declared_qty}</td>
             <td className="py-2 pr-3 text-right tabular-nums text-negative">{r.difference}</td>
-            <td className="py-2 pr-3 text-navy-500 text-xs">{r.likely_cause ?? "—"}</td>
+            <td className="py-2 pr-3 text-navy-500 text-xs">{r.likely_cause ?? EMPTY_VALUE}</td>
             <td className="py-2 text-right">
               <Link
                 href={`/transactions?isin=${encodeURIComponent(r.isin)}`}

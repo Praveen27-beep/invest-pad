@@ -13,7 +13,7 @@ export function UnpricedBanner({ unpriced }: { unpriced: UnpricedOut }) {
   return (
     <div className="rounded-lg border border-brass-500/40 bg-brass-50 px-4 py-3">
       <p className="text-sm font-medium text-navy-800">
-        {unpriced.count} holding{unpriced.count > 1 ? "s" : ""} excluded from totals —
+        {unpriced.count} holding{unpriced.count > 1 ? "s" : ""} excluded from totals:
         no current price
       </p>
       <p className="mt-1 text-xs text-navy-500">
@@ -23,7 +23,7 @@ export function UnpricedBanner({ unpriced }: { unpriced: UnpricedOut }) {
       <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-navy-600">
         {unpriced.holdings.map((h) => (
           <li key={h.isin}>
-            {h.symbol ?? h.isin} — {h.name ?? "unnamed"} ({formatMoney(h.invested)})
+            {h.symbol ?? h.isin}, {h.name ?? "unnamed"} ({formatMoney(h.invested)})
           </li>
         ))}
       </ul>

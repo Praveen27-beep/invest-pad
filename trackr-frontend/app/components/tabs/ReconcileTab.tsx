@@ -47,7 +47,7 @@ export function ReconcileTab() {
       <Card title="Declared holdings">
         <p className="mb-4 text-sm text-navy-400">
           Enter the quantities from a broker or depository statement. This compares them
-          against holdings computed by replaying your transaction ledger — it doesn&apos;t
+          against holdings computed by replaying your transaction ledger. It doesn&apos;t
           fetch a statement automatically, there&apos;s no CAS feed wired up yet.
         </p>
         <form onSubmit={handleSubmit} className="space-y-4">

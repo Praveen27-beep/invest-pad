@@ -18,7 +18,12 @@ class StageResultOut(BaseModel):
     """One adapter's ``ParseResult`` after staging. Mirrors ``db.imports.stage_batch``'s
     return value -- see docs/BACKEND_REUSE_AND_GAP_ANALYSIS.md section 2."""
 
-    batch_id: str
+    #: Null when the attachment was refused before any batch existed -- today only an
+    #: identity mismatch (app.db.identity), where the document named an owner who is not
+    #: this account's and nothing was stored or inserted. ``notes`` carries the reason.
+    #: Same reasoning as FileOutcomeOut.batch_id below, which is nullable for the
+    #: equivalent "failed before a batch existed" case on the multi-file upload path.
+    batch_id: str | None
     parsed: int
     rejected: int
     sha256: str
@@ -82,3 +87,55 @@ class PromoteResultOut(BaseModel):
 
 class DiscardRequest(BaseModel):
     reason: str
+
+
+class PromoteRequest(BaseModel):
+    """Optional body for POST /ingest/stage/{batch_id}/promote.
+
+    Absent (or false) is the ordinary case and matches every caller that existed before
+    this field: rows a parser vouched for promote with no ceremony. Setting it true says
+    "I have looked at the rows no parser could verify, and I accept them" -- which is
+    recorded as a count in the promotion's audit entry.
+    """
+
+    acknowledge_uncertain: bool = False
+
+
+class FileOutcomeOut(BaseModel):
+    """What happened to ONE file in a mixed multi-file upload (POST /ingest/files).
+
+    Deliberately not ``StageResultOut``: a file can now fail before staging exists at all
+    (wrong extension, wrong contents, locked PDF), so ``batch_id`` is optional and the
+    interesting fields are the two sentences a person reads -- ``reason`` (what is wrong)
+    and ``hint`` (what to do). A rejected file leaves no batch, no document and no rows.
+    """
+
+    filename: str
+    ok: bool
+    #: What the bytes actually are (``pdf``/``xlsx``/``text``/...), from magic numbers --
+    #: not from the extension, which is what a renamed file lies about.
+    container: str
+    #: What the document is (``tradebook_csv``, ``contract_note_pdf``, ``cas_pdf``, ...).
+    document: str
+    adapter: str | None = None
+    batch_id: str | None = None
+    parsed: int = 0
+    rejected: int = 0
+    reason: str | None = None
+    hint: str | None = None
+    #: True only when the file is a PDF we could not unlock -- the fix is a PAN in
+    #: Settings, not a different file, and the UI says so.
+    encrypted: bool = False
+    notes: list[str] = []
+
+
+class FilesUploadOut(BaseModel):
+    """POST /ingest/files. Per-file outcomes plus the counts a banner needs."""
+
+    files: list[FileOutcomeOut]
+    accepted: int
+    rejected: int
+    #: Batches that staged rows and are ready to promote. The caller promotes them with
+    #: the existing POST /ingest/stage/{id}/promote -- this route never writes to the
+    #: ledger itself (docs/INGESTION.md, "Staging: why nothing auto-commits").
+    staged_batch_ids: list[str]

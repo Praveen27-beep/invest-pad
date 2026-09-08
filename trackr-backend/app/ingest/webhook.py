@@ -20,9 +20,10 @@ import base64
 from dataclasses import dataclass
 from typing import Any
 
-from app.db import consent, crypto, imports
+from app.db import consent, crypto, identity, imports
 from app.ingest.base import Adapter
 from app.ingest.zerodha_contract_note import ZerodhaContractNoteAdapter
+from app.storage.keys import content_hash
 
 #: broker -> the case transform applied to the investor's PAN to unlock a contract-note
 #: PDF. docs/INGESTION.md "PDF password rules -- a real trap": a single hardcoded case
@@ -112,7 +113,7 @@ def resolve_account(conn: Any, investor_id: str, broker: str) -> str:
 def raw_pan(conn: Any, investor_id: str) -> str:
     """The investor's PAN as stored, with no case transform applied. Empty string when
     none is on file. Exists as its own function (rather than inlined in
-    ``_pdf_password``) so app.routers.ingest's PDF upload endpoint can resolve the same
+    ``pdf_password``) so app.routers.ingest's upload endpoints can resolve the same
     PAN without duplicating the investor_secret/crypto.decrypt query."""
     with conn.cursor() as cur:
         cur.execute("SELECT pan_enc FROM investor_secret WHERE investor_id = %s", (investor_id,))
@@ -122,7 +123,7 @@ def raw_pan(conn: Any, investor_id: str) -> str:
     return crypto.decrypt(row[0])
 
 
-def _pdf_password(conn: Any, investor_id: str, broker: str) -> str:
+def pdf_password(conn: Any, investor_id: str, broker: str) -> str:
     """PAN, cased per broker. Empty string when no PAN is on file or the broker has no
     documented password rule -- unlocking then fails inside pdfplumber, which is the
     honest outcome. Guessing a password is worse than failing to open the file."""
@@ -137,7 +138,7 @@ def adapter_for(conn: Any, investor_id: str, broker: str, doctype: str) -> Adapt
     factory = _ADAPTER_FACTORIES.get((broker, doctype))
     if factory is None:
         raise UnsupportedDocumentError(f"no adapter for broker={broker!r} doctype={doctype!r}")
-    return factory(_pdf_password(conn, investor_id, broker))
+    return factory(pdf_password(conn, investor_id, broker))
 
 
 def handle_inbound_email(
@@ -200,6 +201,29 @@ def handle_inbound_email(
                     "sha256": exc.sha256,
                     "document_id": None,
                     "notes": [f"skipped: identical file already staged as batch {exc.batch_id}"],
+                }
+            )
+            continue
+        except identity.IdentityMismatchError as exc:
+            # Caught per-attachment for the same reason DuplicateUploadError is: these
+            # share one connection, so letting it out of the loop would roll back every
+            # attachment already staged ahead of it -- and, here, the refusal audit row
+            # with them. A forwarded message can legitimately carry one investor's note
+            # and one stray attachment; the stray is refused and the rest still land.
+            #
+            # exc's message is already redacted (app.db.identity builds it from
+            # crypto.redact_pan), so it is safe to hand back to the caller.
+            results.append(
+                {
+                    "batch_id": None,
+                    "parsed": 0,
+                    "rejected": 0,
+                    # The hash is of the bytes, not of any tenant, so it is safe to
+                    # return and is the only handle a caller has on a refused
+                    # attachment -- batch_id cannot exist, nothing was staged.
+                    "sha256": content_hash(content),
+                    "document_id": None,
+                    "notes": [f"refused: {exc}"],
                 }
             )
             continue

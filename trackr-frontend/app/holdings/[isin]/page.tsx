@@ -4,8 +4,9 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
 import type { DividendSummaryOut, LotOut, RealisedOut, TransactionOut } from "@/lib/api-types";
-import { formatDate, formatMoney, formatQuantity, signClass } from "@/lib/format";
+import { EMPTY_VALUE, formatDate, formatMoney, formatQuantity, signClass } from "@/lib/format";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../../components/PageState";
+import { PageBody } from "../../components/Shell";
 
 export default function HoldingDetailPage() {
   const params = useParams<{ isin: string }>();
@@ -38,7 +39,8 @@ export default function HoldingDetailPage() {
   const dividendSummary = (dividends.data ?? []).find((d) => d.isin === isin);
 
   return (
-    <div className="space-y-6">
+    <PageBody>
+      <div className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-wide text-navy-400">ISIN</p>
         <h2 className="font-heading text-xl text-navy-900">{isin}</h2>
@@ -67,7 +69,7 @@ export default function HoldingDetailPage() {
                 return (
                   <tr key={`${l.open_date}-${i}`} className="border-b border-navy-50 last:border-0">
                     <td className="py-2 pr-3">{formatDate(l.open_date)}</td>
-                    <td className="py-2 pr-3 text-navy-500">{days >= 0 ? `${days} days` : "—"}</td>
+                    <td className="py-2 pr-3 text-navy-500">{days >= 0 ? `${days} days` : EMPTY_VALUE}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatQuantity(l.quantity_open)}</td>
                     <td className="py-2 text-right tabular-nums">{formatMoney(l.cost_per_unit, true)}</td>
                   </tr>
@@ -78,7 +80,7 @@ export default function HoldingDetailPage() {
         )}
         <p className="mt-3 text-xs text-navy-400">
           STCG/LTCG term classification is shown only for realised lots below, where the
-          engine has already computed it — not re-derived here for open lots.
+          engine has already computed it. It is not re-derived here for open lots.
         </p>
       </Card>
 
@@ -178,5 +180,6 @@ export default function HoldingDetailPage() {
         )}
       </Card>
     </div>
+    </PageBody>
   );
 }

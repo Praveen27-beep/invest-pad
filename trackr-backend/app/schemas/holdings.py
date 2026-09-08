@@ -21,6 +21,9 @@ class HoldingOut(BaseModel):
     weight_pct: float | None = None
     cagr: float | None = None
     cost_estimated: bool = False
+    #: True when `last_price` came from the intraday cache (app.prices.live), not
+    #: bhavcopy -- only ever set for as_of == today, before tonight's bhavcopy settles.
+    live: bool = False
 
 
 class TotalsOut(BaseModel):
@@ -88,6 +91,10 @@ class HoldingsResponse(BaseModel):
     totals: TotalsOut
     unpriced: UnpricedOut
     skipped: list[SkippedHoldingOut] = []
+    #: ISO 8601 timestamp of the freshest intraday quote behind any `live` holding this
+    #: response, or null when nothing here is live (a past `as_of`, or today but every
+    #: price came from bhavcopy already).
+    live_as_of: str | None = None
 
 
 class SummaryResponse(BaseModel):
@@ -102,3 +109,4 @@ class SummaryResponse(BaseModel):
     allocation: list[AllocationGroupOut]
     allocation_by_sector: list[SectorAllocationGroupOut]
     allocation_by_market_cap: list[MarketCapAllocationGroupOut]
+    live_as_of: str | None = None

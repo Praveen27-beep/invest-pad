@@ -52,14 +52,26 @@ def _hash_token(token: str) -> str:
 
 
 def register(
-    conn: Any, email: str, password: str, display_name: str | None = None
+    conn: Any,
+    email: str,
+    password: str,
+    display_name: str | None = None,
+    tos_version: str | None = None,
 ) -> dict[str, Any]:
-    """Create a new user. Raises EmailAlreadyRegisteredError if the email is taken."""
+    """Create a new user. Raises EmailAlreadyRegisteredError if the email is taken.
+
+    ``tos_version`` records which Terms + Privacy version was accepted. The route layer
+    is what insists on its presence (app.auth.schemas.RegisterRequest); it stays optional
+    here so the existing tests and any internal caller that provisions a user by another
+    route are not forced to fabricate an acceptance.
+    """
     import psycopg
 
     normalised = email.strip().lower()
     try:
-        return repository.create_user(conn, normalised, hash_password(password), display_name)
+        return repository.create_user(
+            conn, normalised, hash_password(password), display_name, tos_version
+        )
     except psycopg.errors.UniqueViolation as exc:
         raise EmailAlreadyRegisteredError(normalised) from exc
 

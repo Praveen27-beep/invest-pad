@@ -138,12 +138,125 @@ def test_valuation_runs_off_stored_prices(db, investor) -> None:
 # --- backfill support ----------------------------------------------------------
 
 
-def test_stored_dates_are_reported_so_a_backfill_can_resume(db) -> None:
+def _hold(db, isin: str, on: date, symbol: str = "X") -> None:
+    """Put ``isin`` in the ledger from ``on``, so a backfill considers it wanted from
+    that date. Uses the ``investor`` fixture's account, created by ``_TEST_ACCOUNT_ID``."""
+    import os
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO security (isin, symbol) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (isin, symbol),
+        )
+        cur.execute(
+            """
+            INSERT INTO transaction (account_id, isin, txn_date, txn_type, quantity,
+                                     price, charges, source, dedupe_key)
+            VALUES (%s, %s, %s, 'BUY', 1, 100, 0, 'MANUAL', %s)
+            """,
+            (os.environ["_TEST_ACCOUNT_ID"], isin, on, f"settled-test-{isin}-{on}"),
+        )
+
+
+def test_stored_dates_are_reported_so_a_backfill_can_resume(db, investor) -> None:
     """A three-year backfill is ~750 requests; one timeout must not mean starting over."""
+    _hold(db, BLS, date(2026, 8, 1))
     seed(db, on=date(2026, 8, 10))
     seed(db, on=date(2026, 8, 11))
-    present = dbprices.price_dates_present(db, date(2026, 8, 1), date(2026, 8, 31))
-    assert present == {date(2026, 8, 10), date(2026, 8, 11)}
+    settled = dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31))
+    assert settled == {date(2026, 8, 10), date(2026, 8, 11)}
+
+
+# --- the newly-bought-security gap, and why resumability is per (date, security) ------
+
+
+NEWCO = "INE000X01011"
+
+
+def test_a_newly_bought_security_reopens_the_dates_it_needs(db, investor) -> None:
+    """THE BUG THIS FUNCTION EXISTS TO PREVENT.
+
+    Resumability used to be keyed on the date alone: any date holding ANY price row was
+    skipped. That answers "does some security have a price here", and uses it for
+    "have we fetched this date for the securities we care about" -- two questions that
+    agree only while the ledger never changes.
+
+    Buy something new and every historical date already has prices for the older
+    holdings, so every date looks done, so bhavcopy is never re-fetched, so the new
+    holding never acquires ANY history. Observed live on this project's own database:
+    30 of 46 held securities had no price before the fortnight they were imported in.
+    """
+    _hold(db, BLS, date(2026, 8, 1))
+    seed(db, on=date(2026, 8, 10))
+    seed(db, on=date(2026, 8, 11))
+    assert dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31)) == {
+        date(2026, 8, 10),
+        date(2026, 8, 11),
+    }
+
+    # Buy something new, dated before those two days.
+    _hold(db, NEWCO, date(2026, 8, 5), symbol="NEWCO")
+
+    assert dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31)) == set(), (
+        "both dates postdate NEWCO's first transaction and have no price for it, "
+        "so a backfill must fetch them again"
+    )
+
+
+def test_a_security_is_not_wanted_before_anybody_owned_it(db, investor) -> None:
+    """The clause that stops the fix being worse than the bug.
+
+    Without it, one new holding would re-open the ENTIRE archive -- hundreds of requests
+    to establish prices for dates on which nobody held the thing and no snapshot will
+    ever ask about it.
+    """
+    _hold(db, BLS, date(2026, 8, 1))
+    seed(db, on=date(2026, 8, 10))
+    _hold(db, NEWCO, date(2026, 8, 20), symbol="NEWCO")
+
+    settled = dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31))
+    assert date(2026, 8, 10) in settled, "10 Aug predates NEWCO, so NEWCO cannot unsettle it"
+
+
+def test_a_recorded_absence_settles_a_date_that_will_never_have_a_price(db, investor) -> None:
+    """The clause that makes the fix terminate.
+
+    A scrip that legitimately did not trade -- suspended, pre-listing, an illiquid SME
+    line -- has no price on that date and never will. Without a way to record "we looked
+    and it was not there", that date stays unsettled and is re-fetched on every single
+    run, forever.
+    """
+    _hold(db, BLS, date(2026, 8, 1))
+    _hold(db, NEWCO, date(2026, 8, 1), symbol="NEWCO")
+    seed(db, on=date(2026, 8, 10))
+
+    assert dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31)) == set()
+
+    assert dbprices.record_absent_prices(db, date(2026, 8, 10), [NEWCO]) == 1
+
+    assert dbprices.price_dates_settled(db, date(2026, 8, 1), date(2026, 8, 31)) == {
+        date(2026, 8, 10)
+    }
+
+
+def test_recording_an_absence_twice_is_a_no_op(db, investor) -> None:
+    """A re-run must neither fail nor rewrite when it establishes the same absence."""
+    _hold(db, NEWCO, date(2026, 8, 1), symbol="NEWCO")
+    dbprices.record_absent_prices(db, date(2026, 8, 10), [NEWCO])
+    dbprices.record_absent_prices(db, date(2026, 8, 10), [NEWCO])
+    with db.cursor() as cur:
+        cur.execute("SELECT count(*) FROM price_absent")
+        assert cur.fetchone()[0] == 1
+
+
+def test_recording_no_absences_touches_nothing(db) -> None:
+    assert dbprices.record_absent_prices(db, date(2026, 8, 10), []) == 0
+
+
+def test_a_range_never_fetched_is_entirely_unsettled(db, investor) -> None:
+    """An empty result means "fetch all of it", which is what a first run must do."""
+    _hold(db, BLS, date(2024, 1, 1))
+    assert dbprices.price_dates_settled(db, date(2024, 1, 1), date(2024, 1, 31)) == set()
 
 
 def test_held_isins_covers_everything_ever_traded(db, investor) -> None:

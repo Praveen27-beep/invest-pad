@@ -281,3 +281,108 @@ def test_list_snapshots_range_does_not_fill_a_gap_between_two_real_rows(db, inve
 
     rows = dbsnapshots.list_snapshots_range(db, investor, False, date(2024, 8, 1), date(2024, 8, 3))
     assert [r.as_of for r in rows] == [date(2024, 8, 1), date(2024, 8, 3)]
+
+
+# --- _run_snapshots' price step: when it may record an absence, and when it may not ----
+#
+# An absence is PERMANENT -- it settles a (security, date) forever so the backfill stops
+# asking. That makes recording one on incomplete information the most expensive mistake
+# available here, and these two tests are the guard on it.
+
+
+class _StubResult:
+    """A PipeResult-shaped stand-in. Real fetches hit two live exchange archives; what is
+    under test is the decision made about the answer, not the fetching."""
+
+    def __init__(self, price_date, prices, fetched, failures=None, not_published=None):
+        self.price_date = price_date
+        self.prices = prices
+        self.fetched = fetched
+        self.failures = failures or {}
+        self.not_published = not_published or []
+
+    @property
+    def succeeded(self) -> bool:
+        return not self.failures
+
+
+def _price(isin: str, on: date, close: str = "100") -> MergedPrice:
+    return MergedPrice(isin=isin, price_date=on, close=Decimal(close), source="NSE_BHAVCOPY")
+
+
+NSE_ONLY_ISIN = "INE0O4R01018"
+BSE_ONLY_ISIN = "INE0N6U01018"
+
+
+def _hold(db, isin: str, on: date, symbol: str = "X", ref: str = "absence") -> None:
+    """Put ``isin`` in the ledger from ``on`` -- what makes the price step want it."""
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO security (isin, symbol) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (isin, symbol),
+        )
+        cur.execute(
+            """
+            INSERT INTO transaction (account_id, isin, txn_date, txn_type, quantity,
+                                     price, charges, source, dedupe_key)
+            VALUES (%s, %s, %s, 'BUY', 1, 100, 0, 'MANUAL', %s)
+            """,
+            (os.environ["_TEST_ACCOUNT_ID"], isin, on, f"{ref}-{isin}-{on}"),
+        )
+
+
+def _run_price_step(db, monkeypatch, result) -> None:
+    """Drive only _run_snapshots' price step, with the fetch replaced by ``result``."""
+    from app.prices.alerts import LoggingNotifier
+    from app.routers import analytical
+
+    monkeypatch.setattr(analytical, "backfill_days", lambda *a, **k: [result])
+    analytical._run_snapshots(db, result.price_date, result.price_date, LoggingNotifier())
+
+
+def test_a_half_answered_day_records_no_absence(db, investor, monkeypatch) -> None:
+    """THE SILENT, PERMANENT FAILURE THIS PREVENTS.
+
+    With one exchange down, the other's file is complete, well-formed and missing every
+    security that lists only on the exchange that failed. Recording those as absent would
+    settle them forever -- and this portfolio really does hold one of each
+    (app.prices.pipe.merge names KALYANI-M on BSE only and KDL-SM on NSE only), which is
+    the entire reason both exchanges are fetched at all.
+
+    Being wrong the other way costs one more fetch on the next run. Being wrong this way
+    costs a holding that is never priced again.
+    """
+    on = date(2026, 8, 10)
+    _hold(db, ISIN, on, symbol="BLS")
+    # Held, and MISSING from the half-answer below -- because the exchange it lists on is
+    # the one that failed. This is the security the bug would silently bury.
+    _hold(db, BSE_ONLY_ISIN, on, symbol="KALYANIM")
+
+    _run_price_step(
+        db,
+        monkeypatch,
+        _StubResult(on, prices=[_price(ISIN, on)], fetched={"NSE": 1}, failures={"BSE": "502"}),
+    )
+
+    with db.cursor() as cur:
+        cur.execute("SELECT count(*) FROM price_absent")
+        assert cur.fetchone()[0] == 0, "a half-answered day settles nothing"
+
+
+def test_a_day_that_answered_in_full_records_the_absences(db, investor, monkeypatch) -> None:
+    """The case absences exist for: both exchanges answered, and a held security simply
+    was not trading. Without recording that, the date is re-fetched on every run forever.
+    """
+    on = date(2026, 8, 10)
+    _hold(db, ISIN, on, symbol="BLS")
+    _hold(db, NSE_ONLY_ISIN, on, symbol="KDLSM")
+
+    _run_price_step(
+        db,
+        monkeypatch,
+        _StubResult(on, prices=[_price(ISIN, on)], fetched={"NSE": 1, "BSE": 1}),
+    )
+
+    with db.cursor() as cur:
+        cur.execute("SELECT isin FROM price_absent")
+        assert [r[0] for r in cur.fetchall()] == [NSE_ONLY_ISIN]

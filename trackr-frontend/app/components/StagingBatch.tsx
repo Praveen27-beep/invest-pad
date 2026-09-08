@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
 import { api, ApiError } from "@/lib/api-client";
 import type { PromoteResultOut, ReviewBatchOut, StageResultOut } from "@/lib/api-types";
-import { LoadingState } from "./PageState";
+import { Badge, Button } from "./ds";
 
 export function StagingBatch({ stageResult }: { stageResult: StageResultOut }) {
   const { token } = useAuth();
@@ -47,46 +47,58 @@ export function StagingBatch({ stageResult }: { stageResult: StageResultOut }) {
   const b = review.data;
 
   return (
-    <div className="glass-card animate-fade-in-up rounded-lg border border-navy-100 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-navy-900">{b?.filename ?? stageResult.batch_id}</p>
-          <p className="text-xs text-navy-400 font-mono">{stageResult.batch_id}</p>
+    <div style={{ border: "1px solid var(--border)", padding: 14, background: "var(--surface)" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, font: "var(--type-body)", fontWeight: 500, color: "var(--text-primary)" }}>
+            {b?.filename ?? stageResult.batch_id}
+          </p>
+          <p style={{ margin: "2px 0 0", font: "var(--type-label)", fontFamily: "var(--font-mono)", color: "var(--text-tertiary)" }}>
+            {stageResult.batch_id}
+          </p>
         </div>
-        {b && (
-          <span className="rounded bg-cream-200 px-2 py-1 text-xs font-medium text-navy-700">
-            {b.status}
-          </span>
-        )}
+        {b && <Badge tone="neutral">{b.status}</Badge>}
       </div>
 
-      {review.loading && <LoadingState label="Loading review…" />}
-      {review.error && <p className="mt-2 text-xs text-negative">{review.error}</p>}
+      {review.loading && (
+        <p style={{ margin: "10px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          Loading review…
+        </p>
+      )}
+      {review.error && (
+        <p style={{ margin: "10px 0 0", font: "var(--type-body-sm)", color: "var(--negative)" }}>{review.error}</p>
+      )}
 
       {b && (
-        <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
           <div>
-            <p className="text-navy-400 text-xs">Will insert</p>
-            <p className="tabular-nums text-navy-900">{b.will_insert}</p>
+            <p style={{ margin: 0, font: "var(--type-label)", color: "var(--text-tertiary)" }}>Will insert</p>
+            <p style={{ margin: "2px 0 0", font: "var(--type-body)", fontVariantNumeric: "tabular-nums", color: "var(--text-primary)" }}>
+              {b.will_insert}
+            </p>
           </div>
           <div>
-            <p className="text-navy-400 text-xs">Will skip (duplicate)</p>
-            <p className="tabular-nums text-navy-900">{b.will_skip_as_duplicate}</p>
+            <p style={{ margin: 0, font: "var(--type-label)", color: "var(--text-tertiary)" }}>Will skip (duplicate)</p>
+            <p style={{ margin: "2px 0 0", font: "var(--type-body)", fontVariantNumeric: "tabular-nums", color: "var(--text-primary)" }}>
+              {b.will_skip_as_duplicate}
+            </p>
           </div>
           <div>
-            <p className="text-navy-400 text-xs">Rejected</p>
-            <p className="tabular-nums text-navy-900">{b.rejected_count}</p>
+            <p style={{ margin: 0, font: "var(--type-label)", color: "var(--text-tertiary)" }}>Rejected</p>
+            <p style={{ margin: "2px 0 0", font: "var(--type-body)", fontVariantNumeric: "tabular-nums", color: "var(--text-primary)" }}>
+              {b.rejected_count}
+            </p>
           </div>
         </div>
       )}
 
       {b && b.needs_review.length > 0 && (
-        <p className="mt-2 text-xs text-brass-600">
+        <p style={{ margin: "10px 0 0", font: "var(--type-body-sm)", color: "var(--warning)" }}>
           {b.needs_review.length} row(s) need review before promoting.
         </p>
       )}
       {b && b.rejections.length > 0 && (
-        <ul className="mt-2 text-xs text-negative list-disc list-inside">
+        <ul style={{ margin: "10px 0 0", paddingLeft: 18, font: "var(--type-body-sm)", color: "var(--negative)" }}>
           {b.rejections.slice(0, 5).map((r) => (
             <li key={r.row_number}>
               Row {r.row_number}: {r.reason}
@@ -96,25 +108,19 @@ export function StagingBatch({ stageResult }: { stageResult: StageResultOut }) {
       )}
 
       {b && b.status === "STAGED" && (
-        <div className="mt-4 flex gap-3">
-          <button
-            onClick={promote}
-            disabled={busy}
-            className="press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-xs font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-60"
-          >
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <Button size="sm" onClick={promote} disabled={busy}>
             Promote to ledger
-          </button>
-          <button
-            onClick={discard}
-            disabled={busy}
-            className="press-scale rounded-lg border border-navy-100 px-4 py-2 text-xs text-navy-600 transition-colors hover:bg-cream-50 disabled:opacity-60"
-          >
+          </Button>
+          <Button size="sm" variant="secondary" onClick={discard} disabled={busy}>
             Discard
-          </button>
+          </Button>
         </div>
       )}
 
-      {message && <p className="mt-2 text-xs text-navy-600">{message}</p>}
+      {message && (
+        <p style={{ margin: "10px 0 0", font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>{message}</p>
+      )}
     </div>
   );
 }

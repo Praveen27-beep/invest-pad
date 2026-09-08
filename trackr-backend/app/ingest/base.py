@@ -71,6 +71,39 @@ class ParseResult:
         return len(self.rejections)
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentIdentity:
+    """Who a document says it belongs to, read off the document itself.
+
+    Exists so a broker document can be checked against the account it is being staged
+    into. An advisor runs many portfolios and picks the destination account from a
+    dropdown; the inbound-email path resolves it from an address a stranger could guess.
+    Both are ways for one investor's contract note to land in another's ledger, and the
+    document names its own owner, so it can say when that has happened.
+
+    This is ingestion-layer only -- plain strings read off the page, no hashing and no
+    database. The comparison lives in ``app.db.identity``, which is where the pepper and
+    the ``investor_secret`` row are already reachable.
+
+    Both fields are optional because not every document carries both, and an adapter
+    reports what it found rather than inventing what it did not. An empty field means
+    "not stated on this document", never "did not match".
+    """
+
+    #: Permanent Account Number as printed. Never logged or surfaced unredacted --
+    #: ``app.db.crypto.redact_pan`` exists for that.
+    pan: str = ""
+
+    #: The broker's own code for the client -- Zerodha calls it UCC. Checked against
+    #: ``account.client_id``, which is where it is already stored.
+    client_code: str = ""
+
+    def __bool__(self) -> bool:
+        """False when the document stated no identifier at all, so a caller can treat
+        "nothing to check" and "no identity block" as the same thing."""
+        return bool(self.pan or self.client_code)
+
+
 @runtime_checkable
 class Adapter(Protocol):
     """Layer 1. Produces candidate rows; never touches the ledger."""
@@ -78,3 +111,19 @@ class Adapter(Protocol):
     name: str
 
     def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult: ...
+
+
+@runtime_checkable
+class IdentifyingAdapter(Protocol):
+    """An adapter whose source names its owner on the document.
+
+    Optional and deliberately separate from ``Adapter``: a Zerodha tradebook CSV carries
+    no PAN, so requiring this of every adapter would mean either lying or a stub that
+    returns nothing. ``app.db.imports.stage_batch`` checks for the method and skips the
+    verification entirely when it is absent -- the same optional-protocol shape
+    ``parse_declared_holdings`` already uses there.
+    """
+
+    name: str
+
+    def identity(self, content: bytes) -> DocumentIdentity: ...

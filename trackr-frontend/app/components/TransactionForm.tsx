@@ -73,7 +73,7 @@ export function TransactionForm({
             ))}
           </datalist>
           <p className="mt-1 text-[11px] text-navy-400">
-            Onboarding a new account isn&apos;t wired yet — pick an account already seen on
+            Onboarding a new account isn&apos;t wired yet. Pick an account already seen on
             this investor&apos;s ledger.
           </p>
         </div>

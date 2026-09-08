@@ -135,6 +135,23 @@ class Settings(BaseSettings):
     # of the app down with it.
     gemini_api_key: str | None = None
 
+    # --- LLM-assisted document extraction (app/ai/groq.py, app/ingest/llm_*.py) -----
+    # TWO FACTS, DELIBERATELY SEPARATE. ``groq_api_key`` is "we hold credentials";
+    # ``llm_parsing_enabled`` is "we are permitted to transmit the contents of client
+    # financial documents to a fourth Data Processor" -- which docs/COMPLIANCE.md gates
+    # on a signed DPA and an MITC AI-usage clause, both currently OPEN gates.
+    #
+    # Those are not the same fact and must not share a switch: turning the feature off
+    # would otherwise mean deleting the key, which is how keys get pasted back in by
+    # whoever needs it next. A key present with the flag false is the NORMAL state.
+    groq_api_key: str | None = None
+    # Not secret-guarding, so unlike the key this may default. Swappable by env alone --
+    # Groq's endpoint is OpenAI-compatible and takes any model it serves, so trying a
+    # cheaper or newer one is a config change, not a code change. Must support
+    # response_format={"type": "json_object"}.
+    groq_model: str = "openai/gpt-oss-20b"
+    llm_parsing_enabled: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -199,6 +216,30 @@ class Settings(BaseSettings):
         return self
 
 
+
+    @model_validator(mode="after")
+    def _validate_llm_parsing(self) -> Settings:
+        """Enabling LLM parsing without the credentials it needs fails at startup, in
+        the shape ``_validate_webhook_provider`` uses -- a feature that sends personal
+        data to a third party must not discover its own misconfiguration mid-request.
+
+        Deliberately NOT gated on DEBUG, unlike ``_validate_storage_backend``. Code
+        cannot know whether a Data Processing Agreement has been signed, and a check
+        that pretended to would be dishonest about what it verified. The DPA is tracked
+        as a go-live gate in docs/COMPLIANCE.md, where a human reads it.
+        """
+        if not self.llm_parsing_enabled:
+            return self
+        missing = [
+            name
+            for name in ("groq_api_key", "groq_model")
+            if not (getattr(self, name) or "").strip()
+        ]
+        if missing:
+            raise ValueError(
+                "LLM_PARSING_ENABLED=true requires " + ", ".join(n.upper() for n in missing)
+            )
+        return self
 @lru_cache
 def get_settings() -> Settings:
     """Cached: ``Settings()`` re-reads the environment on every call otherwise, and a
