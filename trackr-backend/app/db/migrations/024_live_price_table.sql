@@ -1,4 +1,4 @@
--- 018_live_price_table.sql -- a cache for intraday prices (app.prices.yfinance_live),
+-- 024_live_price_table.sql -- a cache for intraday prices (app.prices.yfinance_live),
 -- entirely separate from `price` (bhavcopy, the ledger's authoritative source).
 --
 -- docs/ENGINE_SPEC.md's live-pricing addendum: this table backs "today, before tonight's

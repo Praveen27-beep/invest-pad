@@ -103,3 +103,42 @@ def test_an_ops_key_does_not_satisfy_the_cron_gate(monkeypatch: pytest.MonkeyPat
     with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
         res = client.get("/ops/cron/prices-refresh", headers={"X-Ops-Key": "a-real-cron-secret"})
         assert res.status_code == 401
+
+
+# --- /ops/corporate-actions/* -- same two gates, same reasoning: this mutates the
+# shared corporate_action reference table for every investor at once. ------------------
+
+
+def test_corporate_action_refresh_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/corporate-actions/refresh")
+        assert res.status_code == 401
+
+
+def test_corporate_action_exceptions_list_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.get("/ops/corporate-actions/exceptions")
+        assert res.status_code == 401
+
+
+def test_corporate_action_yfinance_discovery_requires_ops_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second discovery source mutates the same shared reference table the NSE feed
+    does, so it sits behind the identical gate -- not a lesser one for being read-mostly."""
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/corporate-actions/discover-yfinance")
+        assert res.status_code == 401
+
+
+def test_corporate_action_refresh_cron_requires_bearer_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get("/ops/corporate-actions/refresh-cron")
+        assert res.status_code == 401
+        res = client.get(
+            "/ops/corporate-actions/refresh-cron",
+            headers={"Authorization": "Bearer not-the-real-secret"},
+        )
+        assert res.status_code == 403

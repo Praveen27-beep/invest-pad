@@ -81,6 +81,7 @@ class Source(StrEnum):
     CONTRACT_NOTE = "CONTRACT_NOTE"
     EMAIL = "EMAIL"
     CORP_ACTION = "CORP_ACTION"
+    CAS = "CAS"
 
 
 class Term(StrEnum):

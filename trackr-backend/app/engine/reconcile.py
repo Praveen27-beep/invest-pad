@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from app.engine.holdings import compute_holdings
+from app.engine.holdings import compute_holdings_partitioned
 from app.engine.types import ZERO, Discrepancy, Transaction
 
 #: How close a ratio must be to a whole number before it is read as that corporate
@@ -71,11 +71,24 @@ def reconcile(
 
     Only ISINs that actually disagree are returned. A clean reconciliation is an empty
     list, not a list of zeroes.
+
+    PARTITIONED, deliberately, not the strict ``compute_holdings``: an ISIN whose own
+    ledger segment does not reconcile (``NegativeHoldingError`` -- typically the exact
+    "missing corporate action" case this function exists to diagnose) must not make
+    ``reconcile`` raise and refuse to look at every OTHER ISIN in the account. A broken
+    ISIN's computed quantity is unknowable, not zero, but it is treated as zero here for
+    one reason only: forcing a discrepancy to exist for it, so the caller (the
+    corporate-action matcher) gets a chance to explain it. If no verified action
+    explains it, the caller's own rejection path names the ISIN and the real cause
+    (``SkippedHolding.message``, not this function's generic heuristic) --
+    ``_likely_cause`` below is never the only place that ISIN's story gets told.
     """
-    computed = {h.isin: h.quantity for h in compute_holdings(transactions, as_of)}
+    computed_holdings, broken = compute_holdings_partitioned(transactions, as_of)
+    computed = {h.isin: h.quantity for h in computed_holdings}
+    broken_isins = {s.isin for s in broken}
 
     discrepancies = []
-    for isin in sorted(set(computed) | set(declared_holdings)):
+    for isin in sorted(set(computed) | set(declared_holdings) | broken_isins):
         computed_qty = computed.get(isin, ZERO)
         declared_qty = declared_holdings.get(isin, ZERO)
         if computed_qty == declared_qty:

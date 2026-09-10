@@ -25,6 +25,7 @@ a plan. Do not build ahead.
 | Allocation (by holding, sector) | |
 | Daily EOD price pipe (NSE + BSE) | Both exchanges mandatory |
 | **Reconciliation vs CAS/broker holdings** | The corporate-action detector |
+| Verified corporate-action matching | **Added after the original Phase 1 table; revised again when the direct-apply path below was added.** Turns the detector's text hypothesis into a transaction, two ways: (1) matched against `reconcile()`'s output and staged through the existing review/promote flow, for discovery against a real declared-holdings statement; (2) applied directly to an account's own ledger with no staging step, for a table entry already VERIFIED and price-corroborated — triggered automatically on every import and on every new VERIFIED entry, so a known corporate action does not wait on a person per affected account. See `docs/ENGINE_SPEC.md` §7, "Matching against verified corporate actions" |
 | Gmail forwarding ingestion | Contract notes |
 | LLM-assisted extraction for unrecognised documents | **Added after the original Phase 1 table.** A recovery path for the two rows above, not a new capability: documents no deterministic parser claims currently produce zero rows. Off by default (`LLM_PARSING_ENABLED`), staging-only, and every value is proved against the document before it can be staged — see `docs/INGESTION.md`, "Extraction pipeline" |
 | Audit log | DPDP + SEBI record-keeping |

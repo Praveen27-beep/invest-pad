@@ -1,10 +1,16 @@
-"""UDiFF bhavcopy parsing -- one parser, both exchanges.
+"""UDiFF bhavcopy parsing -- one parser, both exchanges (and, via
+``app.prices.sources.LegacyNseBhavcopySource``, the pre-2024 NSE archive too).
 
 NSE and BSE now publish the same UDiFF layout with identical column headers, including an
-ISIN column. That last point is what makes this pipe possible at all: the legacy NSE
-``cmDDMMMYYYYbhav`` format carries only SYMBOL, so keying on it would have required a
-symbol lookup table and reintroduced exactly the ticker-reuse problem CLAUDE.md opens with
-(Indosolar's ISIN now resolves to WAAREEINDO; the ISIN never moved).
+ISIN column. That column is what makes this pipe trustworthy at all -- keying on SYMBOL
+would have reintroduced exactly the ticker-reuse problem CLAUDE.md opens with (Indosolar's
+ISIN now resolves to WAAREEINDO; the ISIN never moved).
+
+The legacy NSE ``cmDDMMMYYYYbhav`` format (pre-2024, a different URL and column layout --
+see ``app.prices.sources.LEGACY_NSE_URL``) DOES carry an ISIN column too, confirmed against
+a real fetched file -- an earlier version of this docstring claimed otherwise. Rather than
+add a second parser, ``LegacyNseBhavcopySource`` re-shapes that file into these same column
+names before this function ever sees it, so this stays the only bhavcopy parser.
 """
 
 from __future__ import annotations

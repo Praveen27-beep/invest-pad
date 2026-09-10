@@ -506,11 +506,20 @@ tests pass.
   SGB, or any other class not yet flowing through this system would be building ahead
   of data that doesn't exist, the same mistake `CLAUDE.md`'s scope-discipline section
   names for `schema/asset_classes.json` generally.
-- **The "Auto Corporate Actions" tool itself as a user-facing feature.** Sessions 5 and
-  6 build the underlying cost-basis mechanics (bonus stripping, demerger cost ratios)
-  correctly; a UI or automated-detection tool that surfaces corporate actions for
-  confirmation is a separate, unscoped feature not named in `docs/FEATURE_BACKLOG.md`'s
-  Phase 3 table.
+- ~~**The "Auto Corporate Actions" tool itself as a user-facing feature.**~~
+  **Superseded, twice.** Sessions 5 and 6 build the underlying cost-basis mechanics
+  (bonus stripping, demerger cost ratios) correctly; a detection tool that surfaces
+  corporate actions for confirmation was, at the time this was written, a separate,
+  unscoped feature. It is now built, in two parts: `app.engine.corporate_actions` +
+  `app.ingest.corporate_action_matcher` + `app.db.corporate_actions`, matching a
+  maintained reference table against `reconcile()`'s output and staging the result
+  through the existing review/promote flow; and, added when manual review per affected
+  account turned out not to scale to many users and many securities,
+  `apply_known_actions_for_account`/`_for_investor`, which applies an
+  already-VERIFIED, price-corroborated entry directly with no staging step, triggered
+  automatically on every import and on every new VERIFIED table entry. See
+  `docs/ENGINE_SPEC.md` §7. Left here, struck through rather than deleted, as the
+  record of the scoping decision this superseded.
 - **Buyback tax treatment as a settled fact.** `docs/TAX_ENGINE.md` flags this
   explicitly: treatment changed 1 Oct 2024 (deemed dividend, not capital gains) and the
   spec itself says "verify current treatment before implementing." No session above

@@ -150,3 +150,49 @@ def test_a_holding_with_no_account_id_is_skipped_not_written_with_a_null(db, inv
         ],
     )
     assert written == 0
+
+
+# --- latest_snapshot: reading the declared side back out ------------------------
+
+
+def test_latest_snapshot_returns_the_declared_quantity_per_isin(db, investor) -> None:
+    holdings.record_snapshot(
+        db,
+        [
+            FakeHolding("INE153T01027", _account_id(), Decimal("120"), date(2026, 6, 30)),
+            FakeHolding("INE0N6U01018", _account_id(), Decimal("40"), date(2026, 6, 30)),
+        ],
+    )
+    db.commit()
+
+    assert holdings.latest_snapshot(db, _account_id()) == {
+        "INE153T01027": Decimal("120"),
+        "INE0N6U01018": Decimal("40"),
+    }
+
+
+def test_latest_snapshot_prefers_the_newest_statement_per_isin(db, investor) -> None:
+    """Per ISIN, not one global MAX(snap_date): a CAS lists only what was held on its
+    own statement date, so an ISIN absent from the newest file must keep its last
+    declared quantity rather than silently disappearing from the reconciliation."""
+    holdings.record_snapshot(
+        db,
+        [
+            FakeHolding("INE153T01027", _account_id(), Decimal("100"), date(2026, 5, 31)),
+            FakeHolding("INE0N6U01018", _account_id(), Decimal("40"), date(2026, 5, 31)),
+        ],
+    )
+    holdings.record_snapshot(
+        db,
+        [FakeHolding("INE153T01027", _account_id(), Decimal("150"), date(2026, 6, 30))],
+    )
+    db.commit()
+
+    assert holdings.latest_snapshot(db, _account_id()) == {
+        "INE153T01027": Decimal("150"),  # newer statement wins
+        "INE0N6U01018": Decimal("40"),  # absent from the newer file, still declared
+    }
+
+
+def test_latest_snapshot_is_empty_when_no_cas_was_ever_imported(db, investor) -> None:
+    assert holdings.latest_snapshot(db, _account_id()) == {}

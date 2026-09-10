@@ -2,16 +2,29 @@
 
 The rule this module exists to enforce: **an adapter never writes to the ledger.** Parsing
 produces staged rows and stops. A second explicit call, attributed to a person, promotes
-them. No automated path can put a row into a client's financial record.
+them. No adapter-parsed row reaches the ledger without that human step.
 
 Why that matters more than it looks: a parser that auto-commits is a parser whose bugs land
 in a client's cost basis before anyone reads the output. Staging turns a bad parse into a
 discarded batch rather than a correction exercise.
+
+ONE NARROW, DELIBERATE EXCEPTION: ``promote_batch`` ends by sweeping the promoted
+account for known corporate actions (``app.db.corporate_actions.
+apply_known_actions_for_account``), which -- unlike everything above -- writes to the
+ledger with no staging and no human promote click. That is not the same category of
+write as an adapter's guess at a trade: it only fires for an action that already cleared
+three independent, automated checks (sourced, human-VERIFIED at entry time, and its
+ratio corroborated by the recorded price move -- see ``app.engine.corporate_actions.
+screen``), applied to an eligibility fact (held it before the ex-date) computed from
+this account's own ledger, not guessed from a file. The safety argument for why THIS
+write does not need a human in the loop is documented once, at
+``apply_known_actions_for_account``, rather than repeated here.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -22,6 +35,8 @@ from app.engine.dedupe import make_dedupe_key
 from app.engine.types import ImportSummary, Source, Transaction, TxnType
 from app.ingest.base import CONFIDENCE_UNCERTAIN, REVIEW_THRESHOLD, ParseResult
 from app.storage.keys import content_hash
+
+logger = logging.getLogger("imports")
 
 ACTION_BATCH_STAGED = "IMPORT_BATCH_STAGED"
 ACTION_BATCH_PROMOTED = "IMPORT_BATCH_PROMOTED"
@@ -669,6 +684,29 @@ def promote_batch(
             "acknowledged_uncertain": uncertain if acknowledge_uncertain else 0,
         },
     )
+
+    # Every fresh import is exactly the moment new ISINs (or new pre-action history for
+    # an existing one) enter this account's ledger -- so it is also the moment to check
+    # them against every VERIFIED corporate action already on file, automatically, no
+    # separate step. Local import: app.db.corporate_actions imports FROM this module
+    # (ACTION_BATCH_STAGED, _txn_to_payload) already, so a module-level import here
+    # would be a cycle. Best-effort, deliberately: a corporate-action sweep failing must
+    # never turn a successful trade promotion into a failed one -- the trades this
+    # function exists for are the important write, and the sweep can simply run again
+    # next time (it is idempotent, see apply_known_actions_for_account's docstring).
+    if account_id:
+        from app.db.corporate_actions import apply_known_actions_for_account
+
+        try:
+            apply_known_actions_for_account(conn, account_id, actor_uid=actor_uid)
+        except Exception:
+            logger.warning(
+                "corporate-action auto-apply sweep failed for account %s after promoting "
+                "batch %s -- trades are safe, promoted normally; the sweep will retry on "
+                "the next import",
+                account_id, batch_id, exc_info=True,
+            )
+
     return summary
 
 

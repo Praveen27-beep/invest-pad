@@ -121,6 +121,54 @@ def test_disposal_against_nothing_raises() -> None:
         compute_holdings([txn("SELL", "1", "250", "2024-06-10")])
 
 
+def test_same_day_sell_before_buy_round_trip_does_not_raise() -> None:
+    """A same-day intraday round trip -- the SELL listed first in the source file, the
+    matching BUY later -- must not trip NegativeHoldingError when the day nets
+    non-negative. NSE cash equity has no way to end a day genuinely short (an intraday
+    SELL-before-BUY leg is squared off by the broker before close), and a contract note
+    commonly lists its Sale table before its Purchase table -- file order alone must
+    never manufacture a deficit that was never real. Regression for the exact shape of
+    the 2023-01-27 ADANIGREEN case this was found against: 60 sold, 60 bought, same day,
+    SELL rows first in the source file."""
+    holdings = compute_holdings(
+        [
+            txn("SELL", "50", "1577", "2023-01-27"),
+            txn("BUY", "50", "1486.25", "2023-01-27"),
+        ]
+    )
+    assert holdings == []  # opened and closed the same day
+
+
+def test_same_day_sell_before_buy_still_raises_when_the_day_nets_short() -> None:
+    """The tiebreak only reorders same-day rows; it must not hide a real end-of-day
+    deficit. This day's SELL still exceeds its BUY even after the reorder, so it must
+    raise -- against the true end-of-day shortfall, not an artifact of file order."""
+    with pytest.raises(NegativeHoldingError) as excinfo:
+        compute_holdings(
+            [
+                txn("SELL", "50", "1577", "2023-01-27"),
+                txn("BUY", "30", "1486.25", "2023-01-27"),
+            ]
+        )
+    assert excinfo.value.quantity == Decimal("-20")
+
+
+def test_transfer_out_before_transfer_in_is_not_reordered() -> None:
+    """TRANSFER_OUT/TRANSFER_IN -- an account-to-account migration, not a market trade --
+    keep file order. Unlike SELL/BUY, there is no structural guarantee the pair nets
+    non-negative, and file order is the only record of which leg happened first;
+    reordering it the way SELL/BUY is reordered would change cost basis for no
+    correctness gain (see fixtures/golden_portfolio.json's INE0Q9301021 TRANSFER pair,
+    which is exactly this shape and depends on staying in file order)."""
+    with pytest.raises(NegativeHoldingError):
+        compute_holdings(
+            [
+                txn("TRANSFER_OUT", "50", "0", "2023-01-27"),
+                txn("TRANSFER_IN", "50", "1486.25", "2023-01-27"),
+            ]
+        )
+
+
 def test_partitioned_excludes_only_the_broken_isin() -> None:
     """The done-when for compute_holdings_partitioned: one ISIN whose ledger doesn't
     reconcile must not take a clean, independent ISIN down with it."""

@@ -141,6 +141,7 @@ docstring explains why the encryption key and the PAN pepper specifically must d
 {
   "crons": [
     { "path": "/ops/cron/prices-refresh", "schedule": "30 10 * * *" },
+    { "path": "/ops/corporate-actions/refresh-cron", "schedule": "45 10 * * *" },
     { "path": "/ops/cron/snapshots-run", "schedule": "0 11 * * *" }
   ]
 }
@@ -153,6 +154,15 @@ best-effort — its outcome comes back in the response as `index_levels_stored` 
 on consecutive days means the index source has moved or started refusing requests, and
 the symptom to expect is the benchmark line quietly disappearing from the chart while
 every other figure stays correct.
+
+`corporate-actions/refresh-cron` deliberately sits between the other two: it needs
+`prices-refresh`'s bhavcopy to already be stored (the price-consistency guard that lets
+a BONUS/SPLIT auto-verify reads yesterday's and today's close), and it needs to run
+*before* `snapshots-run` so a same-day auto-applied bonus is reflected in that day's
+snapshot rather than showing up a day late. Its own guard is fail-closed by design (see
+`docs/ENGINE_SPEC.md` §7's "Automated ingestion"): a run that can't corroborate a
+notice's price lands it in `Exceptions` rather than guessing, so a failure here never
+produces a wrong ledger write, only a delayed one.
 
 Times are UTC (Vercel Cron is always UTC) — 10:30/11:00 UTC is roughly 4:00/4:30pm IST,
 after NSE/BSE bhavcopy is normally published; adjust if you find it publishes later.

@@ -83,7 +83,12 @@ The depository has already applied every split, bonus and demerger to the client
 actual holding. The system's job is to **notice the quantity changed** and record a
 matching transaction — not to compute ratios.
 
-Detection: see §7 Reconciliation.
+Detection: see §7 Reconciliation. Turning a detected mismatch into the actual
+transaction, once a verified reference record explains it, is §7's "Matching against
+verified corporate actions" subsection — it proposes, through the same staging flow
+every file adapter uses; it never writes the ledger itself. The ledger model above is
+unchanged either way: every BONUS/SPLIT_ADJ/DEMERGER_IN row, however it was sourced, is
+still just a transaction.
 
 ---
 
@@ -520,6 +525,146 @@ it early.
 CAS across all 17 positions with zero mismatches, including correctly excluding three
 trades dated 31-Jul that settled 3-Aug. Settlement timing matters: reconcile on
 **trade date**, and expect the last 1–2 days before a statement date to differ.
+
+### Matching against verified corporate actions
+
+`reconcile()` above only ever produces a `likely_cause` string — "a hypothesis for a
+human, never an instruction to act" (`Discrepancy`'s own docstring). Nothing described
+so far turns that hypothesis into the actual `BONUS`/`SPLIT_ADJ`/`DEMERGER_IN`
+transaction. `app.engine.corporate_actions` is that bridge, built against a maintained,
+sourced `corporate_action` reference table (entered manually or bulk-loaded, the same
+way golden fixtures are authored).
+
+**Three paths reach the ledger from here, not one — this section was revised twice: to
+add path 2 (direct application), and again to add path 3 (the table populates itself).**
+
+1. **Discovery, against a declared-holdings statement (a CAS, a broker export).**
+   `reconcile()` finds a mismatch nothing on file explains yet, or confirms one a
+   verified action DOES explain. Always staged, always a human `Apply`/confirm before
+   anything reaches the ledger — this is the path the rest of this subsection
+   describes.
+2. **Direct application of an already-VERIFIED action, no statement needed.**
+   `app.db.corporate_actions.apply_known_actions_for_account`/`_for_investor` sweeps an
+   account's own ledger against the screened reference table and writes the resulting
+   transaction with no staging step and no promote click. This is not a weaker
+   guarantee than path 1's "never silent" — a VERIFIED, price-corroborated action
+   credits every eligible holder of record automatically and unconditionally, which is
+   what "corporate action" means; the human confirmation already happened once, when
+   the table entry was marked VERIFIED, and re-confirming it per affected account would
+   not catch anything the price-consistency guard did not already catch. See that
+   function's own docstring for the full safety argument, and CLAUDE.md's corresponding
+   note on why this is the one narrow exception to "no automated path writes the
+   ledger."
+
+   Triggered automatically, not only on request: every `promote_batch` call sweeps the
+   account it just wrote to (new history can newly make an existing verified action
+   apply), and every `add_corporate_action` call with `verification=VERIFIED` sweeps
+   every account that has ever held the ISIN (a new table entry can retroactively close
+   a gap that has been sitting in the ledger since before the entry existed — the
+   KAMAHOLD/GENSOL case this was built for).
+3. **Automated ingestion — the table populates itself, so path 2 has data for any
+   ISIN, not just ones a human researched.** `app.db.corporate_actions.
+   refresh_corporate_action_feed` fetches NSE's corporate-actions notices
+   (`app.ingest.corporate_action_feed`), classifies BONUS/SPLIT candidates from the
+   free-text notice (a regex parser, not a structured field — see "No ratio strings"
+   below), and looks up real `price_cum`/`price_ex` from bhavcopy already stored by
+   this system's own daily price pipe. A candidate that passes `check_sourced` and
+   `check_price_consistency` — the SAME two guards path 1/2 already enforce, not a
+   relaxed version of them — is inserted `VERIFIED` directly, which immediately
+   triggers path 2's retroactive sweep. One that doesn't pass lands `DRAFT`
+   (`Exceptions`) with the specific guard failure recorded, never silently dropped and
+   never guessed at.
+
+   **Safety invariant**, stated once, plainly: Trackr+ must never require a human to
+   approve a corporate action that satisfies every machine-verifiable rule, and must
+   never automatically apply one that fails any required rule. `Exceptions` means the
+   system doesn't know, and `Exceptions` is never converted into a guessed ledger
+   adjustment, by a human or by the system.
+
+   **Self-correcting, not a one-shot attempt.** Every run also re-evaluates every
+   existing `DRAFT` row (not just fresh notices) with freshly looked-up prices — a
+   candidate that failed only because bhavcopy for its ex-date hadn't landed yet
+   self-promotes to `VERIFIED` the moment it has, with no human step and no new notice
+   needed to re-trigger it. A `DISPUTED` row (a human's explicit rejection) is the one
+   thing the retry never revisits.
+
+   **DEMERGER is out of scope for this feed, on purpose, not an oversight.**
+   `check_price_consistency` has no expected price ratio for a demerger to corroborate
+   against (see below), and a demerger always needs a separate, manual cost-ratio
+   number from the scheme document besides — see `engine/demerger.py`. Any DEMERGER
+   notice a human wants on file still goes through `add_corporate_action` by hand,
+   landing `DRAFT` in the same `Exceptions` surface.
+
+   **The feed source itself is explicitly interim, kept behind a swappable
+   `CorporateActionFeedSource` Protocol** (`app.ingest.corporate_action_feed`) so a
+   licensed vendor can replace it later without this function, or anything downstream
+   of it, changing. See that module's own docstring for the current source and why.
+
+```
+CorporateAction = { isin, action_type, ex_date, bonus_new/bonus_for
+                     | face_value_before/face_value_after
+                     | resulting_isin + demerger_new/demerger_for,
+                     price_cum, price_ex, source, source_url, verification }
+```
+
+**No ratio strings**, for the same reason a corporate action is never stored as
+`"1:4"` anywhere else in Indian market data: the same Kama Holdings bonus is printed
+"4:1" by one provider and "1:4" by another, a 5x difference with no error raised if a
+ledger guesses wrong. Each record stores the primitive facts off the exchange notice
+and derives the multiplier itself (`CorporateAction.multiplier()`).
+
+**Price corroborates every ratio.** A bonus or split mechanically divides the price by
+the multiplier; `check_price_consistency` compares the recorded multiplier against the
+observed cum/ex price move and rejects the record when they disagree — the only
+automatic defence against an inverted ratio, which is why `price_cum`/`price_ex` are
+mandatory for BONUS/SPLIT, not optional.
+
+**Fail closed.** `screen()` quarantines anything that fails a guard (unsourced,
+unverified, price-inconsistent, or a duplicate notice) — quarantined records never
+match a `Discrepancy`, the same "withheld, never applied with a warning" posture the
+rest of this system uses for a missing price or a negative holding.
+
+**Scope: BONUS, SPLIT (forward split), and DEMERGER (quantity leg only).**
+CONSOLIDATION (a reverse split) and MERGER are absent: `TxnType`'s free-share group
+(§1) is additive-only quantity-up, pool-unchanged, and nothing in `holdings.py`/
+`lots.py` can remove quantity while leaving the cost pool untouched — representing
+either needs a new ledger mechanism, a separate engine/schema decision this table does
+not make. A DEMERGER's cost-ratio leg stays the existing, separate, manual
+`demerger_cost_split` step (§11) — that number comes from the company's scheme
+document, which no feed carries.
+
+**Path 1: staging, for discovery against a real statement.**
+`app.ingest.corporate_action_matcher.stage_corporate_actions` runs `reconcile()`,
+matches each `Discrepancy` against the screened table, and produces exactly the same
+`StagedRow`/`Rejection` shape any file adapter does — a matched mismatch becomes a
+`StagedRow` at `CONFIDENCE_DERIVED` (matched, not read verbatim); an unmatched one
+becomes a `Rejection` carrying the original text hint, unchanged. The result lands in
+the identical `import_batch`/`import_row` tables a file upload does
+(`app.db.corporate_actions.stage_corporate_actions`), so review and promotion are the
+existing `GET /ingest/stage/{batch_id}` → `POST /ingest/stage/{batch_id}/promote`
+endpoints.
+
+**Path 2: direct application, for a VERIFIED action against an account's own ledger.**
+`app.db.corporate_actions.apply_known_actions_for_account` skips staging entirely.
+Eligibility (`app.engine.holdings.quantity_held_before`) and the credited quantity
+(`app.engine.corporate_actions.free_share_effect`) come straight from the account's own
+transaction history truncated to the day before the action's `ex_date` — never from
+"whatever is held now," which would incorrectly multiply anything bought after the
+action by the same ratio. Idempotent on two independent levels: the same
+`source_ref`/`dedupe_key` convention path 1 uses, AND a direct content check (an
+existing `CORP_ACTION` row at the same `isin`/`ex_date`/`txn_type`, regardless of its
+exact `source_ref` text) — the second is the one this path actually depends on for
+correctness, since reference-table `source`/`source_url` text is free-form and can
+legitimately be reworded later.
+
+**Path 3: automated ingestion, feeding path 2.** See the numbered "Automated
+ingestion" point above for the full writeup — `refresh_corporate_action_feed` is what
+keeps the reference table populated for ISINs nobody has manually researched, subject
+to the exact same guards paths 1 and 2 already enforce.
+
+All three paths write through the identical `Transaction` shape and are covered by
+`docs/TAX_ENGINE.md`'s "Never mutate history": none of them ever edits a historical BUY
+or SELL row, only ever appends the new `BONUS`/`SPLIT_ADJ`/`DEMERGER_IN` row.
 
 ---
 

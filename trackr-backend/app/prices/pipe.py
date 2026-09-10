@@ -22,16 +22,16 @@ SOURCE_PRIORITY = ("NSE", "BSE")
 
 SOURCE_LABEL = {"NSE": "NSE_BHAVCOPY", "BSE": "BSE_BHAVCOPY"}
 
-#: The earliest date app.prices.sources.nse_source's exact URL/file format actually
-#: serves. Verified live against the real archive while planning Session 1 (Phase 2):
-#: BhavCopy_NSE_CM_..._20231215... -> 404, BhavCopy_NSE_CM_..._20240101... -> 200. BSE's
-#: archive reaches back much further, but that does not raise this floor: a 404 from NSE
-#: is indistinguishable from NotPublished (a real holiday) to fetch_day, so trusting BSE
-#: alone before this date would silently under-price every NSE-only-listed ISIN for the
-#: whole window (merge()'s own docstring names KDL-SM as a real example). A historical
-#: snapshot backfill cannot honestly reach earlier than this, regardless of how far back
-#: an investor's ledger goes.
-NSE_BHAVCOPY_EARLIEST = date(2024, 1, 1)
+#: The backfill floor this pipe will attempt. NOT the same thing as
+#: app.prices.sources.NSE_CURRENT_FORMAT_SINCE (2024-01-01) any more -- nse_source()
+#: (app.prices.sources.NseBhavcopySource) now falls back to NSE's legacy pre-2024
+#: archive automatically, confirmed live against a real fetched 17-Oct-2023 file. This
+#: floor is a separate, deliberately conservative choice: it matches the ISIN-mandated
+#: settlement era and is a date this session actually stands behind, not a guess at how
+#: far back the legacy archive really goes (WebSearch suggests NSE's own archive reaches
+#: 1994; untested here -- lowering this further is a real, valid follow-up once someone
+#: verifies a file that old still parses, not a limitation of the mechanism itself).
+NSE_BHAVCOPY_EARLIEST = date(2015, 4, 1)
 
 
 @dataclass(frozen=True, slots=True)

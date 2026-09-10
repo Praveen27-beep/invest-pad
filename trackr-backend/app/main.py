@@ -60,6 +60,7 @@ from app.routers import (
     auth,
     brokers,
     consent,
+    corporate_actions,
     grievance,
     holdings,
     ingest,
@@ -534,6 +535,8 @@ app.include_router(ingest.router)
 app.include_router(analytical.router)
 app.include_router(privacy.router)
 app.include_router(reconcile.router)
+app.include_router(corporate_actions.router)
+app.include_router(corporate_actions.ops_router)
 app.include_router(grievance.router)
 app.include_router(consent.router)
 app.include_router(assistant.router)

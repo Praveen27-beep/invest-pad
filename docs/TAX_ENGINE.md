@@ -98,9 +98,33 @@ in data, never in code.
 
 ## Never mutate history
 
-An "Auto Corporate Actions" tool inserts **new adjustment transactions** after
-confirmation. It never edits a historical BUY or SELL row. This is both an
-architectural rule and an audit requirement.
+An "Auto Corporate Actions" tool inserts **new adjustment transactions**. It never
+edits a historical BUY or SELL row. This is both an architectural rule and an audit
+requirement.
+
+**"After confirmation" now means one of three things, revised twice from the original
+version of this note which described only the first.** For a match found by
+reconciling against a real declared-holdings statement (a CAS, a broker export) —
+confirmation is still the existing staged `import_batch`/`import_row`
+review-then-promote step, a human action every time. For a VERIFIED, price-corroborated
+table entry applied directly to an account's own ledger
+(`app.db.corporate_actions.apply_known_actions_for_account`/`_for_investor`, triggered
+automatically on every import and on every new VERIFIED table entry) — the confirmation
+already happened once, when the entry was marked VERIFIED, and is not repeated per
+affected account. For a VERIFIED entry the automated feed itself produced
+(`app.db.corporate_actions.refresh_corporate_action_feed`) — the "confirmation" is the
+feed's own `check_sourced`/`check_price_consistency` guards passing, the exact same
+guards a human's manual entry is held to; nothing about auto-fetched data is trusted
+more loosely. None of the three paths edits a historical row either way; all three only
+ever append. See `docs/ENGINE_SPEC.md` §7, "Matching against verified corporate
+actions", for the full three-path account, and CLAUDE.md's note on this being the one
+narrow, deliberate exception to "no automated path writes the ledger."
+
+This is now built: `app.engine.corporate_actions` + `app.ingest.corporate_action_matcher`
++ `app.ingest.corporate_action_feed` + `app.db.corporate_actions`. It satisfies the rule
+above by construction rather than by convention — every write, staged, direct, or
+feed-originated, is the identical `Transaction` shape, and none of the three paths has
+ever been given a way to issue an `UPDATE` or `DELETE` against `transaction`.
 
 ## Verification gates
 

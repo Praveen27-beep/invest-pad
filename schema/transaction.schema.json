@@ -70,7 +70,7 @@
     },
     "source": {
       "type": "string",
-      "enum": ["MANUAL", "CSV", "TRADEBOOK", "CONTRACT_NOTE", "EMAIL", "CORP_ACTION"],
+      "enum": ["MANUAL", "CSV", "TRADEBOOK", "CONTRACT_NOTE", "EMAIL", "CORP_ACTION", "CAS"],
       "description": "Which adapter produced this row. The engine must never branch on it."
     },
     "source_ref": {

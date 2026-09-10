@@ -7,7 +7,7 @@ each appear on only one of them.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -141,6 +141,79 @@ def test_a_real_udiff_response_is_never_mistaken_for_html() -> None:
         "NSE", "https://example.invalid/{d}", opener=lambda *a, **k: _FakeHttpResponse(body)
     )
     assert source.fetch(PRICE_DATE) == body
+
+
+# --- legacy NSE archive fallback (pre-2024 dates) -------------------------------
+
+
+def legacy_payload() -> str:
+    """A real, trimmed 17-Oct-2023 legacy bhavcopy excerpt -- GENSOL (EQ), a BE-series
+    row, and a non-equity (TB, a T-Bill) row, captured from the actual archive while
+    building this fallback. See app.prices.sources.LegacyNseBhavcopySource."""
+    return (FIXTURES / "nse_legacy_20231017.csv").read_text()
+
+
+def test_legacy_csv_reshapes_into_udiff_columns() -> None:
+    """The whole point of _to_udiff_csv: udiff.parse, the one bhavcopy parser, reads
+    the re-shaped output with no changes of its own."""
+    from app.prices.sources import _to_udiff_csv
+
+    rows = {r.isin: r for r in parse(_to_udiff_csv(legacy_payload()), "NSE")}
+    gensol = rows["INE06H201014"]
+    assert gensol.close == Decimal("882.2")
+    assert gensol.price_date == date(2023, 10, 17)
+    assert gensol.symbol == "GENSOL"
+    assert gensol.series == "EQ"
+
+
+def test_legacy_csv_includes_be_series() -> None:
+    """BE (trade-to-trade) is still cash-segment equity, not a reason to drop a row."""
+    from app.prices.sources import _to_udiff_csv
+
+    rows = {r.isin: r for r in parse(_to_udiff_csv(legacy_payload()), "NSE")}
+    assert "INE144J01027" in rows
+
+
+def test_legacy_csv_filters_non_equity_series() -> None:
+    """A T-Bill's "close" is a yield-derived price, not a share price -- valuing an
+    equity holding at one would be nonsense, same reasoning as udiff.EQUITY_INSTRUMENTS."""
+    from app.prices.sources import _to_udiff_csv
+
+    rows = {r.isin: r for r in parse(_to_udiff_csv(legacy_payload()), "NSE")}
+    assert "IN002023Y151" not in rows
+
+
+class _FakeSubSource:
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+        self.calls: list[date] = []
+
+    def fetch(self, on: date) -> bytes:
+        self.calls.append(on)
+        return self._body
+
+
+def test_nse_bhavcopy_source_uses_legacy_before_the_cutover() -> None:
+    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, NseBhavcopySource
+
+    current, legacy = _FakeSubSource(b"current"), _FakeSubSource(b"legacy")
+    source = NseBhavcopySource(current=current, legacy=legacy)
+
+    before = NSE_CURRENT_FORMAT_SINCE - timedelta(days=1)
+    assert source.fetch(before) == b"legacy"
+    assert legacy.calls == [before]
+    assert current.calls == []
+
+
+def test_nse_bhavcopy_source_uses_current_format_on_and_after_the_cutover() -> None:
+    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, NseBhavcopySource
+
+    current, legacy = _FakeSubSource(b"current"), _FakeSubSource(b"legacy")
+    source = NseBhavcopySource(current=current, legacy=legacy)
+
+    assert source.fetch(NSE_CURRENT_FORMAT_SINCE) == b"current"
+    assert current.calls == [NSE_CURRENT_FORMAT_SINCE]
+    assert legacy.calls == []
 
 
 # --- THE GATE ------------------------------------------------------------------

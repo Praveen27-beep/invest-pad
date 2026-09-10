@@ -12,7 +12,32 @@ can only make a reconciliation check less useful.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
+
+
+def latest_snapshot(conn: Any, account_id: str) -> dict[str, Decimal]:
+    """The most recently declared quantity per ISIN for one account -- the declared side
+    of ``app.engine.reconcile.reconcile``, read back out of the rows ``record_snapshot``
+    wrote.
+
+    Per ISIN, not per statement: a CAS lists only the ISINs held on that statement date,
+    so an account with two statements of different ages has a genuinely different
+    "latest" date for different ISINs, and taking a single global MAX(snap_date) would
+    silently drop every holding absent from the newest file. DISTINCT ON gives each ISIN
+    its own newest row instead.
+
+    An ISIN that has since been fully exited will keep reporting its last declared
+    quantity, which is correct for reconciliation: ``reconcile()`` treats a declared
+    quantity the ledger no longer shows as a discrepancy to explain, not as a holding.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT ON (isin) isin, quantity FROM holding_snapshot "
+            "WHERE account_id = %s ORDER BY isin, snap_date DESC",
+            (account_id,),
+        )
+        return {row[0]: row[1] for row in cur.fetchall()}
 
 
 def record_snapshot(conn: Any, holdings: list[Any], source: str = "CAS") -> int:

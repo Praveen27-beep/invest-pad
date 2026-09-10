@@ -21,6 +21,7 @@ security ──< price            │
 | `display_name` | text | |
 | `family_group_id` | uuid null | HNI portfolios are family units: self, spouse, HUF, kids. Model it now; retrofitting is a migration. |
 | `owner_user_id` | uuid null FK→`app_user` | The login authorised to read this ledger (015). Every `/investors/{id}` scope checks it: another login gets 403; unowned rows are unreachable until claimed via `app.db.assign_owner`. |
+| `onboarding_date` | date null | Adviser-onboarding anchor for `period_xirr` (009, ENGINE_SPEC section 4's "What `xirr_all` actually covers"). `null` until set; `period_xirr`/`period_start` are `null` right alongside it, never defaulted. |
 | `created_at` | timestamptz | |
 
 **Do not store PAN in this table.** If you need it (contract-note passwords), store a
@@ -187,6 +188,19 @@ routines alongside this table, not later. See `docs/COMPLIANCE.md`.
 Retention: **5 years** (SEBI Reg. 19 governs and exceeds DPDP's 1-year log minimum),
 with a legal-hold flag that suspends deletion during a dispute.
 
+## `app_user` — login, not referenced elsewhere in this doc
+
+Documented here only for the two columns every `investor.owner_user_id` FK points at
+and that nothing else names: migration `021_terms_acceptance.sql` adds
+
+| column | type | notes |
+|---|---|---|
+| `tos_version` | text null | Which published terms-of-service version this login accepted |
+| `tos_accepted_at` | timestamptz null | When. Both null until acceptance; neither is backfilled for existing logins. |
+
+The rest of `app_user` (credentials, session handling) lives in the auth layer's own
+code, not in this doc's "six tables plus later additions" scope.
+
 ## `investor_secret` — separate table, separate access path
 
 | column | type |
@@ -209,6 +223,28 @@ system. See `docs/BLUEPRINT_REVIEW.md` §Corrected-1.
 | `source` | text | `NSE_BHAVCOPY`, `BSE_BHAVCOPY`, `MANUAL` |
 
 PK: `(isin, price_date)`. NSE wins on conflict (deeper liquidity).
+
+## `price_absent` — "fetched, not present", not a missing fetch
+
+| column | type | notes |
+|---|---|---|
+| `isin` | text | FK -> `security.isin` |
+| `price_date` | date | |
+| `recorded_at` | timestamptz | Diagnostic only; nothing reads it to decide anything |
+
+PK: `(isin, price_date)`, added by migration `022_price_absent.sql`. One row per
+(security, date) where the bhavcopy WAS fetched and genuinely did not contain that
+security — as opposed to the fetch itself never having happened, which is a different,
+retryable condition this table says nothing about. Fixes a real bug: the backfill used
+to infer "have we fetched this day?" from "does *some* security have a price row on
+this day?", which silently stops being true the moment a new holding is bought —
+`price_dates_present`'s old check saw every historical date as "present" (thanks to
+other holdings) and never re-fetched bhavcopy for the new one, so it acquired no price
+history at all and every snapshot from the purchase date onward failed with a logged
+traceback on every `./start.sh` (observed live on GSMFOILS, ORIRAIL). Not a cache and
+nothing is derived from it — it is a log of what an external archive said on a date,
+which cannot be recomputed later. Never consulted for valuation: `MissingPriceError`
+(CLAUDE.md rule 4) still fires exactly as before for a held ISIN with no usable price.
 
 ## `live_price` — intraday cache, not a ledger
 
@@ -263,6 +299,54 @@ for display.
 The reconciliation job compares this against `compute_holdings()`. A mismatch means
 exactly one of: a corporate action, an off-market transfer, a missed contract note, or
 a bug. All four need a human; all four are invisible without this check.
+
+## `corporate_action` — verified reference data
+
+| column | type | notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `isin` | text FK | |
+| `action_type` | enum | `BONUS`, `SPLIT`, `DEMERGER` — see note below |
+| `ex_date` | date | |
+| `bonus_new` / `bonus_for` | integer null | BONUS: "N new shares for every M held" |
+| `face_value_before` / `face_value_after` | numeric(20,6) null | SPLIT: printed on every exchange notice, not order-ambiguous like a ratio string |
+| `resulting_isin` | text FK null | DEMERGER: the new company's ISIN |
+| `demerger_new` / `demerger_for` | integer null | DEMERGER: quantity leg only — the cost-ratio leg is the existing, separate, manual `app.engine.demerger.demerger_cost_split` step |
+| `price_cum` / `price_ex` | numeric(20,6) null | Mandatory for BONUS/SPLIT — the only automatic defence against an inverted ratio, see below |
+| `source` / `source_url` | text NOT NULL | Provenance. Required, never optional |
+| `verification` | enum | `DRAFT`, `VERIFIED`, `DISPUTED` — only `VERIFIED` rows can match a `Discrepancy` |
+| `notes` | text null | |
+
+Unique on `(isin, action_type, ex_date)`. Added by migration
+`023_corporate_actions.sql`. **No ratio strings** — each row stores the primitive facts
+off the exchange notice, the same reason `transaction` never stores a ratio: Indian
+sources disagree on notation order for the same event, and a ledger that guesses wrong
+is off by 5x with no error raised.
+
+**CONSOLIDATION (reverse split) and MERGER are deliberately absent from `action_type`.**
+`transaction.txn_type`'s free-share group (`BONUS`/`SPLIT_ADJ`/`DEMERGER_IN`) is
+additive-only — quantity up, pool unchanged — and nothing in `app.engine.holdings`/
+`lots` can remove quantity while leaving the cost pool untouched, or land a merged-into
+security with no `TxnType` to do it. Representing either is a separate engine/schema
+decision this table does not make.
+
+This table is never written to by a FILE adapter, and never read by `compute_holdings()`
+or anything that values a portfolio. It IS written to by one automated process --
+`app.db.corporate_actions.refresh_corporate_action_feed`, which inserts a row `VERIFIED`
+only when it independently passes the same `check_sourced`/`check_price_consistency`
+guards every other path here enforces, `DRAFT` otherwise -- see `docs/ENGINE_SPEC.md`
+§7's "Automated ingestion" for the full trust-model writeup and why that isn't a
+weakened bar.
+
+It is read by two consumers, not one:
+`app.ingest.corporate_action_matcher.stage_corporate_actions`, which proposes a staged
+`transaction` row against a real declared-holdings statement the same way a file upload
+does; and `app.db.corporate_actions.apply_known_actions_for_account`/`_for_investor`,
+which applies a `VERIFIED` row directly to an eligible account's own ledger with no
+staging step, triggered automatically on every import and on every new `VERIFIED` row
+added here (by a human, or by the automated feed above). See `docs/ENGINE_SPEC.md` §7,
+"Matching against verified corporate actions", for all three paths and the safety
+argument for each.
 
 ## `cost_inflation_index`
 

@@ -342,6 +342,19 @@ export interface StageResultOut {
 }
 
 /**
+ * POST /investors/{id}/corporate-actions/match -- app/schemas/corporate_actions.py
+ * ::MatchCorporateActionsOut. Deliberately lands in the same import_batch/import_row
+ * tables a file upload does, so `batch_id` is reviewed and promoted through the very
+ * same StagingBatch component and /ingest/stage endpoints.
+ */
+export interface MatchCorporateActionsOut {
+  batch_id: string;
+  parsed: number;
+  rejected: number;
+  notes: string[];
+}
+
+/**
  * One file's fate in a mixed multi-file upload -- POST /ingest/files
  * (app/schemas/ingest.py::FileOutcomeOut).
  *

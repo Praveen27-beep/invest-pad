@@ -1,11 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useAIChat } from "@/lib/ai-chat-context";
 import { api, ApiError } from "@/lib/api-client";
 import { useFetch } from "@/lib/use-fetch";
-import type { AccountOut, SkippedHoldingOut } from "@/lib/api-types";
+import type {
+  AccountOut,
+  MatchCorporateActionsOut,
+  SkippedHoldingOut,
+  StageResultOut,
+} from "@/lib/api-types";
+import { StagingBatch } from "./StagingBatch";
 
 /** One day before an ISO date string -- the synthetic opening BUY must predate the
  * disposal that ran short, or it does nothing to close the gap. */
@@ -183,11 +190,145 @@ function QuickFixRow({ skipped, onFixed }: { skipped: SkippedHoldingOut; onFixed
 }
 
 /**
+ * The CAS route out of a whole banner's worth of gaps at once, instead of one remembered
+ * average price at a time: reconcile the ledger against the depository's own declared
+ * quantities (app/engine/reconcile.py), match each mismatch against verified corporate
+ * actions on file, and stage the corrections for review -- docs/ENGINE_SPEC.md section 7
+ * path 1. The staged batch lands in the same import_batch/import_row tables a file upload
+ * does, so it is reviewed and promoted by the very same `StagingBatch` component below.
+ *
+ * Account-scoped, not investor-scoped, because a CAS declares holdings per demat account
+ * and `reconcile()` compares one account's ledger at a time.
+ */
+function ReconcileAgainstCas() {
+  const { investorId, token } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [accountId, setAccountId] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [noStatement, setNoStatement] = useState(false);
+  const [result, setResult] = useState<MatchCorporateActionsOut | null>(null);
+
+  const accounts = useFetch<AccountOut[]>(
+    open && investorId ? `/investors/${investorId}/accounts` : null,
+    undefined,
+    token
+  );
+  const accountList = accounts.data ?? [];
+  useEffect(() => {
+    const first = accountList[0];
+    if (first && !accountId) setAccountId(first.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountList.length]);
+
+  async function reconcile() {
+    if (!investorId || !accountId) return;
+    setRunning(true);
+    setError(null);
+    setNoStatement(false);
+    setResult(null);
+    try {
+      // `holdings` omitted on purpose: the backend falls back to this account's most
+      // recent CAS snapshot (app.db.holdings.latest_snapshot), so this screen never has
+      // to carry declared quantities around just to ask for a reconciliation.
+      const res = await api.post<MatchCorporateActionsOut>(
+        `/investors/${investorId}/corporate-actions/match`,
+        { json: { account_id: accountId, holdings: [] }, token }
+      );
+      setResult(res);
+    } catch (err) {
+      // 409 is the specific, actionable one: nothing to reconcile against yet.
+      if (err instanceof ApiError && err.status === 409) setNoStatement(true);
+      else setError(err instanceof ApiError ? err.message : "Could not reconcile");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const staged: StageResultOut | null = result
+    ? {
+        batch_id: result.batch_id,
+        parsed: result.parsed,
+        rejected: result.rejected,
+        sha256: "",
+        document_id: null,
+        notes: result.notes,
+      }
+    : null;
+
+  return (
+    <div className="mt-3 border-t border-negative/20 pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-navy-500">
+          Holding a CAS statement? Reconcile against it to find what these gaps have in
+          common — a missed bonus or split gets matched and staged for you, all at once.
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="press-scale rounded-lg border border-navy-100 px-3 py-1 text-xs font-medium text-navy-600 hover:bg-cream-50"
+        >
+          {open ? "Cancel" : "Reconcile against CAS"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 space-y-2">
+          {error && (
+            <p className="rounded-lg bg-negative/10 px-2 py-1.5 text-xs text-negative">{error}</p>
+          )}
+          {noStatement && (
+            <p className="rounded-lg bg-cream-50 px-2 py-1.5 text-xs text-navy-600">
+              No CAS statement on file for this account yet.{" "}
+              <Link href="/portfolio?tab=import" className="text-brass-600 underline">
+                Import one
+              </Link>{" "}
+              (a CDSL/NSDL PDF, or forward it to your statement address) and this
+              reconciliation runs against it.
+            </p>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-navy-600">
+              <span className="mb-1 block font-medium">Account</span>
+              {accountList.length === 0 ? (
+                <span className="block py-1.5 text-navy-400">None yet</span>
+              ) : (
+                <select
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  className="rounded-lg border border-navy-100 bg-surface px-2 py-1.5 text-sm focus:border-brass-500 focus:outline-none"
+                >
+                  {accountList.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.broker}
+                      {a.label ? `: ${a.label}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+            <button
+              type="button"
+              onClick={reconcile}
+              disabled={running || accountList.length === 0}
+              className="press-scale rounded-lg bg-navy-700 px-4 py-1.5 text-xs font-medium text-cream-50 transition-colors hover:bg-navy-600 disabled:opacity-50"
+            >
+              {running ? "Reconciling…" : "Reconcile"}
+            </button>
+          </div>
+          {staged && <StagingBatch stageResult={staged} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * compute_holdings_partitioned's `skipped` list (app/engine/holdings.py) -- an ISIN
  * whose own ledger segment didn't reconcile, excluded from the dashboard's totals
  * rather than blocking every other holding. Same "actionable, not a dead end" posture
- * as UnpricedBanner, plus a quick way out: enter a remembered average price instead of
- * hunting down the original contract note, or ask the AI assistant what's going on.
+ * as UnpricedBanner, plus two ways out: enter a remembered average price one ISIN at a
+ * time, or reconcile the whole account against a CAS statement in one step.
  */
 export function SkippedHoldingsBanner({
   skipped,
@@ -214,6 +355,7 @@ export function SkippedHoldingsBanner({
           <QuickFixRow key={s.isin} skipped={s} onFixed={onFixed} />
         ))}
       </ul>
+      <ReconcileAgainstCas />
     </div>
   );
 }

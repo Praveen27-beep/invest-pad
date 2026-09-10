@@ -7,7 +7,7 @@ the two answer different questions and are deliberately not derived from each ot
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from app.engine.errors import DemergerAdjustmentError, NegativeHoldingError
@@ -252,3 +252,21 @@ def compute_holdings_partitioned(
                 raise
             excluded[exc.isin] = SkippedHolding(isin=exc.isin, message=str(exc))
         remaining = [t for t in remaining if t.isin not in excluded]
+
+
+def quantity_held_before(transactions: list[Transaction], isin: str, ex_date: date) -> Decimal:
+    """Quantity of ``isin`` actually held the day before ``ex_date``.
+
+    The one correct reference point for applying a BONUS/SPLIT/DEMERGER multiplier: a
+    corporate action must be applied to what was held AT the action, never to "whatever
+    is held now" -- a later, unrelated purchase multiplied by the same ratio would
+    manufacture shares that were never actually credited. See
+    app.ingest.corporate_action_matcher, the first caller this was written for.
+
+    Partitioned, not the strict ``compute_holdings``: an unrelated ISIN elsewhere in the
+    transaction list being broken (a different security's NegativeHoldingError) must
+    not stop THIS isin's own, independent quantity from being computed.
+    """
+    cutoff = ex_date - timedelta(days=1)
+    holdings, _skipped = compute_holdings_partitioned(transactions, cutoff)
+    return next((h.quantity for h in holdings if h.isin == isin), ZERO)

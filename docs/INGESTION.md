@@ -7,11 +7,35 @@ may compute holdings, prices, or returns.
 class Adapter(Protocol):
     name: str
 
-    def detect(self, payload: bytes, meta: dict) -> bool: ...
-    def parse(self, payload: bytes, ctx: ParseContext) -> list[Transaction]: ...
+    def parse(self, content: bytes, account_id: str, filename: str = "") -> ParseResult: ...
 ```
 
+`ParseResult` carries `rows: list[StagedRow]` (each wrapping a `Transaction` plus a
+confidence score) and `rejections: list[Rejection]` — a row that fails to parse is
+reported with its row number, not silently dropped. See `app/ingest/base.py`.
+
 Adding a source = one new class + one registry line. Nothing downstream changes.
+
+## Which broker is which adapter — `app.brokers`
+
+Section 2 below still walks through the mechanics using Zerodha as the running
+example, because it is — as of this writing — the only broker with a real parser
+behind it. **What the product presents to a user is not this doc; it is
+`app.brokers.BROKERS`, served at `GET /brokers`.** That registry is what the
+onboarding picker, the forwarding-address badges, and the file-upload help text
+actually read, and every capability it claims is *derived*, not retyped: `adapters`
+names real entries in `app.ingest.file_validation.ROUTING` (a typo fails
+`tests/test_brokers.py`'s build), `forwarding` comes from
+`app.ingest.addresses.broker_has_forwarding` (itself keyed off this doc's own
+`_ADAPTER_FACTORIES`), and `pdf_password` is computed by actually running the broker's
+password-case transform against a sample PAN rather than being hand-written prose.
+
+This is what fixed a real bug (`docs/ONBOARDING_AS_IS_VS_TO_BE.md` loophole L7): a
+Groww or Upstox account used to be silently handed Zerodha's parsing assumptions. A
+broker with no real parser yet (Groww, Upstox, Angel One, ICICI Direct today) is an
+honest, cheap, "files accepted, nothing parsed" entry — `code`, `name`, and
+`console_steps` prose only, `adapters=()` — not a promise this doc's adapter sections
+below have made real.
 
 ---
 
