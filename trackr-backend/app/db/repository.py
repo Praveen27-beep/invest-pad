@@ -127,6 +127,7 @@ def load_transactions(
     date_from: date | None = None,
     date_to: date | None = None,
     advised_only: bool = False,
+    apply_aliases: bool = True,
 ) -> list[Transaction]:
     """Read the ledger back as engine objects.
 
@@ -147,6 +148,24 @@ def load_transactions(
     DATA_MODEL.md) -- the ``account`` join this already runs, so no new join or query path
     is added for it. Exists so a SEBI-registered adviser can report on the mandated
     account only, per contracts/openapi.yaml's ``advised_only`` parameter.
+
+    ISIN ALIASES ARE APPLIED HERE, and only here. A security whose identifier was retired
+    and replaced (``security_alias``, migration 027) has its trades reported by the broker
+    under whichever ISIN was current at the time; a VERIFIED alias maps the retired one
+    onto its replacement as rows cross into the engine, so both halves replay as the one
+    security they always were.
+
+    This is the read boundary ON PURPOSE, for two reasons. The stored rows keep the ISIN
+    the broker actually reported -- the ledger is append-only and a wrong alias is revoked,
+    never un-migrated. And doing it here rather than as a synthetic TRANSFER_OUT/
+    TRANSFER_IN pair is what preserves FIFO acquisition dates: those would open a new lot
+    dated at the identifier change (``app.engine.lots``) and silently turn a long-term
+    holding short-term. An ISIN change is not a taxable event.
+
+    So replaying the ledger now also depends on ``security_alias``, the same standing
+    ``price`` and ``corporate_action`` already have. ``apply_aliases=False`` returns the
+    raw, un-normalised rows -- used by ``app.db.security_alias.reconcile_after_alias`` to
+    compare a ledger before and after an alias, and by nothing else.
     """
     clauses: list[str] = []
     params: list[Any] = []
@@ -183,11 +202,17 @@ def load_transactions(
             """,
             params,
         )
-        return [
+        rows = cur.fetchall()
+
+    # Resolved once per read, not per row: verified_map returns each alias already
+    # collapsed to its terminal ISIN, so this is a single dict lookup below and can never
+    # hand the engine a half-resolved identity.
+    aliases = _alias_map(conn) if apply_aliases else {}
+    return [
             Transaction(
                 id=str(row[0]),
                 account_id=str(row[1]),
-                isin=row[2],
+                isin=aliases.get(row[2], row[2]),
                 txn_date=row[3],
                 txn_type=TxnType(row[4]),
                 quantity=row[5],
@@ -202,8 +227,27 @@ def load_transactions(
                 raw_payload=row[14],
                 created_at=row[15],
             )
-            for row in cur.fetchall()
+            for row in rows
         ]
+
+
+def _alias_map(conn: Any) -> dict[str, str]:
+    """VERIFIED ISIN aliases, or nothing if the table is not there yet.
+
+    Tolerating its absence keeps this read working against a database that has not run
+    migration 027 -- the same posture every other optional reference table gets. An
+    absent alias table means no normalisation, which is exactly the behaviour before
+    aliases existed, never an error on a path that has to answer.
+    """
+    import psycopg
+
+    from app.db.security_alias import verified_map
+
+    try:
+        return verified_map(conn)
+    except psycopg.errors.UndefinedTable:
+        conn.rollback()
+        return {}
 
 
 def create_investor(
