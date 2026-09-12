@@ -25,6 +25,11 @@
     "realised_to_date": {
       "$ref": "transaction.schema.json#/$defs/decimal",
       "description": "Cumulative realised gain across every sell up to as_of."
+    },
+    "excluded_isins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "ISINs these totals do NOT include, because their own ledger segment did not reconcile on this date (a disposal exceeding recorded buys -- missing buy history, not a short position). Empty on a clean replay, which is the normal case.\n\nExcluding a holding is NOT the same as silently dropping one: the totals above remain real figures over everything that did reconcile, and this list is what lets every reader caveat them rather than read them as the whole portfolio. The alternative -- refusing to snapshot at all -- erased the entire value history over one broken holding, with no explanation attached to the absence. An exclusion clears itself from the record once the ledger gap is closed and the next rebuild replays cleanly."
     }
   }
 }

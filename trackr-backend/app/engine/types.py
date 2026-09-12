@@ -202,6 +202,15 @@ class Holding:
     # against a broker statement without either number being wrong.
     fifo_cost: Decimal | None = None
     fifo_avg: Decimal | None = None
+    # Move since the previous close: (last_price - previous_close) / previous_close.
+    # A DAY's performance, not a holding-period one -- unrealised_pct above answers
+    # "since I bought", this answers "since yesterday", and the two are unrelated
+    # numbers that happen to look alike. None -- never zero -- whenever there is no
+    # previous close to compare against (a position priced for the first time today,
+    # or a scrip the archive has only one close for); a zero would claim the price
+    # did not move, which is a different statement from not knowing. Computed in
+    # engine/valuation.py, which is the only place a price is allowed to meet a holding.
+    day_change_pct: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +266,13 @@ class Snapshot:
     market_value: Decimal
     unrealised: Decimal | None = None
     realised_to_date: Decimal | None = None
+    # ISINs these totals do NOT include, because their own ledger segment did not
+    # reconcile on this date (see compute_snapshot). Empty on a clean replay, which is
+    # the normal case. The totals above are still real figures over everything that did
+    # reconcile -- this field is what stops them being read as the whole portfolio when
+    # they are not, and is why excluding a broken holding is not the same thing as
+    # silently dropping one.
+    excluded_isins: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -36,6 +36,7 @@ from app.database import get_conn, money, rate
 from app.db import snapshots
 from app.db.index_levels import get_index_levels
 from app.db.prices import (
+    absent_on_or_before,
     held_isins,
     latest_prices,
     missing_prices,
@@ -56,7 +57,11 @@ from app.engine.benchmark import (
 )
 from app.engine.contribution import compute_contribution
 from app.engine.errors import MissingIndexLevelError, MissingPriceError, NegativeHoldingError
-from app.engine.holdings import MAX_PRICE_STALENESS_DAYS, compute_holdings
+from app.engine.holdings import (
+    MAX_PRICE_STALENESS_DAYS,
+    compute_holdings,
+    compute_holdings_partitioned,
+)
 from app.engine.returns import compute_absolute_return, compute_net_invested
 from app.engine.snapshot import compute_snapshot
 from app.engine.twrr import compute_twrr
@@ -929,9 +934,23 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
                 if on_date in already_snapped:
                     continue
                 try:
-                    isins = [h.isin for h in compute_holdings(transactions, on_date)]
+                    reconciled, _skipped = compute_holdings_partitioned(transactions, on_date)
+                    isins = [h.isin for h in reconciled]
                     day_prices = latest_prices(connection, isins, on_date)
-                    snap = compute_snapshot(transactions, day_prices, on_date)
+                    # A holding the ARCHIVE has already answered about without carrying it
+                    # will never be priced by any future fetch -- a retired ISIN after a
+                    # reorganisation. Excluding those is what lets the rest of the
+                    # portfolio be snapshotted at all; an ISIN merely awaiting a fetch is
+                    # NOT in here, so it still raises below and the date is retried next
+                    # run. compute_snapshot cannot make this call itself: only
+                    # price_absent distinguishes the two, and the engine may not read a
+                    # database. See app.db.prices.absent_on_or_before.
+                    unpriceable = absent_on_or_before(
+                        connection, [i for i in isins if i not in day_prices], on_date
+                    )
+                    snap = compute_snapshot(
+                        transactions, day_prices, on_date, exclude_isins=unpriceable
+                    )
                 except (MissingPriceError, NegativeHoldingError) as exc:
                     # NO exc_info HERE, deliberately. This is an expected, handled skip on
                     # a loop that runs once per trading day per investor per advised_only

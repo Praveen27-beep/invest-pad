@@ -169,6 +169,28 @@ def price_dates_settled(conn: Any, start: date, end: date) -> set[date]:
         return {row[0] for row in cur.fetchall()}
 
 
+def absent_on_or_before(conn: Any, isins: Sequence[str], as_of: date) -> set[str]:
+    """Of ``isins``, the ones the archive has ANSWERED about on or before ``as_of``
+    without carrying them -- a CONFIRMED absence, not a price nobody has fetched yet.
+
+    That distinction is the whole point. A holding with no price might mean the pipe has
+    not run for that date (fixable: fetch the bhavcopy) or that the security genuinely
+    does not trade any more -- a retired ISIN after a reorganisation, say, which no
+    future fetch will ever produce. Only the second kind may be excluded from a total,
+    and only ``price_absent`` can tell them apart. Treating them alike would either
+    block every snapshot forever on a dead ISIN, or quietly drop a live holding whose
+    price simply had not been fetched.
+    """
+    if not isins:
+        return set()
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT isin FROM price_absent WHERE isin = ANY(%s) AND price_date <= %s",
+            (list(isins), as_of),
+        )
+        return {row[0] for row in cur.fetchall()}
+
+
 def record_absent_prices(conn: Any, on_date: date, isins: Sequence[str]) -> int:
     """Remember that these securities were NOT in the bhavcopy we fetched for this date.
 

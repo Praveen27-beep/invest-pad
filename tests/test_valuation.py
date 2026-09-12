@@ -141,3 +141,99 @@ def test_missing_price_still_raises_regardless_of_as_of() -> None:
     holdings = compute_holdings([txn("BUY", "100", "100", "2024-01-10")])
     with pytest.raises(MissingPriceError):
         value_holdings(holdings, {}, as_of=date(2024, 6, 1))
+
+
+# --- day_change_pct: "how did this do today", not "since I bought" ----------------
+
+
+def test_day_change_is_the_move_since_the_previous_close() -> None:
+    holdings = compute_holdings([txn("BUY", "10", "100", "2026-01-05")])
+    [valued] = value_holdings(
+        holdings,
+        {ISIN: Decimal("110")},
+        as_of=date(2026, 9, 11),
+        previous_closes={ISIN: Decimal("100")},
+    )
+    assert valued.day_change_pct == Decimal("0.1")
+
+
+def test_day_change_is_independent_of_holding_period_return() -> None:
+    """The two answer different questions and must not be confused: bought at 100, was
+    200 yesterday, 190 today -- up 90% since purchase, DOWN 5% on the day."""
+    holdings = compute_holdings([txn("BUY", "10", "100", "2026-01-05")])
+    [valued] = value_holdings(
+        holdings,
+        {ISIN: Decimal("190")},
+        as_of=date(2026, 9, 11),
+        previous_closes={ISIN: Decimal("200")},
+    )
+    assert valued.day_change_pct == Decimal("-0.05")
+    assert valued.unrealised_pct == Decimal("0.9")
+
+
+def test_no_previous_close_is_none_never_zero() -> None:
+    """A zero would claim the price did not move, which is a different statement from
+    not knowing -- the same posture as a missing price everywhere else in this engine."""
+    holdings = compute_holdings([txn("BUY", "10", "100", "2026-01-05")])
+    [valued] = value_holdings(holdings, {ISIN: Decimal("110")}, as_of=date(2026, 9, 11))
+    assert valued.day_change_pct is None
+
+    [valued_empty] = value_holdings(
+        holdings, {ISIN: Decimal("110")}, as_of=date(2026, 9, 11), previous_closes={}
+    )
+    assert valued_empty.day_change_pct is None
+
+
+def test_a_non_positive_previous_close_is_not_divided_by() -> None:
+    holdings = compute_holdings([txn("BUY", "10", "100", "2026-01-05")])
+    [valued] = value_holdings(
+        holdings,
+        {ISIN: Decimal("110")},
+        as_of=date(2026, 9, 11),
+        previous_closes={ISIN: Decimal("0")},
+    )
+    assert valued.day_change_pct is None
+
+
+# --- compute_snapshot partitions, and says what it left out ----------------------
+
+
+def test_snapshot_excludes_a_broken_isin_instead_of_refusing_to_exist() -> None:
+    """One ISIN with missing buy history used to abort the WHOLE snapshot, for every
+    date, blanking the entire value chart. It is now excluded and named instead."""
+    from app.engine.snapshot import compute_snapshot
+
+    broken = "INE000000001"
+    transactions = [
+        txn("BUY", "100", "100", "2024-01-10"),
+        txn("SELL", "5", "150", "2024-02-10", isin=broken),  # sold what was never bought
+    ]
+    snapshot = compute_snapshot(
+        transactions, {ISIN: Decimal("150"), broken: Decimal("200")}, date(2024, 6, 1)
+    )
+
+    assert snapshot.excluded_isins == (broken,)
+    # The totals are real figures over everything that DID reconcile.
+    assert snapshot.market_value == Decimal("15000")
+    assert snapshot.invested == Decimal("10000")
+
+
+def test_a_clean_replay_excludes_nothing() -> None:
+    from app.engine.snapshot import compute_snapshot
+
+    snapshot = compute_snapshot(
+        [txn("BUY", "100", "100", "2024-01-10")], {ISIN: Decimal("150")}, date(2024, 6, 1)
+    )
+    assert snapshot.excluded_isins == ()
+    assert snapshot.market_value == Decimal("15000")
+
+
+def test_a_missing_price_still_raises_rather_than_being_excluded() -> None:
+    """A price gap is fixable by fetching bhavcopy -- it must not be quietly written
+    into the record as a permanent exclusion the way a broken ledger segment is."""
+    import pytest as _pytest
+    from app.engine.errors import MissingPriceError
+    from app.engine.snapshot import compute_snapshot
+
+    with _pytest.raises(MissingPriceError):
+        compute_snapshot([txn("BUY", "100", "100", "2024-01-10")], {}, date(2024, 6, 1))

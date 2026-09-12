@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class BenchmarkOut(BaseModel):
@@ -102,6 +102,10 @@ class SnapshotOut(BaseModel):
     market_value: str
     unrealised: str | None = None
     realised_to_date: str | None = None
+    #: ISINs these totals do NOT include, because their ledger segment did not reconcile
+    #: on this date. Empty on a clean replay. A client showing these figures should say
+    #: so when this is non-empty -- that is the whole reason the field is on the wire.
+    excluded_isins: list[str] = Field(default_factory=list)
 
 
 class BenchmarkPointOut(BaseModel):

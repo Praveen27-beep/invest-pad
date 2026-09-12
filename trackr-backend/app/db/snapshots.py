@@ -27,13 +27,14 @@ def upsert_snapshot(conn: Any, investor_id: str, advised_only: bool, snapshot: S
             """
             INSERT INTO portfolio_snapshot
                 (investor_id, as_of, advised_only, invested, market_value,
-                 unrealised, realised_to_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                 unrealised, realised_to_date, excluded_isins)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (investor_id, as_of, advised_only) DO UPDATE
             SET invested = EXCLUDED.invested,
                 market_value = EXCLUDED.market_value,
                 unrealised = EXCLUDED.unrealised,
                 realised_to_date = EXCLUDED.realised_to_date,
+                excluded_isins = EXCLUDED.excluded_isins,
                 computed_at = now()
             """,
             (
@@ -44,6 +45,7 @@ def upsert_snapshot(conn: Any, investor_id: str, advised_only: bool, snapshot: S
                 snapshot.market_value,
                 snapshot.unrealised,
                 snapshot.realised_to_date,
+                list(snapshot.excluded_isins),
             ),
         )
 
@@ -60,7 +62,7 @@ def get_snapshot(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT as_of, invested, market_value, unrealised, realised_to_date
+            SELECT as_of, invested, market_value, unrealised, realised_to_date, excluded_isins
             FROM portfolio_snapshot
             WHERE investor_id = %s AND as_of = %s AND advised_only = %s
             """,
@@ -75,6 +77,7 @@ def get_snapshot(
         market_value=row[2],
         unrealised=row[3],
         realised_to_date=row[4],
+        excluded_isins=tuple(row[5] or ()),
     )
 
 
@@ -99,7 +102,7 @@ def get_snapshot_on_or_before(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT as_of, invested, market_value, unrealised, realised_to_date
+            SELECT as_of, invested, market_value, unrealised, realised_to_date, excluded_isins
             FROM portfolio_snapshot
             WHERE investor_id = %s AND advised_only = %s AND as_of <= %s
             ORDER BY as_of DESC
@@ -116,6 +119,7 @@ def get_snapshot_on_or_before(
         market_value=row[2],
         unrealised=row[3],
         realised_to_date=row[4],
+        excluded_isins=tuple(row[5] or ()),
     )
 
 
@@ -134,7 +138,7 @@ def list_snapshots_range(
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT as_of, invested, market_value, unrealised, realised_to_date
+            SELECT as_of, invested, market_value, unrealised, realised_to_date, excluded_isins
             FROM portfolio_snapshot
             WHERE investor_id = %s AND advised_only = %s AND as_of BETWEEN %s AND %s
             ORDER BY as_of ASC
@@ -149,6 +153,7 @@ def list_snapshots_range(
             market_value=row[2],
             unrealised=row[3],
             realised_to_date=row[4],
+            excluded_isins=tuple(row[5] or ()),
         )
         for row in rows
     ]
