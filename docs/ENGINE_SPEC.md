@@ -668,10 +668,65 @@ or SELL row, only ever appends the new `BONUS`/`SPLIT_ADJ`/`DEMERGER_IN` row.
 
 ---
 
+### 7a. ISIN changes — identity, not a transaction
+
+An ISIN identifies a security. It is **not the economic identity of the investment.** When
+a company's identifier is retired and replaced — typically at a face-value change — the
+broker reports trades under whichever ISIN was current at the time, and a ledger keyed on
+ISIN sees two unrelated securities: one stranding a position nothing will ever price
+again, the other disposing of what it never acquired.
+
+Real case: **GUJTHEM**, bought as `INE942C01029` and sold as `INE942C01045`, which read as
+"sold 487 shares you never bought".
+
+**Identity and quantity are separate facts.** `security_alias` (migration 027) records
+`old_isin → current_isin` and carries **no ratio**; any quantity effect is an ordinary,
+price-corroborated corporate action. Fusing them would mean inventing a ratio wherever one
+is not independently sourced.
+
+**Applied at the read boundary, never as transactions.**
+`repository.load_transactions` maps retired identifiers onto their replacement as rows
+cross into the engine. Three reasons, in order of importance:
+
+1. **Tax correctness.** The obvious alternative — a `TRANSFER_OUT`/`TRANSFER_IN` pair —
+   handles quantity and cost but opens a new lot dated at the change (§1, `engine/lots.py`),
+   silently turning a long-term holding short-term. An ISIN change is not a taxable event
+   and must not restart the clock.
+2. The engine needs no new cases and stays free of the database.
+3. The ledger is never rewritten, so a wrong alias is **revoked**, not un-migrated.
+
+Replaying the ledger therefore now depends on `security_alias` as well as `price` and
+`corporate_action`.
+
+**Trust model — identical to §7's, and no weaker:**
+
+- An alias is an **identity assertion, not an inference**. Only verified external evidence
+  creates one; `DRAFT` is inert.
+- **Structural checks reject, never vouch.** Both ISINs must share characters 1–3
+  (country + instrument type: `INE` equity vs `INF` fund) and 4–7 (issuer, per NSDL's
+  structure). A different issuer is a **merger** — its own cost allocation and tax
+  treatment — and must not enter through the identity path. Passing proves nothing: one
+  issuer legitimately has several securities, distinguished at characters 8–9.
+- **Resolution is canonical and cycle-safe.** `A → B → C` resolves to `C`; `A → B → A` is
+  refused at write.
+- **Post-alias reconciliation is mandatory.** Transaction count unchanged, no new negative
+  holding, lot `open_date`s unchanged, cost pool preserved (within Rule B's 4dp
+  re-rounding). Failure **quarantines** the alias automatically.
+- **Detection may use inference; resolution may not.** `detect_candidates` is free to be
+  aggressive — shared issuer, stranded position, unexplained disposals — because everything
+  it returns is a hypothesis for a person.
+
+**Price evidence follows aliases.** A split that changes the ISIN puts cum on the old
+identifier and ex on the new, so `_price_evidence` searches aliased-from ISINs for the cum
+side. Without it, a correct ratio fails for a reason unrelated to the ratio. Verified on
+SKMEGGPROD (₹344.05 → ₹159.90 against ×2) and GUJTHEM (₹1047.80 → ₹225.15 against ×5).
+
+---
+
 ## 8. Snapshots
 
 ```
-compute_snapshot(transactions, prices, on_date) -> Snapshot
+compute_snapshot(transactions, prices, on_date, exclude_isins=None) -> Snapshot
 ```
 
 Same functions, historical `as_of`, historical prices. Persisting a daily snapshot
@@ -680,6 +735,35 @@ bhavcopy for every ISIN ever held.
 
 Snapshots are a **cache of a derivation**, not a source of truth — they must always be
 recomputable from the ledger.
+
+### Partitioned, and the exclusions are recorded
+
+A snapshot uses `compute_holdings_partitioned`: an ISIN whose own ledger segment does not
+reconcile on `on_date` is left out of the totals and **named in `Snapshot.excluded_isins`**
+(migration 026).
+
+This is not a relaxation of "never compute a total while dropping a position" — the
+operative word was always SILENTLY. Naming what was left out keeps the figure honest, lets
+every reader caveat it, and the exclusion clears itself from the record as soon as the
+ledger gap closes and the next rebuild replays cleanly.
+
+Refusing to snapshot at all, which is what this used to do, meant **one broken holding out
+of twenty-four erased an entire value history, permanently, with no explanation attached to
+the absence.** It also left the dashboard and the chart disagreeing about which holdings
+exist: `routers/holdings.py::_portfolio` has always partitioned the same ISINs out of the
+live totals, so the stored series now matches the live view instead of contradicting it.
+
+A **missing price** is still fatal here, and deliberately so — an unfetched price is a gap
+in the price pipe, fixable by fetching it, and quietly dropping the holding would turn a
+temporary gap into a permanently understated total that looks perfectly healthy. The one
+exception is a price the archive has ANSWERED about without carrying (`price_absent`): a
+retired identifier no future fetch will ever produce. `_run_snapshots` resolves those via
+`db.prices.absent_on_or_before` and passes them as `exclude_isins`; the engine cannot make
+that call itself, because only the database can tell "confirmed absent" from "not fetched
+yet".
+
+Realised gain is filtered by the same exclusion set, so both halves of a snapshot always
+describe the same holdings.
 
 ---
 

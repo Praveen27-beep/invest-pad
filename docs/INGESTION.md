@@ -674,9 +674,48 @@ BSE UDiFF (csv) ─┘
 on BSE and `INE0O4R01018` (KDL-SM) only on NSE, so either single-exchange pipe silently
 loses a real holding — a different one each way.
 
-Keyed on **ISIN**, never symbol. This is only possible because the UDiFF format carries an
-ISIN column; the legacy NSE `cmDDMMMYYYYbhav` format has SYMBOL only, which would have
-meant a lookup table and the ticker-reuse problem all over again.
+Keyed on **ISIN**, never symbol — a lookup table keyed on ticker would have reintroduced
+the reuse problem `CLAUDE.md` opens with.
+
+**Correction:** an earlier version of this document claimed the legacy NSE
+`cmDDMMMYYYYbhav` format "has SYMBOL only". It does not — real fetched files from both
+exchanges carry an ISIN column, and that is what makes the historical tiers below possible.
+
+### Historical tiers (both exchanges)
+
+Each exchange changed its filename scheme and CSV layout on **2024-01-01**, so each source
+is two-tiered behind one `BhavcopySource` — `fetch_day`, `backfill_days` and the snapshot
+job are unaware there is more than one format:
+
+| | on/after 2024-01-01 | before |
+|---|---|---|
+| NSE | `nsearchives…/BhavCopy_NSE_CM_…` (UDiFF) | `archives.nseindia.com/…/cmDDMMMYYYYbhav.csv.zip` |
+| BSE | `bseindia.com/…/BhavCopy_BSE_CM_…` (UDiFF) | `bseindia.com/…/EQ_ISINCODE_DDMMYY.zip` |
+
+Legacy files are re-shaped into UDiFF column names by `sources._to_udiff_csv` before
+parsing, so `prices/udiff.py` stays the only bhavcopy parser. Proven equivalent rather
+than merely parseable: on 2024-01-02, where both BSE formats are still published, all
+3,975 equity closes agree exactly (`tests/test_prices.py`).
+
+Three things are load-bearing, not hygiene:
+
+- **`SC_TYPE = 'Q'` on BSE legacy.** The same file carries preference (`P`) and bond rows
+  whose ISINs differ from their equity sibling only in the series digits
+  (`INE919I04010`). An unfiltered row supplies the wrong instrument's price.
+- **HTTP 200 + HTML is `NotPublished`.** Neither archive 404s a date it does not have;
+  BSE answers with its own page. Parsing that would report a successful fetch of an empty
+  market.
+- **NSE's legacy host needs a warmed session cookie**; BSE's does not. One request
+  against BSE, two against NSE.
+
+`NSE_BHAVCOPY_EARLIEST` (`prices/pipe.py`) is the backfill floor — **2015-04-01**, a date
+this system has actually exercised, not the archives' true limit. Lowering it is a
+follow-up that needs a verified fetch at the older date, not a constant edit.
+
+**Provenance.** These are public archives fetched with browser headers, the same class of
+source as the interim NSE corporate-actions feed. Appropriate for closing verification
+gaps; **not** a redistribution licence. A licensed vendor becomes another
+`BhavcopySource` implementation with no change to the corporate-action engine.
 
 ### Running it
 

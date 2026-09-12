@@ -221,13 +221,23 @@ def compute_holdings_partitioned(
     ``_portfolio``/``UnpricedBanner`` already gives a missing price, extended here to a
     broken ledger segment instead of a missing price.
 
-    Deliberately NOT what ``compute_holdings`` itself does, and nothing that computes a
-    number FROM the holdings (XIRR, snapshots, contribution) should switch to this --
-    those must keep failing loudly, because a return figure computed while silently
-    dropping a broken position would be a confidently wrong number, exactly what
-    CLAUDE.md rule 4 exists to prevent for prices. This exists for the one thing that
-    just needs to LIST what it safely can: the holdings/summary screen, so one bad ISIN
-    does not take an investor's entire dashboard down with it.
+    Deliberately NOT what ``compute_holdings`` itself does. The rule for anything that
+    computes a number FROM the holdings is not "never partition" -- it is never partition
+    SILENTLY, because a total computed while quietly dropping a position is a confidently
+    wrong number, exactly what CLAUDE.md rule 4 exists to prevent for prices.
+
+    Two callers satisfy that differently, and both are correct:
+
+      - The holdings/summary screen just needs to LIST what it safely can, and names the
+        excluded ISINs beside the list (``routers/holdings.py``'s ``_skipped``), so one
+        bad ISIN does not take an investor's whole dashboard down with it.
+      - ``engine/snapshot.py`` DOES use this, and records what it left out in
+        ``Snapshot.excluded_isins`` (migration 026). Refusing to snapshot at all, which is
+        what it used to do, erased an entire value history over one broken holding and
+        attached no explanation to the absence -- strictly worse than a figure that says
+        what it excludes. See docs/ARCHITECTURE_INVARIANTS.md #16.
+
+    XIRR and contribution still use the strict ``compute_holdings``.
 
     Re-runs the full replay once per excluded ISIN rather than resuming mid-loop --
     each ISIN's state in ``compute_holdings``'s single pass is independent of every

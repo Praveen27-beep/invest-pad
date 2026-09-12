@@ -348,6 +348,42 @@ added here (by a human, or by the automated feed above). See `docs/ENGINE_SPEC.m
 "Matching against verified corporate actions", for all three paths and the safety
 argument for each.
 
+### `price_waived` / `price_waiver_reason` (migration 025)
+
+The audited escape hatch for a BONUS/SPLIT whose ex-date predates any reachable archive,
+where corroboration is not merely missing but permanently unobtainable. Set only by
+`app.db.security_alias`-style explicit action (`waive_price_evidence`), never by a feed.
+
+Not a bypass of sourcing or verification: the function refuses any ex-date within the
+archive's range, so evidence that COULD be obtained must be. Now less load-bearing since
+BSE history became reachable — its date gate assumes "within the floor ⇒ obtainable",
+which held for NSE-listed names and did not for BSE-only ones.
+
+## `security_alias` — one security, many ISINs over time (migration 027)
+
+A retired identifier and its replacement, for the **same** security. See
+`docs/ENGINE_SPEC.md` §7a for the full trust model.
+
+| column | type | notes |
+|---|---|---|
+| `old_isin` | text PK → `security` | the retired identifier. PK, not merely unique: an ISIN is superseded once, and two rows would be two contradictory claims about one fact |
+| `current_isin` | text NOT NULL → `security` | its replacement. Chains resolve to the terminal ISIN; cycles are refused at write |
+| `effective_date` | date | when the change took effect |
+| `source` / `source_url` / `verification` | | identical trust model to `corporate_action`; `DRAFT` is inert |
+
+**Identity only — no ratio.** Any quantity effect is a separate `corporate_action`.
+
+**Never applied by rewriting the ledger.** `transaction` rows keep the ISIN the broker
+reported; `repository.load_transactions` maps them at the read boundary. That is what
+preserves FIFO acquisition dates across an identifier change — a synthetic
+`TRANSFER_OUT`/`TRANSFER_IN` pair would open a new lot at the change date and turn a
+long-term holding short-term.
+
+Two CHECK constraints, enforced in SQL as well as Python so they survive anything that
+writes here directly: an ISIN cannot alias to itself, and characters 1–7 must match
+(country + instrument type + issuer). A different issuer is a **merger**, not an
+identifier change.
+
 ## `cost_inflation_index`
 
 Static CBDT reference table for indexation (`docs/TAX_ENGINE.md` §Indexation), added by
@@ -368,14 +404,26 @@ seeded and no loader exists yet; that is sourcing work for a later Phase 3 sessi
 
 ```
 Holding   { isin, quantity, avg_cost, invested, last_price, market_value,
-            unrealised, unrealised_pct, weight_pct, first_buy_date }
+            unrealised, unrealised_pct, weight_pct, first_buy_date,
+            cagr, day_change_pct, fifo_cost, fifo_avg, cost_estimated }
 Lot       { isin, open_date, quantity_open, cost_per_unit }   # FIFO
 Realised  { isin, sell_date, quantity, proceeds, cost, gain, holding_days,
             term }                                             # SHORT | LONG
-Snapshot  { as_of, invested, market_value, unrealised, realised_to_date }
+Snapshot  { as_of, invested, market_value, unrealised, realised_to_date,
+            excluded_isins }
 ```
 
 If any of these appear as a table in a migration, the architecture has been broken.
+`portfolio_snapshot` is the one persisted form, and it is a **cache of a derivation**.
+
+`day_change_pct` is `(last_price - previous_close) / previous_close` — "how did this do
+today", a different question from `unrealised_pct`'s "since I bought it". Null, never 0,
+when there is no earlier close: zero would claim the price did not move.
+
+`excluded_isins` (migration 026, on `portfolio_snapshot`) names the ISINs a snapshot's
+totals do NOT include, because their ledger segment did not reconcile on that date.
+Empty on a clean replay. Excluding a holding is permitted; excluding it **silently** is
+not — see `docs/ARCHITECTURE_INVARIANTS.md` #16 and `docs/ENGINE_SPEC.md` §8.
 
 ## Indexes
 

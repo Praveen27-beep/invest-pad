@@ -2,6 +2,15 @@
 
 Read this file first, every session. It is the contract.
 
+**Then read `docs/ARCHITECTURE_INVARIANTS.md` before planning or implementing any change
+to financial data.** It holds the non-negotiable rules — never invent financial history,
+detection may infer but resolution may not, identity changes are aliases rather than
+transactions and never reset acquisition dates, failed verification is an exception and
+never a guess. If a proposed implementation conflicts with one, **stop and flag the
+conflict rather than improvising around it.** It also separates what is implemented and
+verified from what is unresolved or deliberately excluded, so an intention is never read
+as a guarantee.
+
 ## What this is
 
 A portfolio intelligence platform for Indian investors. **Not** a broker, **not** an
