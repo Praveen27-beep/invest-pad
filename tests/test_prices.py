@@ -80,8 +80,14 @@ def test_rows_are_keyed_by_isin_not_symbol(dummy=None) -> None:
 
 def test_a_changed_format_raises_rather_than_returning_nothing() -> None:
     """Parsing zero rows out of a changed file is how a pipe reports success while
-    delivering no prices."""
-    with pytest.raises(BhavcopyFormatError, match="no ISIN column"):
+    delivering no prices.
+
+    The message says "the layout changed", not "this is a legacy file": a legacy file
+    only reaches this parser after sources._to_udiff_csv has re-shaped it, so arriving
+    here un-reshaped means the format moved under us. An earlier version claimed the
+    legacy format had no ISIN column at all, which real fetched files disprove.
+    """
+    with pytest.raises(BhavcopyFormatError, match="layout changed"):
         parse(b"SYMBOL,SERIES,CLOSE\nBLS,EQ,263.00\n", "NSE")
 
 
@@ -194,10 +200,10 @@ class _FakeSubSource:
 
 
 def test_nse_bhavcopy_source_uses_legacy_before_the_cutover() -> None:
-    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, NseBhavcopySource
+    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, TieredBhavcopySource
 
     current, legacy = _FakeSubSource(b"current"), _FakeSubSource(b"legacy")
-    source = NseBhavcopySource(current=current, legacy=legacy)
+    source = TieredBhavcopySource("NSE", current, legacy)
 
     before = NSE_CURRENT_FORMAT_SINCE - timedelta(days=1)
     assert source.fetch(before) == b"legacy"
@@ -206,10 +212,10 @@ def test_nse_bhavcopy_source_uses_legacy_before_the_cutover() -> None:
 
 
 def test_nse_bhavcopy_source_uses_current_format_on_and_after_the_cutover() -> None:
-    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, NseBhavcopySource
+    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, TieredBhavcopySource
 
     current, legacy = _FakeSubSource(b"current"), _FakeSubSource(b"legacy")
-    source = NseBhavcopySource(current=current, legacy=legacy)
+    source = TieredBhavcopySource("NSE", current, legacy)
 
     assert source.fetch(NSE_CURRENT_FORMAT_SINCE) == b"current"
     assert current.calls == [NSE_CURRENT_FORMAT_SINCE]
@@ -375,3 +381,134 @@ def test_live_bhavcopy_still_parses() -> None:
             pytest.skip(f"{source.exchange}: nothing published for {target}")
         assert rows, f"{source.exchange} returned no usable rows"
         assert all(r.isin for r in rows)
+
+
+# --- legacy BSE archive (pre-2024 dates) -----------------------------------------
+#
+# The hole this closes: GUJTHEM (BSE scrip 506879) was BSE-only in Oct 2023, so no NSE
+# file has its split evidence at any price. Fixtures below are REAL captured rows.
+
+
+def bse_legacy(name: str) -> str:
+    return (FIXTURES / f"bse_legacy_{name}.csv").read_text()
+
+
+def test_bse_legacy_reshapes_into_udiff_columns() -> None:
+    """Different column names, a two-digit year, and a different equity marker than NSE's
+    legacy file -- all described as data, so one normaliser and one parser serve both."""
+    from app.prices.sources import BSE_LEGACY_LAYOUT, _to_udiff_csv
+
+    reshaped = _to_udiff_csv(bse_legacy("20231009"), BSE_LEGACY_LAYOUT)
+    rows = {r.isin: r for r in parse(reshaped, "BSE")}
+    gujthem = rows["INE942C01029"]
+    assert gujthem.close == Decimal("1047.80")
+    assert gujthem.price_date == date(2023, 10, 9), "09-Oct-23 is 2023, not 0023"
+
+
+def test_bse_legacy_filters_non_equity_instruments() -> None:
+    """SC_TYPE 'Q' is equity; the same file carries preference ('P') and bond rows whose
+    ISINs differ from their equity sibling only in the series digits. Letting one through
+    would quietly supply the wrong instrument's price -- the NCRPS trap again."""
+    from app.prices.sources import BSE_LEGACY_LAYOUT, _to_udiff_csv
+
+    raw = bse_legacy("20231009")
+    assert "INE919I04010" in raw, "fixture must contain a preference row to exclude"
+    rows = {r.isin for r in parse(_to_udiff_csv(raw, BSE_LEGACY_LAYOUT), "BSE")}
+    assert "INE919I04010" not in rows
+    assert rows == {"INE942C01029"}
+
+
+def test_bse_legacy_and_current_formats_agree_on_an_overlap_date() -> None:
+    """THE correctness proof for the re-shaping, not merely that it parses.
+
+    2024-01-02 is served by BOTH BSE formats. Normalised, they must describe the same
+    market -- same ISINs, same closes. Captured from the real files, where all 3,975
+    equity closes agreed exactly.
+    """
+    from app.prices.sources import BSE_LEGACY_LAYOUT, _to_udiff_csv
+
+    legacy = {
+        r.isin: r.close
+        for r in parse(_to_udiff_csv(bse_legacy("20240102"), BSE_LEGACY_LAYOUT), "BSE")
+    }
+    current = {
+        r.isin: r.close
+        for r in parse((FIXTURES / "bse_20240102.csv").read_bytes(), "BSE")
+    }
+    assert legacy, "fixture must not be empty"
+    assert legacy == current, "the two formats disagree about the same trading day"
+
+
+def test_bse_legacy_html_response_is_not_published() -> None:
+    """BSE answers a date it does not have with HTTP 200 and an HTML page. Parsing that
+    as zero rows would report a successful fetch of an empty market."""
+    from app.prices.sources import legacy_bse_source
+
+    html = b'<!DOCTYPE html><html><head><title>BSE</title></head></html>'
+
+    class _Opener:
+        def open(self, request, timeout=None):
+            return _FakeHttpResponse(html)
+
+    with pytest.raises(NotPublished):
+        legacy_bse_source(opener_factory=lambda: _Opener()).fetch(date(2023, 10, 9))
+
+
+def test_bse_tier_dispatches_on_the_same_boundary_as_nse() -> None:
+    from app.prices.sources import NSE_CURRENT_FORMAT_SINCE, TieredBhavcopySource
+
+    current, legacy = _FakeSubSource(b"current"), _FakeSubSource(b"legacy")
+    source = TieredBhavcopySource("BSE", current, legacy)
+
+    assert source.fetch(NSE_CURRENT_FORMAT_SINCE - timedelta(days=1)) == b"legacy"
+    assert source.fetch(NSE_CURRENT_FORMAT_SINCE) == b"current"
+    assert source.fetch(NSE_CURRENT_FORMAT_SINCE + timedelta(days=1)) == b"current"
+
+
+def test_gujthem_split_evidence_is_reachable_from_bse_alone() -> None:
+    """The acceptance test for this whole change: cum on the retired ISIN, ex on its
+    replacement, one exchange, real captured data. 1047.80 / 225.15 = 4.65 against an
+    expected x5 -- inside check_price_consistency's band, WITHOUT that guard changing.
+    """
+    from app.engine.corporate_actions import (
+        CorpActionType,
+        CorporateAction,
+        Verification,
+        check_price_consistency,
+    )
+    from app.prices.sources import BSE_LEGACY_LAYOUT, _to_udiff_csv
+
+    cum_csv = _to_udiff_csv(bse_legacy("20231009"), BSE_LEGACY_LAYOUT)
+    ex_csv = _to_udiff_csv(bse_legacy("20231010"), BSE_LEGACY_LAYOUT)
+    cum = {r.isin: r.close for r in parse(cum_csv, "BSE")}
+    ex = {r.isin: r.close for r in parse(ex_csv, "BSE")}
+
+    action = CorporateAction(
+        isin="INE942C01045", action_type=CorpActionType.SPLIT, ex_date=date(2023, 10, 10),
+        face_value_before=Decimal(5), face_value_after=Decimal(1),
+        price_cum=cum["INE942C01029"],   # the RETIRED identifier
+        price_ex=ex["INE942C01045"],     # its replacement
+        source="BSE legacy bhavcopy", source_url="https://example.invalid/bse",
+        verification=Verification.VERIFIED,
+    )
+    assert action.multiplier() == 5
+    assert check_price_consistency(action) is None, "existing guard, better evidence"
+
+
+def test_a_bse_only_action_without_evidence_still_fails_closed() -> None:
+    """Coverage improving must not make the engine less demanding. No prices, no pass."""
+    from app.engine.corporate_actions import (
+        CorpActionType,
+        CorporateAction,
+        Verification,
+        check_price_consistency,
+    )
+
+    action = CorporateAction(
+        isin="INE942C01045", action_type=CorpActionType.SPLIT, ex_date=date(2023, 10, 10),
+        face_value_before=Decimal(5), face_value_after=Decimal(1),
+        source="BSE legacy bhavcopy", source_url="https://example.invalid/bse",
+        verification=Verification.VERIFIED,
+    )
+    failure = check_price_consistency(action)
+    assert failure is not None and failure.code == "NO_PRICE_EVIDENCE"

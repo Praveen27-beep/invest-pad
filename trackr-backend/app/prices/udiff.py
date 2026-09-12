@@ -73,8 +73,9 @@ def parse(payload: bytes, exchange: str) -> list[BhavcopyRow]:
     missing = {ISIN_COLUMN, CLOSE_COLUMN, DATE_COLUMN} - columns
     if missing:
         raise BhavcopyFormatError(
-            f"{exchange}: not a UDiFF bhavcopy, missing {sorted(missing)}. "
-            "The legacy format has no ISIN column at all."
+            f"{exchange}: not a UDiFF bhavcopy, missing {sorted(missing)}. A legacy-format "
+            "file reaches this parser only after app.prices.sources._to_udiff_csv has "
+            "re-shaped it, so this means the layout changed, not that it is old."
         )
 
     rows: list[BhavcopyRow] = []

@@ -13,6 +13,7 @@ import ssl
 import urllib.error
 import urllib.request
 import zipfile
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from typing import Protocol, runtime_checkable
@@ -32,6 +33,14 @@ LEGACY_NSE_URL = (
     "cm{d:%d}{mon}{d:%Y}bhav.csv.zip"
 )
 LEGACY_NSE_WARMUP_URL = "https://www.nseindia.com/all-reports"
+
+#: BSE's own pre-UDiFF archive. The ISIN-coded variant specifically -- BSE also publishes
+#: an EQ{DDMMYY} file keyed on scrip code alone, which would have reintroduced the
+#: identifier problem CLAUDE.md opens with. Confirmed live: this still serves October 2023,
+#: which is the only place GUJTHEM's (BSE scrip 506879) split evidence exists at all.
+LEGACY_BSE_URL = (
+    "https://www.bseindia.com/download/BhavCopy/Equity/EQ_ISINCODE_{d:%d%m%y}.zip"
+)
 
 #: The date NSE_URL's exact filename scheme starts answering -- see
 #: app.prices.pipe.NSE_BHAVCOPY_EARLIEST's docstring for how this was verified. Before
@@ -140,17 +149,51 @@ class HttpBhavcopySource:
         return body
 
 
-#: Legacy archive columns -> the UDiFF names app.prices.udiff.parse already knows, so
-#: that one parser stays the only bhavcopy parser -- see _to_udiff_csv.
-_LEGACY_SYMBOL_COL = "SYMBOL"
-_LEGACY_SERIES_COL = "SERIES"
-_LEGACY_CLOSE_COL = "CLOSE"
-_LEGACY_TIMESTAMP_COL = "TIMESTAMP"
-_LEGACY_ISIN_COL = "ISIN"
+@dataclass(frozen=True, slots=True)
+class _LegacyLayout:
+    """Where a pre-UDiFF bhavcopy keeps the four things ``app.prices.udiff.parse`` reads.
 
-#: Cash-segment equity series only -- same posture as udiff.EQUITY_INSTRUMENTS, just
-#: keyed on the legacy file's own SERIES column instead of UDiFF's FinInstrmTp.
-_LEGACY_EQUITY_SERIES = {"EQ", "BE"}
+    Both exchanges published their own shape before converging on UDiFF, and they differ
+    in every column name, in how equity is marked, and even in the year width. Describing
+    that as data rather than as two near-identical functions is what keeps ONE normaliser
+    -- and therefore one parser -- for every source this system has.
+    """
+
+    isin: str
+    close: str
+    trade_date: str
+    symbol: str
+    #: The column that says what KIND of instrument a row is, and the values that mean
+    #: cash-segment equity. Not cosmetic: both files carry other instruments whose ISINs
+    #: look almost identical to their equity siblings.
+    instrument_column: str
+    equity_values: frozenset[str]
+
+
+#: NSE's ``cmDDMMMYYYYbhav`` -- SERIES EQ (normal) and BE (trade-to-trade), both equity.
+NSE_LEGACY_LAYOUT = _LegacyLayout(
+    isin="ISIN",
+    close="CLOSE",
+    trade_date="TIMESTAMP",
+    symbol="SYMBOL",
+    instrument_column="SERIES",
+    equity_values=frozenset({"EQ", "BE"}),
+)
+
+#: BSE's ``EQ_ISINCODE_DDMMYY`` -- SC_TYPE 'Q' is equity; the same file also carries 'P'
+#: (preference) and debt/bond rows. Filtering is load-bearing rather than tidiness: a
+#: preference ISIN differs from its equity sibling only in the series digits
+#: (INE919I04010 against an ...01... equity), so an unfiltered row would silently supply
+#: the wrong instrument's price -- the same trap as the NCRPS false positive
+#: app.ingest.corporate_action_feed already guards against.
+BSE_LEGACY_LAYOUT = _LegacyLayout(
+    isin="ISIN_CODE",
+    close="CLOSE",
+    trade_date="TRADING_DATE",
+    symbol="SC_NAME",
+    instrument_column="SC_TYPE",
+    equity_values=frozenset({"Q"}),
+)
 
 _LEGACY_MONTH_ABBREVIATIONS = (
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -158,23 +201,39 @@ _LEGACY_MONTH_ABBREVIATIONS = (
 )
 
 
-def _to_udiff_csv(legacy_text: str) -> bytes:
-    """Re-shape a legacy ``cmDDMMMYYYYbhav`` row into UDiFF's column names, so
+def _legacy_date(raw: str) -> date | None:
+    """``17-OCT-2023`` (NSE) or ``09-Oct-23`` (BSE) -> a real date, or None if neither.
+
+    The two-digit year is BSE's, and these archives only exist for the 2000s, so the
+    century is not a guess -- there is no 1923 bhavcopy to be ambiguous with.
+    """
+    try:
+        day_s, mon_s, year_s = raw.strip().upper().split("-")
+        year = int(year_s)
+        if len(year_s) == 2:
+            year += 2000
+        return date(year, _LEGACY_MONTH_ABBREVIATIONS.index(mon_s) + 1, int(day_s))
+    except (ValueError, IndexError):
+        return None
+
+
+def _to_udiff_csv(legacy_text: str, layout: _LegacyLayout = NSE_LEGACY_LAYOUT) -> bytes:
+    """Re-shape a pre-UDiFF bhavcopy into UDiFF's column names, so
     ``app.prices.udiff.parse`` -- the one bhavcopy parser -- can read it unmodified.
     Only the columns that parser actually reads are produced; nothing here does its own
-    Decimal/date validation; that happens exactly once, inside ``parse``, same as any
-    other source.
+    Decimal/date validation, which happens exactly once, inside ``parse``, same as for
+    any other source.
 
-    Confirmed against a real fetched file (17-Oct-2023): the legacy format DOES carry an
-    ISIN column, contradicting ``app.prices.udiff``'s old module docstring, which this
-    change corrects.
+    Confirmed against real fetched files from both exchanges: the legacy formats DO carry
+    an ISIN column, contradicting ``app.prices.udiff``'s old module docstring, which this
+    change corrects. Proven equivalent, too -- on 2024-01-02, where both BSE formats are
+    still published, all 3,975 equity closes agree exactly (see tests).
     """
     reader = csv.DictReader(io.StringIO(legacy_text))
     if reader.fieldnames is None:
         return b""
     columns = {(f or "").strip() for f in reader.fieldnames}
-    missing = {_LEGACY_ISIN_COL, _LEGACY_CLOSE_COL, _LEGACY_TIMESTAMP_COL} - columns
-    if missing:
+    if {layout.isin, layout.close, layout.trade_date} - columns:
         # Let the caller's udiff.parse raise BhavcopyFormatError with its own message --
         # an empty-but-headered UDiFF CSV reliably triggers that path.
         return b"ISIN,ClsPric,TradDt\n"
@@ -186,21 +245,18 @@ def _to_udiff_csv(legacy_text: str) -> bytes:
     )
     writer.writeheader()
     for raw in reader:
-        series = (raw.get(_LEGACY_SERIES_COL) or "").strip().upper()
-        if series not in _LEGACY_EQUITY_SERIES:
+        instrument = (raw.get(layout.instrument_column) or "").strip().upper()
+        if instrument not in layout.equity_values:
             continue
-        timestamp = (raw.get(_LEGACY_TIMESTAMP_COL) or "").strip().upper()
-        try:
-            day_s, mon_s, year_s = timestamp.split("-")
-            trad_dt = date(int(year_s), _LEGACY_MONTH_ABBREVIATIONS.index(mon_s) + 1, int(day_s))
-        except (ValueError, IndexError):
-            continue  # let udiff.parse's own per-row date guard handle anything malformed
+        trad_dt = _legacy_date(raw.get(layout.trade_date) or "")
+        if trad_dt is None:
+            continue  # let udiff.parse's own per-row guards handle anything malformed
         writer.writerow(
             {
-                "ISIN": (raw.get(_LEGACY_ISIN_COL) or "").strip(),
-                "TckrSymb": (raw.get(_LEGACY_SYMBOL_COL) or "").strip(),
-                "SctySrs": series,
-                "ClsPric": (raw.get(_LEGACY_CLOSE_COL) or "").strip(),
+                "ISIN": (raw.get(layout.isin) or "").strip(),
+                "TckrSymb": (raw.get(layout.symbol) or "").strip(),
+                "SctySrs": instrument,
+                "ClsPric": (raw.get(layout.close) or "").strip(),
                 "TradDt": trad_dt.isoformat(),
                 "FinInstrmTp": "EQ",
             }
@@ -220,73 +276,118 @@ def _legacy_opener():
     )
 
 
-class LegacyNseBhavcopySource:
-    """The pre-2024 NSE archive -- see LEGACY_NSE_URL and NSE_CURRENT_FORMAT_SINCE.
-    Never constructed directly by a caller; NseBhavcopySource picks this over the
-    current-format HttpBhavcopySource by date."""
+class LegacyBhavcopySource:
+    """A pre-UDiFF archive from either exchange, normalised to UDiFF bytes on the way out.
 
-    exchange = "NSE"
+    One class, two exchanges: they differ in URL, in CSV layout, and in whether a warm-up
+    request is needed, and all three are constructor arguments rather than a second
+    near-identical class. Never constructed directly by a caller -- NseBhavcopySource and
+    BseBhavcopySource pick it over the current-format source by date.
 
-    def __init__(self, opener_factory=None):
+    ``warmup_url`` is NSE-only and load-bearing there: archives.nseindia.com 403s/503s a
+    cold request even with browser headers, and only a session cookie carried across the
+    warm-up and the real fetch by the SAME opener gets a 200. BSE needs no such dance, so
+    it passes None and one request is made instead of two.
+    """
+
+    def __init__(
+        self,
+        exchange: str,
+        url_template: str,
+        layout: _LegacyLayout,
+        warmup_url: str | None = None,
+        opener_factory=None,
+    ):
+        self.exchange = exchange
+        self.url_template = url_template
+        self._layout = layout
+        self._warmup_url = warmup_url
         self._opener_factory = opener_factory or _legacy_opener
 
     def url_for(self, on: date) -> str:
-        return LEGACY_NSE_URL.format(d=on, mon=_LEGACY_MONTH_ABBREVIATIONS[on.month - 1])
+        return self.url_template.format(d=on, mon=_LEGACY_MONTH_ABBREVIATIONS[on.month - 1])
 
     def fetch(self, on: date) -> bytes:
+        label = f"{self.exchange} (legacy archive)"
         opener = self._opener_factory()
         try:
-            warmup = urllib.request.Request(LEGACY_NSE_WARMUP_URL, headers=LEGACY_BROWSER_HEADERS)
-            opener.open(warmup, timeout=TIMEOUT_SECONDS).close()
+            if self._warmup_url:
+                warmup = urllib.request.Request(self._warmup_url, headers=LEGACY_BROWSER_HEADERS)
+                opener.open(warmup, timeout=TIMEOUT_SECONDS).close()
 
             request = urllib.request.Request(self.url_for(on), headers=LEGACY_BROWSER_HEADERS)
             with opener.open(request, timeout=TIMEOUT_SECONDS) as response:
                 body = response.read()
         except urllib.error.HTTPError as exc:
             if exc.code == 404:
-                raise NotPublished(f"NSE (legacy archive): nothing published for {on}") from exc
-            raise FetchFailed(f"NSE (legacy archive): HTTP {exc.code} for {on}") from exc
+                raise NotPublished(f"{label}: nothing published for {on}") from exc
+            raise FetchFailed(f"{label}: HTTP {exc.code} for {on}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise FetchFailed(f"NSE (legacy archive): {type(exc).__name__} for {on}") from exc
+            raise FetchFailed(f"{label}: {type(exc).__name__} for {on}") from exc
 
         if body[:2] != b"PK":
-            # Same "got an HTML page back, not a real file" guard HttpBhavcopySource
-            # applies to BSE -- an unexpected redirect/login page must not silently
-            # parse as zero rows.
-            raise NotPublished(
-                f"NSE (legacy archive): nothing published for {on} (non-zip response)"
-            )
+            # Neither archive 404s a date it does not have: BSE answers HTTP 200 with its
+            # own HTML page, which would otherwise parse as zero rows and be reported as a
+            # successful fetch of an empty market. A real archive is always a zip.
+            raise NotPublished(f"{label}: nothing published for {on} (non-zip response)")
         archive = zipfile.ZipFile(io.BytesIO(body))
         legacy_text = archive.read(archive.namelist()[0]).decode("utf-8", "replace")
-        return _to_udiff_csv(legacy_text)
+        return _to_udiff_csv(legacy_text, self._layout)
 
 
-class NseBhavcopySource:
-    """NSE bhavcopy, current format on/after NSE_CURRENT_FORMAT_SINCE, the legacy
-    archive before it -- one BhavcopySource, so fetch_day and every other caller stays
-    unaware two different URL shapes and two different CSV layouts are behind it.
-    ``fetch`` always returns UDiFF-shaped bytes either way; app.prices.udiff.parse
-    remains the only bhavcopy parser."""
+def legacy_nse_source(opener_factory=None) -> LegacyBhavcopySource:
+    return LegacyBhavcopySource(
+        "NSE", LEGACY_NSE_URL, NSE_LEGACY_LAYOUT, LEGACY_NSE_WARMUP_URL, opener_factory
+    )
 
-    exchange = "NSE"
+
+def legacy_bse_source(opener_factory=None) -> LegacyBhavcopySource:
+    return LegacyBhavcopySource(
+        "BSE", LEGACY_BSE_URL, BSE_LEGACY_LAYOUT, None, opener_factory
+    )
+
+
+class TieredBhavcopySource:
+    """Current format on/after CURRENT_FORMAT_SINCE, the legacy archive before it.
+
+    One ``BhavcopySource`` per exchange, so ``fetch_day`` and every other caller stays
+    unaware that two URL shapes and two CSV layouts sit behind it; ``fetch`` returns
+    UDiFF-shaped bytes either way, and ``app.prices.udiff.parse`` remains the only
+    bhavcopy parser in the system.
+
+    Dispatched by DATE rather than by trying one and falling back, because "no file"
+    is indistinguishable from "exchange holiday" on both archives -- a fallback would
+    spend a second request on every weekend forever and still learn nothing. Both
+    exchanges happen to share the same boundary, and the formats OVERLAP either side of
+    it (BSE still published its legacy file into mid-2024), so the constant is not
+    knife-edge and moving it is safe.
+    """
 
     def __init__(
         self,
-        current: HttpBhavcopySource | None = None,
-        legacy: LegacyNseBhavcopySource | None = None,
+        exchange: str,
+        current: BhavcopySource,
+        legacy: BhavcopySource,
+        since: date = NSE_CURRENT_FORMAT_SINCE,
     ):
-        self._current = current or HttpBhavcopySource("NSE", NSE_URL)
-        self._legacy = legacy or LegacyNseBhavcopySource()
+        self.exchange = exchange
+        self._current = current
+        self._legacy = legacy
+        self._since = since
 
     def fetch(self, on: date) -> bytes:
-        if on < NSE_CURRENT_FORMAT_SINCE:
+        if on < self._since:
             return self._legacy.fetch(on)
         return self._current.fetch(on)
 
 
-def nse_source(opener=None) -> NseBhavcopySource:
-    return NseBhavcopySource(current=HttpBhavcopySource("NSE", NSE_URL, opener))
+def nse_source(opener=None) -> TieredBhavcopySource:
+    return TieredBhavcopySource(
+        "NSE", HttpBhavcopySource("NSE", NSE_URL, opener), legacy_nse_source()
+    )
 
 
-def bse_source(opener=None) -> HttpBhavcopySource:
-    return HttpBhavcopySource("BSE", BSE_URL, opener)
+def bse_source(opener=None) -> TieredBhavcopySource:
+    return TieredBhavcopySource(
+        "BSE", HttpBhavcopySource("BSE", BSE_URL, opener), legacy_bse_source()
+    )

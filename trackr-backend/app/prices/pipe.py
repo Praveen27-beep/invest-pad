@@ -167,8 +167,10 @@ def backfill_days(
 ) -> list[PipeResult]:
     """``fetch_day`` for every trading day in ``[start, end]`` that isn't already stored.
 
-    ``start`` is clamped to ``NSE_BHAVCOPY_EARLIEST`` -- the archive itself, not the
-    caller, is the honest floor. ``already_present`` (typically
+    ``start`` is clamped to ``NSE_BHAVCOPY_EARLIEST``. That constant is this system's
+    own verified floor, NOT the archives' true limit -- both exchanges serve older data
+    than it admits, and lowering it is a follow-up that needs a verified fetch at the
+    older date rather than an edit to the number. ``already_present`` (typically
     ``app.db.prices.price_dates_present``) is what makes a multi-year backfill resumable;
     this function stays storage-free like ``fetch_day``, so the caller decides what
     "already stored" means and does the upserting itself.
