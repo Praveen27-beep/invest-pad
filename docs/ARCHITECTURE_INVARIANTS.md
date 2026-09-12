@@ -89,6 +89,23 @@ non-reconciling holding is permitted; excluding it SILENTLY is not.
 `portfolio_snapshot.excluded_isins` and the holdings API's `skipped` list carry the names,
 so every reader can caveat the figure.
 
+**17. Raw third-party market data is never redistributed; only derived values are.**
+Every price and bhavcopy source this system uses (NSE/BSE current and legacy archives,
+the interim corporate-actions feed) is fetched under that exchange's own terms of use for
+INTERNAL computation, not under a redistribution licence — see the provenance notes on
+`app.prices.sources` and `app.ingest.corporate_action_feed`. That distinction is currently
+moot because nothing exports data to a client or adviser; it stops being moot the moment
+an export feature is built, and the decision must be made before that feature ships, not
+discovered afterward. **Aspirational, not yet enforced by any code — there is no export
+feature to enforce it on.** The rule for whenever one is built: a client- or
+adviser-facing export may contain **derived values** (a holding's quantity, average cost,
+market value, weight, XIRR, a chart) computed FROM a fetched price, never the fetched
+closing price, bhavcopy row, or notice text itself, verbatim or bulk. Internal use —
+computing a holding, corroborating a ratio, showing a chart inside this application — is
+unaffected; this governs what leaves the system as an export, not what the engine computes
+with. A licensed vendor relationship, when one exists, replaces this constraint with
+whatever that licence actually permits, decided at that time, not assumed now.
+
 ---
 
 ## Status of what these govern

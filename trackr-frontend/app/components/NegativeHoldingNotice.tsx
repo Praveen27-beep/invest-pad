@@ -71,11 +71,26 @@ export function NegativeHoldingNotice({
       </p>
       <p className="mt-1 text-xs text-navy-500">
         This means a sale for {label} was recorded before enough buys to cover it, not
-        that the position actually went short. The usual cause: Zerodha Console caps a
-        tradebook export at 365 days, so an earlier year&apos;s buys never got uploaded.
-        A less common cause is a merger, demerger, or symbol change that changed the
-        position&apos;s quantity without a matching transaction.
+        that the position actually went short. Three known causes, roughly in order of
+        how often each turns out to be it:
       </p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-navy-500">
+        <li>
+          Missing history — Zerodha Console caps a tradebook export at 365 days, so an
+          earlier year&apos;s buys never got uploaded.
+        </li>
+        <li>
+          A rights issue you subscribed to — the entitlement ratio is public, but how
+          many shares you actually applied for and were allotted isn&apos;t, so this can
+          never be filled in automatically. Check your allotment advice.
+        </li>
+        <li>
+          An identifier change, merger or demerger. A straightforward identifier change
+          (the same company under a retired ISIN) is often detected and resolved
+          automatically once a source confirms it — if that&apos;s the cause here, it
+          may already be fixed on the next refresh rather than needing your input.
+        </li>
+      </ul>
       <p className="mt-2 text-xs text-navy-500">
         <Link href="/portfolio?tab=import" className="text-brass-600 underline">
           Import
