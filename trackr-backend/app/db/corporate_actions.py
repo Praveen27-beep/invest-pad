@@ -249,23 +249,38 @@ def waive_price_evidence(
     conn: Any, action_id: str, reason: str, actor_uid: str | None = None
 ) -> None:
     """The one legitimate way to unblock a BONUS/SPLIT whose price evidence is not
-    merely missing but PERMANENTLY UNOBTAINABLE -- its ``ex_date`` predates
-    ``app.prices.pipe.NSE_BHAVCOPY_EARLIEST``, the confirmed floor of this system's
-    bhavcopy archive (see ``025_price_evidence_waiver.sql``). No feed run or backfill
-    will ever populate ``price_cum``/``price_ex`` for such a row, so
-    ``check_price_consistency``'s ``NO_PRICE_EVIDENCE`` guard would otherwise quarantine
-    it forever -- the KAMAHOLD/GENSOL case this exists for.
+    merely missing but PERMANENTLY UNOBTAINABLE -- see ``025_price_evidence_waiver.sql``.
 
-    NOT a blanket bypass. Refuses any action whose ex_date falls within the archive's
-    range: for those, price evidence genuinely IS obtainable (by ``refresh_corporate_
-    action_feed``'s normal self-correcting retry, or a manual backfill), so the guard
-    must keep doing its job undiminished. Also refuses an unsourced or already-disputed
-    row -- a waiver only ever removes the price check, never ``check_sourced`` or
-    ``check_verified``, which ``screen()`` still applies afterwards exactly as before.
+    GATED ON VERIFIED COVERAGE, NOT ON A DATE. An earlier version refused any ex_date on
+    or after ``NSE_BHAVCOPY_EARLIEST``, assuming everything inside that window was
+    obtainable. That assumption was wrong and this system disproved it: GUJTHEM's October
+    2023 split sat comfortably inside the window and had no evidence anywhere, because the
+    security was BSE-only at the time and only NSE was being asked. A date says nothing
+    about whether a particular security's price can be fetched; only having actually
+    looked does.
 
-    Requires a non-empty ``reason``, same posture as ``dispute_corporate_action``'s
-    ``reason`` -- an audited human judgement call needs a stated basis, not just a click.
+    So a waiver now requires one of two positive findings, never an assumption:
+
+      - the archive has ANSWERED for this security without carrying it
+        (``price_absent``, via ``app.db.prices.absent_on_or_before``) -- a retired or
+        never-listed identifier no future fetch will produce; or
+      - the ex_date precedes ``NSE_BHAVCOPY_EARLIEST``, the floor ``backfill_days``
+        clamps to, so no fetch will ever be ATTEMPTED and an absence can never be
+        recorded. A structural dead end rather than an unexplored one.
+
+    And it refuses in the two cases that used to slip through in the other direction:
+
+      - evidence already EXISTS -- then verify it, do not waive it; and
+      - nobody has looked yet -- an unfetched price is not an unobtainable one, and
+        waiving it would convert a temporary gap into a permanent assertion. Run a
+        backfill and let the normal self-correcting retry resolve it.
+
+    Still never a blanket bypass: a waiver removes only the price check, never
+    ``check_sourced`` or ``check_verified``, which ``screen()`` applies afterwards exactly
+    as before. Requires a non-empty ``reason`` -- an audited human judgement call needs a
+    stated basis, not just a click.
     """
+    from app.db.prices import absent_on_or_before
     from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
 
     if not reason.strip():
@@ -278,20 +293,50 @@ def waive_price_evidence(
         raise PriceEvidenceWaiverError(
             f"price evidence is not required for {action.action_type.value}; nothing to waive"
         )
-    if action.ex_date >= NSE_BHAVCOPY_EARLIEST:
-        raise PriceEvidenceWaiverError(
-            f"ex_date {action.ex_date} is within this system's price archive "
-            f"({NSE_BHAVCOPY_EARLIEST} onward) -- price evidence is obtainable and must "
-            "be, not waived"
-        )
     if not action.source or not action.source_url:
         raise PriceEvidenceWaiverError("cannot waive an unsourced action -- add a source first")
+
+    cum, ex = _price_evidence(conn, action.isin, action.ex_date)
+    if cum is not None and ex is not None:
+        raise PriceEvidenceWaiverError(
+            f"price evidence for {action.isin} on {action.ex_date} is already on file "
+            f"(cum={cum}, ex={ex}) -- verify this action, do not waive it"
+        )
+
+    # The same identifiers _price_evidence itself searches, so "we looked" means the same
+    # thing in both places: a retired ISIN's absence is the security's absence.
+    relevant = [action.isin, *_superseded_by(conn, action.isin)]
+    confirmed_absent = bool(absent_on_or_before(conn, relevant, action.ex_date))
+    never_attempted = action.ex_date < NSE_BHAVCOPY_EARLIEST
+
+    if not (confirmed_absent or never_attempted):
+        raise PriceEvidenceWaiverError(
+            f"no price evidence for {action.isin} on {action.ex_date}, but the archive has "
+            "not been asked for those dates either -- an unfetched price is not an "
+            "unobtainable one. Run a backfill for that window first; the pending-row retry "
+            "resolves it automatically if the data is there"
+        )
+
+    # WHICH finding justified this, recorded structurally. The two are not equally
+    # durable: a confirmed absence is permanent, while "below the floor" is true only
+    # relative to a constant designed to be lowered, so that one carries the floor it
+    # rested on and can be re-examined later. See migration 028 and stale_price_waivers.
+    basis = "ABSENCE_CONFIRMED" if confirmed_absent else "BELOW_ARCHIVE_FLOOR"
+    floor = None if confirmed_absent else NSE_BHAVCOPY_EARLIEST
 
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE corporate_action SET price_waived = true, price_waiver_reason = %s, "
-            "verification = %s WHERE id = %s AND verification != %s",
-            (reason, Verification.VERIFIED.value, action_id, Verification.DISPUTED.value),
+            "price_waiver_basis = %s, price_waiver_floor = %s, verification = %s "
+            "WHERE id = %s AND verification != %s",
+            (
+                reason,
+                basis,
+                floor,
+                Verification.VERIFIED.value,
+                action_id,
+                Verification.DISPUTED.value,
+            ),
         )
         if cur.rowcount == 0:
             return  # DISPUTED -- a waiver cannot resurrect a rejected row
@@ -306,6 +351,79 @@ def waive_price_evidence(
         account_ids = [row[0] for row in cur.fetchall()]
     for account_id in account_ids:
         apply_known_actions_for_account(conn, str(account_id), actor_uid=actor_uid)
+
+
+def stale_price_waivers(conn: Any) -> list[tuple[str, str, date]]:
+    """Waivers whose premise has EXPIRED -- returns ``(action_id, isin, ex_date)``.
+
+    Only ``BELOW_ARCHIVE_FLOOR`` waivers can go stale, and only in one way: the waiver
+    said "no fetch will ever be attempted for this date", which was true relative to
+    ``NSE_BHAVCOPY_EARLIEST`` at the time. Lower that floor past the ex_date -- an
+    explicitly supported follow-up -- and the statement becomes false, while the waiver
+    goes on asserting it.
+
+    ``ABSENCE_CONFIRMED`` waivers never appear here: the archive answered and did not
+    carry the security, and no later change to our own floor alters that.
+
+    Reporting, not mutation. ``refresh_corporate_action_feed`` acts on the result, so a
+    caller that only wants to know can ask without changing anything.
+    """
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id::text, isin, ex_date FROM corporate_action "
+            "WHERE price_waived = true AND price_waiver_basis = 'BELOW_ARCHIVE_FLOOR' "
+            "AND ex_date >= %s",
+            (NSE_BHAVCOPY_EARLIEST,),
+        )
+        return [(row[0], row[1], row[2]) for row in cur.fetchall()]
+
+
+def revoke_stale_price_waivers(conn: Any, actor_uid: str | None = None) -> dict[str, Any]:
+    """Re-examine every expired waiver and put each back on an honest footing.
+
+    Two outcomes per row, and NEITHER leaves a false assertion standing:
+
+      - the price pipe can now corroborate it -> the waiver is cleared and the real
+        evidence is written, so the action stands on data instead of on an override;
+      - it still cannot -> the waiver is cleared and the row returns to ``DRAFT`` in
+        ``Exceptions``, where an unverifiable action belongs. It is not re-waived
+        automatically: the original basis is gone, and whether a NEW basis exists is a
+        question for the evidence, not for this function.
+
+    This is what stops a lowered floor from silently validating old overrides, and it is
+    the same self-correcting posture the pending-row retry already has -- run from the
+    same place, for the same reason.
+    """
+    revoked, reverified = 0, 0
+    for action_id, isin, ex_date in stale_price_waivers(conn):
+        cum, ex = _price_evidence(conn, isin, ex_date)
+        with conn.cursor() as cur:
+            if cum is not None and ex is not None:
+                cur.execute(
+                    "UPDATE corporate_action SET price_waived = false, "
+                    "price_waiver_basis = NULL, price_waiver_floor = NULL, "
+                    "price_cum = %s, price_ex = %s WHERE id = %s",
+                    (cum, ex, action_id),
+                )
+                reverified += 1
+            else:
+                cur.execute(
+                    "UPDATE corporate_action SET price_waived = false, "
+                    "price_waiver_basis = NULL, price_waiver_floor = NULL, "
+                    "verification = %s WHERE id = %s",
+                    (Verification.DRAFT.value, action_id),
+                )
+                revoked += 1
+        audit.record(
+            conn, audit.ACTION_CORPORATE_ACTION_PRICE_WAIVED, "corporate_action",
+            action_id, actor_uid,
+            {"isin": isin, "waiver_premise_expired": True,
+             "outcome": "reverified" if cum and ex else "returned_to_exceptions"},
+        )
+        conn.commit()
+    return {"waivers_reverified": reverified, "waivers_returned_to_exceptions": revoked}
 
 
 def dispute_corporate_action(
@@ -598,7 +716,42 @@ def _price_evidence(conn: Any, isin: str, ex_date: date) -> tuple[Decimal | None
     cum_day = date.fromordinal(ex_date.toordinal() - 1)
     cum = latest_prices(conn, [isin], as_of=cum_day).get(isin)
     ex = prices_on_date(conn, [isin], ex_date).get(isin)
+
+    # A split that CHANGES THE ISIN puts cum and ex on different identifiers: the old one
+    # trades up to the change and the new one from it, so a single-ISIN lookup finds an ex
+    # price and no cum price and the guard fails for a reason that has nothing to do with
+    # the ratio. A security's price history spans its identifiers exactly as its
+    # transactions do (app.db.repository.load_transactions), so follow the same VERIFIED
+    # aliases backwards for the cum side only -- the asymmetry is the point, since after
+    # the ex-date it is the new identifier that trades.
+    if cum is None:
+        for predecessor in _superseded_by(conn, isin):
+            cum = latest_prices(conn, [predecessor], as_of=cum_day).get(predecessor)
+            if cum is not None:
+                break
     return cum, ex
+
+
+def _superseded_by(conn: Any, isin: str) -> list[str]:
+    """ISINs that a VERIFIED alias points AT ``isin`` -- its retired identifiers.
+
+    Empty when the alias table does not exist yet, the same tolerance
+    ``app.db.repository._alias_map`` applies: a database that has not run migration 027
+    simply behaves as it did before aliases existed.
+    """
+    import psycopg
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT old_isin FROM security_alias WHERE current_isin = %s "
+                "AND verification = 'VERIFIED'",
+                (isin,),
+            )
+            return [row[0] for row in cur.fetchall()]
+    except psycopg.errors.UndefinedTable:
+        conn.rollback()
+        return []
 
 
 def _evaluate_bonus_split(
@@ -723,6 +876,13 @@ def refresh_corporate_action_feed(
                 "corporate-action candidate failed for isin=%s ex_date=%s -- skipped, "
                 "not aborting the run", row.isin, row.ex_date, exc_info=True,
             )
+
+    # Before retrying pending rows, re-examine any WAIVER whose premise has expired --
+    # a lowered archive floor makes "no fetch will ever be attempted" false, and a
+    # waiver must not go on asserting it. Same self-correcting posture as the retry
+    # below, and for the same reason: the system fixes its own stale conclusions rather
+    # than waiting to be asked. See migration 028.
+    revoke_stale_price_waivers(conn, actor_uid=actor_uid)
 
     reevaluable = (CorpActionType.BONUS, CorpActionType.SPLIT)
     for pending in list_pending_corporate_actions(conn):

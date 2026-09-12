@@ -11,7 +11,7 @@ source_ref format, so they recognise and no-op against each other's work.
 from __future__ import annotations
 
 import os
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import psycopg
@@ -602,3 +602,237 @@ def test_yfinance_discovery_skips_an_isin_with_no_security_row(db: object, inves
     )
     assert result["discovered"] == 0
     assert result["errors"] == {}
+
+
+# ---------------------------------------------------------------------------
+# waive_price_evidence(): gated on VERIFIED COVERAGE, never on a date
+# ---------------------------------------------------------------------------
+
+
+def _unverifiable(ex_date: date, isin: str = ISIN) -> CorporateAction:
+    """A sourced 1:1 bonus with no price evidence attached."""
+    return CorporateAction(
+        isin=isin, action_type=CorpActionType.BONUS, ex_date=ex_date,
+        bonus_new=1, bonus_for=1,
+        source="Exchange notice", source_url="https://example.invalid/notice",
+        verification=Verification.DRAFT,
+    )
+
+
+def test_waiver_is_refused_when_the_evidence_is_already_on_file(db, investor) -> None:
+    """Then verify it -- do not waive it. A waiver asserts evidence cannot be had."""
+    ex_date = date(2024, 6, 1)
+    _set_price(db, ISIN, date(2024, 5, 31), "400")
+    _set_price(db, ISIN, ex_date, "200")
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+
+    with pytest.raises(ca_db.PriceEvidenceWaiverError, match="already on file"):
+        ca_db.waive_price_evidence(db, action_id, "trying to waive a provable action")
+    db.rollback()
+
+
+def test_waiver_is_refused_when_nobody_has_looked_yet(db, investor) -> None:
+    """THE regression this gate was rewritten for, in its other direction: an unfetched
+    price is not an unobtainable one. Waiving here would turn a temporary gap into a
+    permanent assertion."""
+    action_id = ca_db.add_corporate_action(db, _unverifiable(date(2024, 6, 1)), actor_uid=ACTOR)
+    db.commit()
+
+    with pytest.raises(ca_db.PriceEvidenceWaiverError, match="has not been asked"):
+        ca_db.waive_price_evidence(db, action_id, "no evidence, but nobody fetched it")
+    db.rollback()
+
+
+def test_waiver_is_allowed_for_a_security_the_archive_confirms_it_does_not_carry(
+    db, investor
+) -> None:
+    """The GUJTHEM shape, and the case the OLD date-based gate got wrong: an ex_date well
+    inside the archive window, on a security the archive genuinely has no row for --
+    BSE-only at the time, so asking NSE would never have produced it. Allowed only
+    because the absence is RECORDED, not because the date looks recent enough."""
+    from app.db.prices import record_absent_prices
+
+    ex_date = date(2023, 10, 10)  # inside the window the old gate trusted
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    record_absent_prices(db, ex_date, [ISIN])
+    db.commit()
+
+    ca_db.waive_price_evidence(db, action_id, "BSE-only at the time; NSE archive has no row")
+    db.commit()
+
+    stored = ca_db.get_corporate_action(db, action_id)
+    assert stored.price_waived is True
+    assert stored.verification is Verification.VERIFIED
+
+
+def test_waiver_is_allowed_below_the_floor_no_fetch_is_ever_attempted(db, investor) -> None:
+    """Before NSE_BHAVCOPY_EARLIEST, backfill_days clamps and no fetch is ever ATTEMPTED,
+    so an absence can never be recorded -- a structural dead end, not an unexplored one."""
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    ex_date = NSE_BHAVCOPY_EARLIEST - timedelta(days=1)
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+
+    ca_db.waive_price_evidence(db, action_id, "predates any archive this system can reach")
+    db.commit()
+    assert ca_db.get_corporate_action(db, action_id).price_waived is True
+
+
+def test_a_waived_action_passes_screen_without_price_evidence(db, investor) -> None:
+    """What the waiver actually buys: screen() stops withholding it. check_sourced and
+    check_verified still apply -- only the price check is removed."""
+    from app.engine.corporate_actions import screen
+
+    ex_date = date(2015, 3, 31)  # one day below the archive floor
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "predates any reachable archive")
+    db.commit()
+
+    safe, failures = screen([ca_db.get_corporate_action(db, action_id)])
+    assert safe and not failures
+
+
+def test_waiver_still_refuses_an_unsourced_action(db, investor) -> None:
+    unsourced = CorporateAction(
+        isin=ISIN, action_type=CorpActionType.BONUS, ex_date=date(2015, 3, 31),
+        bonus_new=1, bonus_for=1, source="x", source_url="",
+        verification=Verification.DRAFT,
+    )
+    # source_url empty -> CorporateAction builds, but the waiver must refuse it.
+    action_id = ca_db.add_corporate_action(db, unsourced, actor_uid=ACTOR)
+    db.commit()
+    with pytest.raises(ca_db.PriceEvidenceWaiverError, match="unsourced"):
+        ca_db.waive_price_evidence(db, action_id, "no source at all")
+    db.rollback()
+
+
+def test_waiver_needs_a_stated_reason(db, investor) -> None:
+    action_id = ca_db.add_corporate_action(db, _unverifiable(date(2015, 3, 31)), actor_uid=ACTOR)
+    db.commit()
+    with pytest.raises(ca_db.PriceEvidenceWaiverError, match="reason"):
+        ca_db.waive_price_evidence(db, action_id, "   ")
+    db.rollback()
+
+
+def test_a_below_floor_waiver_records_the_floor_it_rested_on(db, investor) -> None:
+    """The two grounds for a waiver are not equally durable, so which one applied has to
+    survive in the record -- free text could not tell them apart afterwards."""
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    action_id = ca_db.add_corporate_action(
+        db, _unverifiable(NSE_BHAVCOPY_EARLIEST - timedelta(days=1)), actor_uid=ACTOR
+    )
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "predates any reachable archive")
+    db.commit()
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT price_waiver_basis, price_waiver_floor FROM corporate_action WHERE id = %s",
+            (action_id,),
+        )
+        basis, floor = cur.fetchone()
+    assert basis == "BELOW_ARCHIVE_FLOOR"
+    assert floor == NSE_BHAVCOPY_EARLIEST, "the premise must be re-checkable later"
+
+
+def test_a_confirmed_absence_waiver_is_permanent_and_never_goes_stale(db, investor) -> None:
+    """The archive answered and did not carry it. No change to OUR floor alters that."""
+    from app.db.prices import record_absent_prices
+
+    ex_date = date(2023, 10, 10)
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    record_absent_prices(db, ex_date, [ISIN])
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "archive confirms it carries no such row")
+    db.commit()
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT price_waiver_basis, price_waiver_floor FROM corporate_action WHERE id = %s",
+            (action_id,),
+        )
+        basis, floor = cur.fetchone()
+    assert basis == "ABSENCE_CONFIRMED"
+    assert floor is None
+    assert ca_db.stale_price_waivers(db) == [], "a confirmed absence can never expire"
+
+
+def test_lowering_the_archive_floor_makes_a_below_floor_waiver_stale(
+    db, investor, monkeypatch
+) -> None:
+    """THE regression this migration exists for.
+
+    A waiver granted because "no fetch will ever be attempted for this date" is true only
+    relative to a constant that is explicitly designed to be lowered. Lower it and the
+    premise is false -- the waiver must be detected, not left quietly asserting it.
+    """
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    ex_date = NSE_BHAVCOPY_EARLIEST - timedelta(days=1)
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "predates any reachable archive")
+    db.commit()
+    assert ca_db.stale_price_waivers(db) == [], "not stale while the floor stands"
+
+    # The supported follow-up: someone verifies an older fetch and lowers the floor.
+    monkeypatch.setattr("app.prices.pipe.NSE_BHAVCOPY_EARLIEST", ex_date - timedelta(days=365))
+
+    stale = ca_db.stale_price_waivers(db)
+    assert [row[0] for row in stale] == [action_id], "the premise expired and must surface"
+
+
+def test_a_stale_waiver_returns_to_exceptions_rather_than_standing(
+    db, investor, monkeypatch
+) -> None:
+    """Revocation is not re-waiving. The original basis is gone, so the row goes back to
+    Exceptions where an unverifiable action belongs -- whether a NEW basis exists is a
+    question for the evidence, not for the revoker."""
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    ex_date = NSE_BHAVCOPY_EARLIEST - timedelta(days=1)
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "predates any reachable archive")
+    db.commit()
+
+    monkeypatch.setattr("app.prices.pipe.NSE_BHAVCOPY_EARLIEST", ex_date - timedelta(days=365))
+    result = ca_db.revoke_stale_price_waivers(db, actor_uid=ACTOR)
+    db.commit()
+
+    assert result["waivers_returned_to_exceptions"] == 1
+    stored = ca_db.get_corporate_action(db, action_id)
+    assert stored.price_waived is False
+    assert stored.verification is Verification.DRAFT
+
+
+def test_a_stale_waiver_is_reverified_when_the_price_is_now_reachable(
+    db, investor, monkeypatch
+) -> None:
+    """The good outcome: lowering the floor made the data fetchable, it was fetched, and
+    the action now stands on real evidence instead of on an override."""
+    from app.prices.pipe import NSE_BHAVCOPY_EARLIEST
+
+    ex_date = NSE_BHAVCOPY_EARLIEST - timedelta(days=1)
+    action_id = ca_db.add_corporate_action(db, _unverifiable(ex_date), actor_uid=ACTOR)
+    db.commit()
+    ca_db.waive_price_evidence(db, action_id, "predates any reachable archive")
+    db.commit()
+
+    monkeypatch.setattr("app.prices.pipe.NSE_BHAVCOPY_EARLIEST", ex_date - timedelta(days=365))
+    _set_price(db, ISIN, ex_date - timedelta(days=1), "400")  # cum
+    _set_price(db, ISIN, ex_date, "200")                      # ex, corroborates 1:1
+    db.commit()
+
+    result = ca_db.revoke_stale_price_waivers(db, actor_uid=ACTOR)
+    db.commit()
+
+    assert result["waivers_reverified"] == 1
+    stored = ca_db.get_corporate_action(db, action_id)
+    assert stored.price_waived is False
+    assert stored.price_cum == Decimal(400) and stored.price_ex == Decimal(200)
+    assert stored.verification is Verification.VERIFIED
