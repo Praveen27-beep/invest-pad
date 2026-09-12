@@ -15,7 +15,7 @@ import { ErrorState, NoInvestorState } from "./components/PageState";
 import { MissingPriceNotice } from "./components/MissingPriceNotice";
 import { NegativeHoldingNotice } from "./components/NegativeHoldingNotice";
 import { UnpricedBanner } from "./components/UnpricedBanner";
-import { SkippedHoldingsBanner } from "./components/SkippedHoldingsBanner";
+import { SkippedHoldingsNotice } from "./components/SkippedHoldingsBanner";
 import { PageHeader } from "./components/PageHeader";
 import { PageBody } from "./components/Shell";
 import { SetupBanner } from "./components/SetupBanner";
@@ -70,7 +70,13 @@ const lakh = (n: number) => `₹${(n / 100_000).toFixed(2)}L`;
 
 export default function DashboardPage() {
   const { investorId, token, asOf, advisedOnly } = useAuth();
-  const [groupBy, setGroupBy] = useState<GroupBy>("asset_class");
+  // Sector, not asset class. Phase 1 builds exactly one asset class (CLAUDE.md: "Phase 1
+  // builds exactly one: EQ"), so grouping by it is guaranteed to produce a single 100%
+  // "Stocks" ring for EVERY user -- a chart that is technically correct and tells nobody
+  // anything, and reads as broken rather than as "you hold only equities". Sector is the
+  // first grouping that actually divides an equity portfolio. Asset class stays available
+  // in the control, and becomes the right default the moment a second asset class ships.
+  const [groupBy, setGroupBy] = useState<GroupBy>("sector");
   const [basis, setBasis] = useState<ValueBasis>("current");
   const [xirrWindow, setXirrWindow] = useState<XirrWindowKey>("fy");
 
@@ -322,6 +328,15 @@ export default function DashboardPage() {
       render: (r) => formatMoney(r.market_value as string | null),
     },
     {
+      // Today's move, not the holding-period return beside it. Two different questions
+      // that look alike, so they sit in separate columns rather than one stacked cell.
+      key: "day_change_pct",
+      label: "Day",
+      align: "right",
+      figure: false,
+      render: (r) => <LedgerSigned value={formatPercent(r.day_change_pct as number | null)} />,
+    },
+    {
       key: "unrealised",
       label: "Unrealised",
       align: "right",
@@ -332,6 +347,16 @@ export default function DashboardPage() {
           sub={formatPercent(r.unrealised_pct as number | null)}
         />
       ),
+    },
+    {
+      // Annualised since the first buy -- see ENGINE_SPEC section 5. Null for a position
+      // built entirely from corporate actions (no acquisition to anchor a start date),
+      // which formatPercent already renders as a dash rather than 0%.
+      key: "cagr",
+      label: "CAGR",
+      align: "right",
+      figure: false,
+      render: (r) => <LedgerSigned value={formatPercent(r.cagr as number | null)} />,
     },
     {
       key: "weight_pct",
@@ -442,15 +467,7 @@ export default function DashboardPage() {
 
           {p?.warning && <Banner tone="warning" title="Engine warning">{p.warning}</Banner>}
           {s && <UnpricedBanner unpriced={s.unpriced} />}
-          {s && (
-            <SkippedHoldingsBanner
-              skipped={s.skipped}
-              onFixed={() => {
-                summary.refetch();
-                holdings.refetch();
-              }}
-            />
-          )}
+          {s && <SkippedHoldingsNotice skipped={s.skipped} />}
 
           <ValueChartCard />
 

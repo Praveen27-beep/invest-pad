@@ -26,7 +26,7 @@ const COLUMNS: { key: SortKey; label: string; groupLabel?: string }[] = [
  * The grouped counterpart to HoldingsTable's per-security rows: one row per
  * allocation group (whichever grouping app/page.tsx currently has selected --
  * asset class, sector or market cap), aggregated from the same GET /summary arrays
- * that already feed AllocationDonut. Unrealised gain isn't in AllocationGroupOut
+ * that already feed the allocation rings. Unrealised gain isn't in AllocationGroupOut
  * itself; it's `marketValue - invested`, both of which are -- so this stays a
  * display-time derivation of real server numbers, never a fabricated one.
  */
