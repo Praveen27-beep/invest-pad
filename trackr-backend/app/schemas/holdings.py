@@ -20,6 +20,10 @@ class HoldingOut(BaseModel):
     unrealised_pct: float | None = None
     weight_pct: float | None = None
     cagr: float | None = None
+    #: Move since the previous close, as a fraction. Answers "how did this do today",
+    #: which is a different question from `unrealised_pct`'s "how has this done since I
+    #: bought it". None when there is no earlier close to compare against.
+    day_change_pct: float | None = None
     cost_estimated: bool = False
     #: True when `last_price` came from the intraday cache (app.prices.live), not
     #: bhavcopy -- only ever set for as_of == today, before tonight's bhavcopy settles.

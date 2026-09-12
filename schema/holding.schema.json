@@ -55,6 +55,10 @@
       "type": ["number", "null"],
       "description": "(market_value / invested) ^ (365.25 / days) - 1, days from first_buy_date to as_of. A single-lump-sum approximation: treats the current weighted-average cost as if fully invested on the earliest acquisition date. Never computed at the portfolio level (ENGINE_SPEC section 5) -- per-holding only. Null when no as_of/first_buy_date/positive cost basis is available; never defaulted to zero."
     },
+    "day_change_pct": {
+      "type": ["number", "null"],
+      "description": "(last_price - previous_close) / previous_close -- the move since the previous close. A DAY's performance, distinct from `unrealised_pct`, which measures the whole holding period; the two are unrelated numbers that happen to look alike. The previous close is the last close before the one `last_price` reflects, walked back past weekends and holidays. Null when no earlier close exists to compare against, or when it is non-positive; never defaulted to zero, since zero would claim the price did not move."
+    },
     "fifo_cost": {
       "$ref": "transaction.schema.json#/$defs/decimal",
       "description": "Cost of the surviving FIFO lots. Differs from `invested` only where a position has been partly sold. Brokers report this convention; `invested` is the weighted average that ENGINE_SPEC section 1 displays. Both are correct answers to different questions, and reconciliation needs this one."

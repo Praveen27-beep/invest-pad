@@ -103,6 +103,7 @@ export function VintageLinePlot({
   height = 300,
   formatTick = (v: string) => v,
   gapNote,
+  band: wantsBand = false,
 }: {
   labels: string[];
   series: PlotSeries[];
@@ -112,6 +113,13 @@ export function VintageLinePlot({
    *  of 0.25 needs, nor defend against 6.500000000000001. */
   formatTick?: (v: string) => ReactNode;
   gapNote?: string;
+  /** Hatch the area between the first two series. OFF by default, and opt-in rather
+   *  than positional on purpose: the band asserts a specific relationship between those
+   *  two series (it was written for market value against invested cost, where the gap
+   *  IS unrealised P&L). Drawn automatically, it would silently reappear between
+   *  whatever two series happen to be first -- shading the distance between a portfolio
+   *  and its benchmark, say, which measures nothing. */
+  band?: boolean;
 }) {
   const W = 860;
   const PL = 46;
@@ -153,7 +161,7 @@ export function VintageLinePlot({
   const primary = series[0];
   const reference = series[1];
   const band =
-    primary && reference
+    wantsBand && primary && reference
       ? runs(primary.points)
           .filter((r) => r.every((i) => reference.points[i] != null))
           .map(

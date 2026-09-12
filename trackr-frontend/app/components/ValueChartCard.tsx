@@ -85,7 +85,6 @@ function dayMonthLabel(iso: string): string {
 interface Sampled {
   labels: string[];
   market: (number | null)[];
-  invested: (number | null)[];
   benchmark: (number | null)[];
   hasGap: boolean;
 }
@@ -112,7 +111,7 @@ function sample(rows: SnapshotOut[], benchmarkByDate: Map<string, number>): Samp
   const first = rows[0];
   const last = rows[rows.length - 1];
   if (!first || !last) {
-    return { labels: [], market: [], invested: [], benchmark: [], hasGap: false };
+    return { labels: [], market: [], benchmark: [], hasGap: false };
   }
   const firstDate = first.as_of;
   const lastDate = last.as_of;
@@ -149,7 +148,6 @@ function sample(rows: SnapshotOut[], benchmarkByDate: Map<string, number>): Samp
   return {
     labels: picked.map((r, i) => (r ? label(r.as_of) : `gap-${i}`)),
     market: picked.map((r) => (r ? Number(r.market_value) / LAKH : null)),
-    invested: picked.map((r) => (r ? Number(r.invested) / LAKH : null)),
     benchmark: picked.map((r) => {
       if (!r) return null;
       const value = benchmarkByDate.get(r.as_of);
@@ -160,7 +158,10 @@ function sample(rows: SnapshotOut[], benchmarkByDate: Map<string, number>): Samp
 }
 
 /**
- * Portfolio value against invested cost, with the NIFTY 500 benchmark rebased alongside.
+ * Portfolio value against the NIFTY 500 benchmark. TWO lines, deliberately: the question
+ * this card answers is "did I beat the index", and a third invested-cost line answered a
+ * different question (unrealised P&L) in the same space, which is what the KPI tiles above
+ * the chart already say in numbers.
  *
  * The benchmark is not a rebased index line drawn from a single anchor. The backend
  * replicates the portfolio's OWN cash flows into NIFTY 500 TRI and marks them at each
@@ -170,7 +171,7 @@ function sample(rows: SnapshotOut[], benchmarkByDate: Map<string, number>): Samp
  * happened. See docs/ENGINE_SPEC.md section 6.
  *
  * If the index source is unreachable the endpoint returns no points, the series is all
- * nulls, and the plot draws nothing for it. The portfolio's own two lines are unaffected.
+ * nulls, and the plot draws nothing for it. The portfolio's own line is unaffected.
  */
 export function ValueChartCard() {
   const { investorId, token, asOf } = useAuth();
@@ -233,28 +234,26 @@ export function ValueChartCard() {
     () => new Map((benchmark.data?.points ?? []).map((p) => [p.as_of, Number(p.value)])),
     [benchmark.data]
   );
-  const { labels, market, invested, benchmark: benchmarkPoints, hasGap } = useMemo(
+  const { labels, market, benchmark: benchmarkPoints, hasGap } = useMemo(
     () => sample(rows, benchmarkByDate),
     [rows, benchmarkByDate]
   );
 
   const hasBenchmark = benchmarkPoints.some((v) => v != null);
 
+  /** Holdings these lines leave out, because their buy history doesn't reconcile. Taken
+   *  from the most recent plotted snapshot: it is the one whose figure the eye lands on,
+   *  and an exclusion clears itself as soon as the gap is closed and the next rebuild
+   *  replays cleanly. Same posture as the dashboard's SkippedHoldingsNotice -- state it
+   *  plainly, don't alarm, and say it's temporary. */
+  const excluded = rows[rows.length - 1]?.excluded_isins ?? [];
+
   /** The span actually drawn, named for the caption so it is read off the plotted rows
    *  rather than restated from the range button, which can disagree with them. */
   const plotted = { from: rows[0]?.as_of ?? asOf, to: rows[rows.length - 1]?.as_of ?? asOf };
 
   const series: PlotSeries[] = [
-    { label: "Market value", points: market, color: "var(--ledger-ink)", weight: 2.1, marker: "dot" },
-    {
-      label: "Invested cost",
-      points: invested,
-      color: "var(--ledger-ink)",
-      weight: 1,
-      dash: "7 4",
-      opacity: 0.5,
-      labelColor: "var(--ledger-ink-soft)",
-    },
+    { label: "Portfolio", points: market, color: "var(--ledger-ink)", weight: 2.1, marker: "dot" },
   ];
   if (hasBenchmark) {
     series.push({
@@ -293,11 +292,13 @@ export function ValueChartCard() {
         />
         <p style={{ margin: "10px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
           {`Showing ${dayLabel(plotted.from)} to ${dayLabel(plotted.to)}, ${rows.length} daily snapshots. `}
-          The hatched band is unrealised P&amp;L, the gap between market value and invested cost.
           {hasBenchmark
             ? " The dotted line replicates your own cash flows into NIFTY 500 TRI, so below it is genuine underperformance rather than a difference in timing."
             : " The NIFTY 500 line is absent because the index source returned no levels for these dates."}
           {hasGap ? " A break in the line is a genuine snapshot gap, not an interpolated value." : ""}
+          {excluded.length > 0
+            ? ` Excludes ${excluded.length} holding${excluded.length > 1 ? "s" : ""} whose older buy history is incomplete — ${excluded.length > 1 ? "they" : "it"} will be included here once that gap is closed.`
+            : ""}
         </p>
       </>
     );

@@ -15,7 +15,7 @@ is the same mechanism again, keyed by ``security.market_cap_bucket``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -116,7 +116,17 @@ def _portfolio(
     priced = [h for h in holdings if h.isin in prices]
     unpriced = [h for h in holdings if h.isin not in prices]
 
-    valued = value_holdings(priced, prices, as_of=as_of) if priced else []
+    # The previous close, for each holding's day move. Walked back from the day BEFORE
+    # as_of (``latest_prices`` handles a preceding weekend or holiday by returning the
+    # last real trading day's close), so this is "the last close before the one shown"
+    # whether the current price is a live intraday quote or today's settled bhavcopy.
+    previous_closes = latest_prices(connection, isins, as_of - timedelta(days=1)) if priced else {}
+
+    valued = (
+        value_holdings(priced, prices, as_of=as_of, previous_closes=previous_closes)
+        if priced
+        else []
+    )
     meta = securities.lookup(connection, [h.isin for h in holdings] + [s.isin for s in skipped])
 
     return {
@@ -148,6 +158,7 @@ def _row(book: dict[str, Any], holding: Holding) -> dict[str, Any]:
         "unrealised_pct": rate(holding.unrealised_pct),
         "weight_pct": rate(holding.weight_pct),
         "cagr": rate(holding.cagr),
+        "day_change_pct": rate(holding.day_change_pct),
         "cost_estimated": holding.cost_estimated,
         "live": holding.isin in book.get("live_isins", set()),
     }

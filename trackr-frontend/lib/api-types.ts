@@ -31,6 +31,10 @@ export interface HoldingOut {
   unrealised_pct: number | null;
   weight_pct: number | null;
   cagr: number | null;
+  // Move since the previous close, as a fraction. "How did this do today" — a different
+  // question from unrealised_pct's "how has this done since I bought it". Null when
+  // there is no earlier close to compare against, never 0.
+  day_change_pct: number | null;
   cost_estimated: boolean;
   // True when `last_price` came from the intraday cache (yfinance), not bhavcopy --
   // only ever set for as_of == today, before tonight's bhavcopy settles.
@@ -206,6 +210,11 @@ export interface SnapshotOut {
   market_value: string;
   unrealised: string | null;
   realised_to_date: string | null;
+  /** ISINs these totals do NOT include, because their ledger segment didn't reconcile on
+   *  this date (app/schemas/analytical.py::SnapshotOut). Empty on a clean replay. A view
+   *  showing these figures has to say so when it's non-empty — that is the entire reason
+   *  the field is on the wire rather than the exclusion being silent. */
+  excluded_isins: string[];
 }
 
 /** One point on the benchmark line -- app/schemas/analytical.py::BenchmarkPointOut.

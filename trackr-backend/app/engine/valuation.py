@@ -45,7 +45,10 @@ def _cagr(holding: Holding, market_value: Decimal, as_of: date | None) -> Decima
 
 
 def value_holdings(
-    holdings: list[Holding], prices: dict[str, Decimal], as_of: date | None = None
+    holdings: list[Holding],
+    prices: dict[str, Decimal],
+    as_of: date | None = None,
+    previous_closes: dict[str, Decimal] | None = None,
 ) -> list[Holding]:
     """Attach price-derived fields to holdings.
 
@@ -56,6 +59,14 @@ def value_holdings(
         unrealised_pct = unrealised / invested        (None when invested is 0)
         weight_pct     = market_value / total market_value
         cagr            = see `_cagr` -- None unless `as_of` is supplied
+        day_change_pct  = (last_price - previous_close) / previous_close
+
+    ``previous_closes`` is optional and keyed the same way as ``prices``. It is a
+    SEPARATE mapping rather than a second lookup inside this function because this module
+    is given prices, never asked to fetch them -- the caller decides what "the previous
+    close" means (``app.routers.holdings._portfolio`` walks back from the day before
+    ``as_of``, so a weekend or holiday resolves to the last real trading day). An ISIN
+    absent from it simply has no ``day_change_pct``, which is not an error.
 
     ``as_of`` is optional and defaults to ``None`` (rather than ``date.today()`` --
     the engine never reads the clock, see ``compute_snapshot``'s docstring) purely so
@@ -77,11 +88,13 @@ def value_holdings(
     if missing:
         raise MissingPriceError(missing)
 
+    previous_closes = previous_closes or {}
     valued = []
     for holding in holdings:
         last_price = prices[holding.isin]
         market_value = holding.quantity * last_price
         unrealised = market_value - holding.invested
+        previous_close = previous_closes.get(holding.isin)
         valued.append(
             replace(
                 holding,
@@ -92,6 +105,11 @@ def value_holdings(
                     unrealised / holding.invested if holding.invested != ZERO else None
                 ),
                 cagr=_cagr(holding, market_value, as_of),
+                day_change_pct=(
+                    (last_price - previous_close) / previous_close
+                    if previous_close is not None and previous_close > ZERO
+                    else None
+                ),
             )
         )
 

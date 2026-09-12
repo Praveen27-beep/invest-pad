@@ -324,11 +324,43 @@ function ReconcileAgainstCas() {
 }
 
 /**
+ * The DASHBOARD version: one quiet line, aggregated, and deliberately not alarming.
+ *
+ * A holding whose buy history is incomplete is a bookkeeping gap in the past, not a
+ * problem with what the investor owns today -- their current value is correct either
+ * way. Putting the full red banner here (a per-ISIN list, raw engine messages, "went
+ * negative (22.000000 short)", two buttons each) made a routine gap look like a broken
+ * portfolio on the first screen someone sees every day.
+ *
+ * So the dashboard states the fact and the reassurance, and nothing else. The detail,
+ * and every way to act on it, lives one click away on Holdings where someone has already
+ * chosen to look at individual positions -- see SkippedHoldingsBanner below.
+ */
+export function SkippedHoldingsNotice({ skipped }: { skipped: SkippedHoldingOut[] }) {
+  if (skipped.length === 0) return null;
+
+  const n = skipped.length;
+  return (
+    <p className="text-xs text-navy-500">
+      {n} holding{n > 1 ? "s" : ""} need{n > 1 ? "" : "s"} attention — older buy history is
+      incomplete, so {n > 1 ? "they're" : "it's"} left out of the totals above. Your current
+      value is unaffected.{" "}
+      <Link href="/holdings" className="text-brass-600 underline">
+        Review
+      </Link>
+    </p>
+  );
+}
+
+/**
  * compute_holdings_partitioned's `skipped` list (app/engine/holdings.py) -- an ISIN
  * whose own ledger segment didn't reconcile, excluded from the dashboard's totals
  * rather than blocking every other holding. Same "actionable, not a dead end" posture
  * as UnpricedBanner, plus two ways out: enter a remembered average price one ISIN at a
  * time, or reconcile the whole account against a CAS statement in one step.
+ *
+ * This is the FULL version, for the Holdings screen. The dashboard uses
+ * SkippedHoldingsNotice above instead -- see its docstring for why.
  */
 export function SkippedHoldingsBanner({
   skipped,
