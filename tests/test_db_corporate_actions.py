@@ -17,9 +17,15 @@ from decimal import Decimal
 import psycopg
 import pytest
 from app.db import corporate_actions as ca_db
-from app.db import repository
-from app.engine.corporate_actions import CorpActionType, CorporateAction, Verification
-from app.engine.holdings import compute_holdings
+from app.db import repository, security_alias
+from app.db.security_alias import SecurityAlias
+from app.engine.corporate_actions import (
+    CorpActionType,
+    CorporateAction,
+    Verification,
+    check_price_consistency,
+)
+from app.engine.holdings import compute_holdings, compute_holdings_partitioned
 from app.engine.types import Source, Transaction, TxnType
 
 pytestmark = pytest.mark.db
@@ -836,3 +842,174 @@ def test_a_stale_waiver_is_reverified_when_the_price_is_now_reachable(
     assert stored.price_waived is False
     assert stored.price_cum == Decimal(400) and stored.price_ex == Decimal(200)
     assert stored.verification is Verification.VERIFIED
+
+
+# ---------------------------------------------------------------------------
+# GUJTHEM's August 2024 event: independently corroborated, not inferred from
+# arithmetic on the account's own ledger
+# ---------------------------------------------------------------------------
+
+GUJTHEM_OLD = "INE942C01029"
+GUJTHEM_NEW = "INE942C01045"
+
+
+def _seed_gujthem_securities(db) -> None:
+    with db.cursor() as cur:
+        for isin in (GUJTHEM_OLD, GUJTHEM_NEW):
+            cur.execute(
+                "INSERT INTO security (isin) VALUES (%s) ON CONFLICT (isin) DO NOTHING",
+                (isin,),
+            )
+
+
+def _gujthem_bonus_aug2024() -> CorporateAction:
+    """1:2 bonus, record date 9 Aug 2024. Evidence for the RATIO is independent of any
+    price or quantity data on any account's ledger: paid-up equity capital rose from
+    Rs.7,26,43,510 to Rs.10,89,65,265, exactly x1.5 (Goodreturns), corroborated
+    separately on the record date by ICICI Direct/Trendlyne/India Infoline. Price
+    evidence (506.55 -> 364.05, real bhavcopy) is a SECOND, independent check -- the
+    ratio was never derived from it, or from what any account happened to hold."""
+    return CorporateAction(
+        isin=GUJTHEM_NEW, action_type=CorpActionType.BONUS, ex_date=date(2024, 8, 9),
+        bonus_new=1, bonus_for=2,
+        price_cum=Decimal("506.55"), price_ex=Decimal("364.05"),
+        source="Goodreturns (capital-structure confirmation)",
+        source_url="https://example.invalid/gujthem-bonus",
+        verification=Verification.VERIFIED,
+    )
+
+
+def test_gujthem_bonus_is_independently_corroborated_not_arithmetic_fit(db, investor) -> None:
+    """The evidence bar this passed: an independent capital-structure figure (not
+    derived from any account's holdings) AND a separate price-consistency check both
+    agree. Neither alone would have been enough; this is not "497 sold, so multiplier
+    must be X"."""
+    action = _gujthem_bonus_aug2024()
+    assert action.multiplier() == Decimal("1.5")
+    # The capital-structure ratio, computed independently of this action object, agrees.
+    before, after = Decimal("72643510"), Decimal("108965265")
+    assert after / before == action.multiplier()
+    assert check_price_consistency(action) is None
+
+
+def test_gujthem_resolves_once_the_bonus_is_on_file(db, investor) -> None:
+    """The real shape: buys and a partial sell on the retired ISIN, the 2023 5:1 split
+    already on file, then large sells on the replacement ISIN that could not reconcile
+    without this bonus. 65 held * 5 (2023 split) = 325, * 1.5 (this bonus) = 487.5,
+    against 487 sold -- a real position with a real 0.5-share residual, not a
+    round-number coincidence.
+
+    Transactions are saved and the SPLIT applied (its own retroactive sweep, committed)
+    BEFORE the bonus is added -- the same order two separate real sessions produced it
+    in. apply_known_actions_for_account evaluates every pending action against the
+    transactions loaded at the START of one call, not chained against sibling actions
+    resolved in the SAME call, so adding both actions before any transaction exists (one
+    sweep, nothing yet eligible) and then applying them together in a single later sweep
+    would credit the bonus off the PRE-split quantity instead of the post-split one --
+    a test-construction bug this ordering avoids, not a product bug.
+    """
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_gujthem_securities(db)
+    security_alias.add_alias(
+        db,
+        SecurityAlias(
+            old_isin=GUJTHEM_OLD, current_isin=GUJTHEM_NEW, effective_date=date(2023, 10, 10),
+            source="Gujarat Themis Biosyn 5:1 split, record date 10 Oct 2023",
+            source_url="https://example.invalid/gujthem-isin-change",
+            verification=Verification.VERIFIED,
+        ),
+    )
+    repository.save_transactions(
+        db,
+        [
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2022, 10, 19), txn_type=TxnType.BUY,
+                        quantity=Decimal(100), price=Decimal(714), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2023, 2, 10), txn_type=TxnType.BUY,
+                        quantity=Decimal(30), price=Decimal("618.90"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2023, 9, 7), txn_type=TxnType.SELL,
+                        quantity=Decimal(65), price=Decimal("808.10"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_NEW, txn_date=date(2025, 3, 18), txn_type=TxnType.SELL,
+                        quantity=Decimal(487), price=Decimal("254.75"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+        ],
+    )
+    db.commit()
+
+    ca_db.add_corporate_action(
+        db,
+        CorporateAction(
+            isin=GUJTHEM_NEW, action_type=CorpActionType.SPLIT, ex_date=date(2023, 10, 10),
+            face_value_before=Decimal(5), face_value_after=Decimal(1),
+            price_cum=Decimal("1047.80"), price_ex=Decimal("225.15"),
+            source="Gujarat Themis Biosyn 5:1 split", source_url="https://example.invalid/split",
+            verification=Verification.VERIFIED,
+        ),
+        actor_uid=ACTOR,
+    )
+    db.commit()
+
+    ca_db.add_corporate_action(db, _gujthem_bonus_aug2024(), actor_uid=ACTOR)
+    db.commit()
+
+    holdings, skipped = compute_holdings_partitioned(
+        repository.load_transactions(db, investor_id=investor), date(2026, 9, 11)
+    )
+    assert GUJTHEM_NEW not in {s.isin for s in skipped}, "should now reconcile"
+    [gujthem] = [h for h in holdings if h.isin == GUJTHEM_NEW]
+    assert gujthem.quantity == Decimal("0.5"), "the real residual, not a round number"
+
+
+def test_gujthem_would_still_be_excluded_without_the_bonus(db, investor) -> None:
+    """Control: the SAME ledger and the SAME 2023 split applied, minus the bonus this
+    test suite now has evidence for -- 325 available against 487 sold, still short by
+    162, confirming the bonus is what closes the gap rather than the alias/split alone."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_gujthem_securities(db)
+    security_alias.add_alias(
+        db,
+        SecurityAlias(
+            old_isin=GUJTHEM_OLD, current_isin=GUJTHEM_NEW, effective_date=date(2023, 10, 10),
+            source="Gujarat Themis Biosyn 5:1 split, record date 10 Oct 2023",
+            source_url="https://example.invalid/gujthem-isin-change",
+            verification=Verification.VERIFIED,
+        ),
+    )
+    repository.save_transactions(
+        db,
+        [
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2022, 10, 19), txn_type=TxnType.BUY,
+                        quantity=Decimal(100), price=Decimal(714), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2023, 2, 10), txn_type=TxnType.BUY,
+                        quantity=Decimal(30), price=Decimal("618.90"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_OLD, txn_date=date(2023, 9, 7), txn_type=TxnType.SELL,
+                        quantity=Decimal(65), price=Decimal("808.10"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+            Transaction(isin=GUJTHEM_NEW, txn_date=date(2025, 3, 18), txn_type=TxnType.SELL,
+                        quantity=Decimal(487), price=Decimal("254.75"), account_id=account_id,
+                        source=Source.CONTRACT_NOTE),
+        ],
+    )
+    db.commit()
+
+    ca_db.add_corporate_action(
+        db,
+        CorporateAction(
+            isin=GUJTHEM_NEW, action_type=CorpActionType.SPLIT, ex_date=date(2023, 10, 10),
+            face_value_before=Decimal(5), face_value_after=Decimal(1),
+            price_cum=Decimal("1047.80"), price_ex=Decimal("225.15"),
+            source="Gujarat Themis Biosyn 5:1 split", source_url="https://example.invalid/split",
+            verification=Verification.VERIFIED,
+        ),
+        actor_uid=ACTOR,
+    )
+    db.commit()
+
+    _holdings, skipped = compute_holdings_partitioned(
+        repository.load_transactions(db, investor_id=investor), date(2026, 9, 11)
+    )
+    assert GUJTHEM_NEW in {s.isin for s in skipped}, "325 held cannot cover 487 sold alone"

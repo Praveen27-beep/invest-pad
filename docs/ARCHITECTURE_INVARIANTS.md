@@ -103,24 +103,29 @@ Honest separation, so nobody reads an intention as a guarantee.
 - Snapshots partition and record exclusions (`excluded_isins`), so one broken holding no
   longer blanks an entire value history.
 - BONUS/SPLIT auto-verification with price corroboration, and self-correcting retry.
-  **GUJTHEM's 5:1 split** (ex 2023-10-10) self-promoted `DRAFT → VERIFIED` and applied with
-  no human step once BSE evidence landed — cum ₹1047.80 on the retired ISIN, ex ₹225.15 on
-  its replacement.
+  **GUJTHEM's 2023 5:1 split** (ex 2023-10-10) self-promoted `DRAFT → VERIFIED` and applied
+  with no human step once BSE evidence landed — cum ₹1047.80 on the retired ISIN, ex
+  ₹225.15 on its replacement. **GUJTHEM's August 2024 event is now also resolved**: an
+  independent capital-structure figure (paid-up equity ₹7,26,43,510 → ₹10,89,65,265, a
+  confirmed 1:2 bonus, record date 2024-08-09) corroborated separately by a real price
+  move (₹506.55 → ₹364.05) — two independent findings agreeing, never arithmetic on the
+  account's own ledger. GUJTHEM now carries a real 0.5-share residual (325 × 1.5 = 487.5
+  against 487 sold) rather than staying excluded.
 - Historical price coverage on both exchanges via legacy archive tiers behind the existing
   `BhavcopySource` abstraction.
+- `waive_price_evidence` gated on a POSITIVE FINDING (a confirmed archive absence, or an
+  ex-date the archive was never asked about at all), never on a date range. The earlier
+  version assumed "within the archive floor ⇒ obtainable", which GUJTHEM's own August 2023
+  window disproved before the August 2024 event above was resolved. The basis
+  (`ABSENCE_CONFIRMED` / `BELOW_ARCHIVE_FLOOR`) is now structured, not free text, and a
+  `BELOW_ARCHIVE_FLOOR` waiver records the floor it rested on so it can be re-examined —
+  `stale_price_waivers`/`revoke_stale_price_waivers` — if that floor is later lowered.
 
 ### Implemented, not yet exercised on real data
-- `waive_price_evidence` — the audited human override for an ex-date genuinely older than
-  any reachable archive. Its date gate assumes "within the archive floor ⇒ obtainable",
-  which held for NSE-listed names and did not for BSE-only ones; now less load-bearing
-  since BSE history is reachable, but still coarse.
 - yfinance discovery as a second free candidate source. Demonstrably incomplete — it found
   GENSOL's split exactly and missed KAMAHOLD's and GUJTHEM's entirely.
 
 ### Unresolved, deliberately visible
-- **GUJTHEM's August 2024 event.** Sources conflict between a 1:2 bonus and a second
-  split. 325 × 1.5 = 487.5 fits the 487 sold almost exactly — and that arithmetic is a
-  hint, not evidence, so nothing is applied and the holding stays excluded.
 - **SOUTHBANK** — a rights-issue allotment gap, not an identity or ratio problem. The
   1-for-4 entitlement at ₹22 (record date 2024-02-27) is public; how many additional
   shares were applied for and allotted is not, and no feed can supply it.
