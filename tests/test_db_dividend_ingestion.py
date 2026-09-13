@@ -150,6 +150,37 @@ def test_classification_still_refuses_a_contradictory_amount(db: object, investo
     assert "AMOUNT_CONFLICT" in event.notes
 
 
+def test_a_repeated_disagreeing_candidate_does_not_grow_the_notes_or_re_audit(
+    db: object, investor: str
+) -> None:
+    """CONFIRMED-AND-FIXED BUG. Once a classification conflict lands an event in
+    DISPUTED, a daily re-run of the same disagreeing feed (ordinary operation -- nothing
+    about the underlying dispute has been resolved) must not re-execute the UPDATE: that
+    would append a fresh duplicate "AMOUNT_CONFLICT" line onto notes and write a fresh
+    audit entry every single day until a human resolved it. A human's rejection stands,
+    exactly as it does for a re-verified corporate action.
+    """
+    de.upsert_declared_dividend(db, _yf(amount="1.50"), actor_uid=ACTOR)
+    db.commit()
+    de.upsert_declared_dividend(db, _nse(amount="1.75", kind=DividendKind.FINAL), actor_uid=ACTOR)
+    db.commit()
+
+    event = de.list_dividend_events(db, isins=[ISIN])[0]
+    notes_after_first_conflict = event.notes
+    assert notes_after_first_conflict.count("AMOUNT_CONFLICT") == 1
+
+    # The identical disagreeing candidate, reported again -- an ordinary subsequent run.
+    outcome = de.upsert_declared_dividend(
+        db, _nse(amount="1.75", kind=DividendKind.FINAL), actor_uid=ACTOR
+    )
+    db.commit()
+
+    assert outcome == de.OUTCOME_CONFLICT
+    event_after = de.list_dividend_events(db, isins=[ISIN])[0]
+    assert event_after.notes == notes_after_first_conflict, "no duplicate line appended"
+    assert event_after.notes.count("AMOUNT_CONFLICT") == 1
+
+
 # ------------------------------------------------------------------ case 5: ambiguous
 
 

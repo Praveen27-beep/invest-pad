@@ -217,6 +217,95 @@ def test_the_same_source_reporting_twice_does_not_verify(db: object, investor: s
     assert de.get_dividend_event(db, event_id).corroborated_by is None
 
 
+def test_repeated_corroboration_from_the_same_source_writes_nothing_new(
+    db: object, investor: str
+) -> None:
+    """CONFIRMED-AND-FIXED BUG. A daily yfinance (or NSE) re-run reports the SAME amount
+    from the SAME already-corroborating source on every ordinary day once an event is
+    VERIFIED. Before the fix, this re-executed the UPDATE and wrote a fresh
+    DIVIDEND_EVENT_CORROBORATED audit row every single run forever -- an observation
+    repeated is not a new fact, and an audit trail should describe state TRANSITIONS, not
+    be re-stamped for standing still.
+    """
+    event_id = de.add_dividend_event(db, _declared(), actor_uid=ACTOR)
+    db.commit()
+    de.corroborate_dividend_event(db, event_id, YF, YF_URL, Decimal("1.50"), actor_uid=ACTOR)
+    db.commit()
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM audit_log WHERE entity_type = 'dividend_event' "
+            "AND entity_id = %s AND action = 'DIVIDEND_EVENT_CORROBORATED'",
+            (event_id,),
+        )
+        before = cur.fetchone()[0]
+    assert before == 1
+
+    # The identical corroboration, reported again -- exactly what a second run of the
+    # same feed against an already-settled event looks like.
+    state = de.corroborate_dividend_event(
+        db, event_id, YF, YF_URL, Decimal("1.50"), actor_uid=ACTOR
+    )
+    db.commit()
+
+    assert state is Verification.VERIFIED
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM audit_log WHERE entity_type = 'dividend_event' "
+            "AND entity_id = %s AND action = 'DIVIDEND_EVENT_CORROBORATED'",
+            (event_id,),
+        )
+        after = cur.fetchone()[0]
+    assert after == before, "no new audit entry for an observation that changed nothing"
+
+
+def test_a_corroborating_source_contradicting_itself_still_disputes(
+    db: object, investor: str
+) -> None:
+    """The idempotency fix only short-circuits an IDENTICAL repeat. A corroborating
+    source reversing itself with a different amount is a genuinely new fact and must
+    still raise a dispute, not be silently absorbed as "already corroborated by this
+    source"."""
+    event_id = de.add_dividend_event(db, _declared(amount="1.50"), actor_uid=ACTOR)
+    db.commit()
+    de.corroborate_dividend_event(db, event_id, YF, YF_URL, Decimal("1.50"), actor_uid=ACTOR)
+    db.commit()
+
+    state = de.corroborate_dividend_event(
+        db, event_id, YF, YF_URL, Decimal("1.75"), actor_uid=ACTOR
+    )
+    db.commit()
+
+    assert state is Verification.DISPUTED
+    assert "1.75" in de.get_dividend_event(db, event_id).notes
+
+
+def test_a_rerun_of_the_original_source_after_manual_verification_reports_unchanged(
+    db: object, investor: str
+) -> None:
+    """CONFIRMED-AND-FIXED BUG. A human verifies a single-sourced declaration by hand
+    (verify_dividend_event, which deliberately leaves corroborated_by None). A later
+    ordinary re-run of the ORIGINAL declaring source must not be reported by
+    upsert_declared_dividend as a fresh corroboration -- nothing was corroborated;
+    the event was already VERIFIED, by a human, before this run ever happened.
+    """
+    event_id = de.add_dividend_event(db, _declared(), actor_uid=ACTOR)
+    db.commit()
+    de.verify_dividend_event(db, event_id, actor_uid=ACTOR)
+    db.commit()
+    stored = de.get_dividend_event(db, event_id)
+    assert stored.verification is Verification.VERIFIED
+    assert stored.corroborated_by is None, "a human verified it; no second source involved"
+
+    outcome = de.upsert_declared_dividend(db, _declared(), actor_uid=ACTOR)
+    db.commit()
+
+    assert outcome == de.OUTCOME_UNCHANGED
+    after = de.get_dividend_event(db, event_id)
+    assert after.verification is Verification.VERIFIED
+    assert after.corroborated_by is None, "still not corroborated -- still just verified by a human"
+
+
 def test_corroboration_never_overturns_a_human_dispute(db: object, investor: str) -> None:
     """A human's explicit rejection is the one state automation does not revisit -- the
     same contract refresh_corporate_action_feed already honours for corporate actions."""

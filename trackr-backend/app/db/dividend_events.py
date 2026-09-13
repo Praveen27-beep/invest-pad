@@ -227,21 +227,31 @@ def corroborate_dividend_event(
     """Record that a second, distinct source read this event -- and decide what that does
     to its verification. Returns the resulting state.
 
-    Three outcomes, and the middle one is the important one:
+    IDEMPOTENT against a REPEAT of the same corroboration, not only against the original
+    declarer repeating itself. Four outcomes, in the order checked:
 
-      - The second source AGREES on the amount -> ``corroborated_by``/``corroborated_url``
-        are set and the event is promoted to ``VERIFIED``. It may now produce a
-        projection. It still may not produce a ledger row.
-      - The second source DISAGREES on the amount -> ``DISPUTED``, with both readings
-        written into ``notes``. NOT a second row, not an average, not "prefer the newer":
-        one fact, two contradictory claims, and no basis in this module for choosing. A
-        human reads the company's filing.
-      - The "second" source is the SAME source -> rejected without a write. Two reads of
-        one feed are one observation; the table's own CHECK refuses it too.
+      - A human's ``DISPUTED`` rejection stands. Automation never revisits it, the same
+        contract ``refresh_corporate_action_feed`` gives ``DISPUTED`` corporate actions.
+      - The "second" source IS the original declarer -> no-op. Two reads of one feed are
+        one observation.
+      - The "second" source is the SAME source THAT ALREADY CORROBORATED THIS, reporting
+        THE SAME AMOUNT again -> also a no-op: no write, no audit entry. This is the case
+        a daily yfinance or NSE re-run hits on every ordinary day once an event is already
+        VERIFIED, and without this check it would re-execute the UPDATE and write a fresh
+        ``DIVIDEND_EVENT_CORROBORATED`` audit row on every single run forever -- an
+        observation repeated is not a new fact, and an audit trail exists to record STATE
+        TRANSITIONS, not to be re-stamped every time nothing happened.
+      - Otherwise this is a genuinely new observation: it AGREES on the amount ->
+        ``corroborated_by``/``corroborated_url`` are set and the event is promoted to
+        ``VERIFIED`` (may now produce a projection, still never a ledger row); or it
+        DISAGREES -> ``DISPUTED``, with both readings written into ``notes`` -- not a
+        second row, not an average, not "prefer the newer": one fact, two contradictory
+        claims, and no basis in this module for choosing. A human reads the filing.
 
-    Never downgrades a ``VERIFIED`` event that a human promoted, and never revisits a
-    ``DISPUTED`` one -- a human's explicit rejection is the one state automation does not
-    overturn, exactly as ``refresh_corporate_action_feed`` treats ``DISPUTED``.
+    Never downgrades a ``VERIFIED`` event that a human promoted -- a manual
+    ``verify_dividend_event`` leaves ``corroborated_by`` ``None``, and a later re-run of
+    the ORIGINAL declaring source still hits the "same source" no-op above, never the
+    corroboration branch, so it can never be misreported as a fresh corroboration.
     """
     event = get_dividend_event(conn, event_id)
     if event is None:
@@ -250,6 +260,8 @@ def corroborate_dividend_event(
         return Verification.DISPUTED  # a human's rejection stands
     if source == event.source:
         return event.verification  # not a second observation
+    if source == event.corroborated_by and amounts_agree(amount_per_share, event.amount_per_share):
+        return event.verification  # the same corroboration, reported again -- nothing new
 
     if not amounts_agree(amount_per_share, event.amount_per_share):
         note = (
@@ -420,7 +432,16 @@ def _classify_and_corroborate(
 
     The amount is still checked. Better information about the label does not license
     accepting a contradictory number.
+
+    IDEMPOTENT against a repeated disagreeing candidate, the same principle
+    ``corroborate_dividend_event`` now applies: once a row is ``DISPUTED``, automation
+    does not re-dispute it on every subsequent run of the same feed -- without this, an
+    unresolved conflict would grow a fresh duplicate line onto ``notes`` and write a fresh
+    audit entry every single day until a human resolved it.
     """
+    if event.verification is Verification.DISPUTED:
+        return OUTCOME_CONFLICT  # a human's rejection stands; do not re-dispute it daily
+
     if not amounts_agree(candidate.amount_per_share, event.amount_per_share):
         note = (
             f"{event.notes}\nAMOUNT_CONFLICT: {event.source} reports "
@@ -468,6 +489,39 @@ def _classify_and_corroborate(
     return OUTCOME_CLASSIFIED
 
 
+def _corroboration_outcome(before: DividendEvent, after: DividendEvent) -> str:
+    """Classify what a ``corroborate_dividend_event`` call actually did, from a real
+    before/after comparison -- never inferred from a single snapshot's fields, which is
+    exactly what made the outcome misreportable.
+
+    AUDIT RECORDS DESCRIBE STATE TRANSITIONS, NOT REPEATED OBSERVATIONS OF THE SAME STATE.
+    The two failure modes this replaces, both now impossible by construction:
+
+      - A repeat corroboration from the SAME corroborating source, reporting the SAME
+        amount again (the ordinary case on every subsequent daily run once an event is
+        VERIFIED) used to be reported as ``OUTCOME_CORROBORATED`` on every single run,
+        because the check was "is corroborated_by set now" rather than "did corroborated_by
+        CHANGE just now". ``corroborate_dividend_event`` itself is now idempotent for this
+        case (no write at all), so ``before == after`` and this correctly falls through to
+        UNCHANGED.
+      - A re-run of the ORIGINAL declaring source against an event a HUMAN had already
+        verified by hand (``corroborated_by`` left ``None`` by ``verify_dividend_event``)
+        used to be misread as a fresh corroboration because ``corroborated_by is None`` was
+        checked against the state BEFORE this call, not against what this call itself did.
+        ``before.corroborated_by`` and ``after.corroborated_by`` are both still ``None``
+        here, so the diff correctly reports UNCHANGED.
+    """
+    became_disputed = (
+        before.verification is not Verification.DISPUTED
+        and after.verification is Verification.DISPUTED
+    )
+    if became_disputed:
+        return OUTCOME_CONFLICT
+    if before.corroborated_by != after.corroborated_by or before.verification != after.verification:
+        return OUTCOME_CORROBORATED
+    return OUTCOME_UNCHANGED
+
+
 def upsert_declared_dividend(
     conn: Any, candidate: DividendEvent, actor_uid: str | None = None
 ) -> str:
@@ -496,35 +550,42 @@ def upsert_declared_dividend(
     Never raises ``UniqueViolation`` for the ordinary repeat case: case 1 resolves it by
     lookup first, which is what lets a caller commit per row without a rollback in the
     common path.
+
+    THE RETURNED OUTCOME IS A REAL BEFORE/AFTER STATE DIFF (``_corroboration_outcome``),
+    not an inference from a single snapshot. It used to be the latter, and that made
+    ``OUTCOME_CORROBORATED`` reportable on runs that corroborated nothing: a repeat of an
+    already-corroborating source changed nothing on disk but still looked, from one
+    snapshot, indistinguishable from a fresh corroboration. A caller aggregating these
+    outcomes across a refresh run (``refresh_dividend_feed``) now gets an honest count of
+    what actually changed, not of how many times a feed happened to run.
     """
     validate_dates(candidate)
     existing = match_unspecified(conn, candidate.isin, candidate.ex_date)
 
     same_kind = next((e for e in existing if e.kind is candidate.kind), None)
     if same_kind is not None:
-        state = corroborate_dividend_event(
+        corroborate_dividend_event(
             conn, same_kind.id, candidate.source, candidate.source_url,
             candidate.amount_per_share, actor_uid=actor_uid,
         )
         update_dividend_event_dates(
             conn, same_kind.id, candidate.record_date, candidate.payment_date
         )
-        if state is Verification.DISPUTED and same_kind.verification is not Verification.DISPUTED:
-            return OUTCOME_CONFLICT
-        if same_kind.corroborated_by is None and state is Verification.VERIFIED:
-            return OUTCOME_CORROBORATED
-        return OUTCOME_UNCHANGED
+        after = get_dividend_event(conn, same_kind.id)
+        return _corroboration_outcome(same_kind, after)
 
     if candidate.kind is not DividendKind.UNSPECIFIED:
         unspecified = [e for e in existing if e.kind is DividendKind.UNSPECIFIED]
         if len(unspecified) == 1:
             return _classify_and_corroborate(conn, unspecified[0], candidate, actor_uid)
     elif len(existing) == 1:
-        state = corroborate_dividend_event(
-            conn, existing[0].id, candidate.source, candidate.source_url,
+        before = existing[0]
+        corroborate_dividend_event(
+            conn, before.id, candidate.source, candidate.source_url,
             candidate.amount_per_share, actor_uid=actor_uid,
         )
-        return OUTCOME_CONFLICT if state is Verification.DISPUTED else OUTCOME_CORROBORATED
+        after = get_dividend_event(conn, before.id)
+        return _corroboration_outcome(before, after)
     elif len(existing) > 1:
         return OUTCOME_AMBIGUOUS
 
