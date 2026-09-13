@@ -438,6 +438,32 @@ export default function DashboardPage() {
               </>
             )}
             {performance.loading ? (
+              <VintageKpiSkeleton label="XIRR · since inception" />
+            ) : p ? (
+              /*
+                The two CANONICAL XIRR figures, which the windowed slip beside this one
+                does not carry: fy/1y/3y are the same measure over recent spans, and
+                neither answers "how has this portfolio done, in total".
+
+                Paired in one slip deliberately, because the GAP BETWEEN THEM is the
+                insight rather than either number alone. `xirr_all` replays every
+                transaction ever made, so it includes the realised outcome of positions
+                already closed; `xirr_holdings` replays only what is still held. A wide
+                divergence says the closed trades and the open book have behaved quite
+                differently -- which is a fact about the portfolio no single return figure
+                states. These are also the two values fixtures/golden_portfolio.json pins
+                as acceptance criteria (CLAUDE.md's table), so they are the figures a user
+                can check this system against.
+              */
+              <VintageKpi
+                label="XIRR · since inception"
+                value={formatPercent(p.xirr_all)}
+                foot="Current holdings only"
+                footValue={formatPercent(p.xirr_holdings)}
+                negative={(p.xirr_all ?? 0) < 0}
+              />
+            ) : null}
+            {performance.loading ? (
               <VintageKpiSkeleton label="Return · XIRR" wide />
             ) : p ? (
               <VintageXirr
