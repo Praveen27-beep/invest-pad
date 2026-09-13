@@ -146,3 +146,37 @@ class ExpectedDividendsOut(BaseModel):
     expected: list[ExpectedDividendOut]
     unprojectable: list[UnprojectableDividendOut]
     total_gross_expected: str
+
+
+class RefreshDividendFeedOut(BaseModel):
+    """Result of one automated dividend-notice feed run -- see
+    ``app.db.dividend_events.refresh_dividend_feed``. Keys beyond ``fetched`` and
+    ``error`` are dynamic outcome counts (``inserted``, ``corroborated``, ``classified``,
+    ``conflict``, ``ambiguous``, ``unchanged``, ``failed``) -- normalised here to fixed,
+    always-present fields so the response shape does not depend on which outcomes a
+    particular run happened to produce."""
+
+    fetched: int = 0
+    inserted: int = 0
+    corroborated: int = 0
+    classified: int = 0
+    conflict: int = 0
+    ambiguous: int = 0
+    unchanged: int = 0
+    failed: int = 0
+    error: str | None = None
+
+
+class DiscoverDividendsYfinanceOut(BaseModel):
+    """Result of one yfinance dividend-history discovery run -- see
+    ``app.db.dividend_events.discover_dividends_from_yfinance``. Occasional, not daily:
+    a ticker's whole dividend history comes back in one call."""
+
+    inserted: int = 0
+    corroborated: int = 0
+    classified: int = 0
+    conflict: int = 0
+    ambiguous: int = 0
+    unchanged: int = 0
+    failed: int = 0
+    errors: dict[str, str] = {}

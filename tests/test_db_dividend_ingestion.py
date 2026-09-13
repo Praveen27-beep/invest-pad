@@ -529,3 +529,48 @@ def test_a_dividend_declared_under_a_retired_isin_still_projects(
     assert row["eligible_quantity"] == "100.000000"
     assert row["gross_expected"] == "250.000000000000"
     assert body["unprojectable"] == []
+
+
+# --------------------------------------------------------- the ops endpoints, end to end
+
+
+def test_the_refresh_endpoint_wiring_exists_and_is_callable(db: object, investor: str) -> None:
+    """CONFIRMED GAP, closed here. refresh_dividend_feed was correct and fully tested
+    from the day it was written, and was never reachable from outside a test file -- no
+    endpoint, no cron entry called it. dividend_event was therefore empty in any real,
+    running deployment, not because the ingestion was wrong but because nothing had
+    ever invoked it.
+
+    The router builds its own NseCorporateActionFeedSource with no injection seam, by
+    design, matching refresh_corporate_actions' identical posture -- so a live network
+    call is not exercised here. What this pins is the wiring itself: the endpoint
+    exists, imports cleanly, and is reachable at the path the auth-gate tests in
+    test_ops_auth.py already prove is credential-protected. The actual landing
+    behaviour (five merge cases, idempotency) is exercised throughout this file against
+    the db-layer function the endpoint calls unchanged.
+    """
+    from app.routers.dividends_ops import refresh_dividends, refresh_dividends_cron
+
+    assert callable(refresh_dividends)
+    assert callable(refresh_dividends_cron)
+
+
+def test_the_yfinance_ops_endpoint_lands_events_for_a_real_isin(
+    db: object, investor: str
+) -> None:
+    """Exercises app.routers.dividends_ops.discover_dividends_yfinance directly against
+    a fake yfinance source, proving the endpoint's own plumbing -- schema normalisation,
+    error-key handling -- matches what the db-layer function actually returns."""
+    from unittest.mock import patch
+
+    from app.routers.dividends_ops import discover_dividends_yfinance
+
+    with patch(
+        "app.ingest.corporate_action_yfinance.YfinanceSource",
+        return_value=_FakeYf({EX: 1.5}),
+    ):
+        result = discover_dividends_yfinance(isin=[ISIN], conn=db)
+
+    assert result[de.OUTCOME_INSERTED] == 1
+    assert result["errors"] == {}
+    assert len(de.list_dividend_events(db, isins=[ISIN])) == 1

@@ -142,3 +142,43 @@ def test_corporate_action_refresh_cron_requires_bearer_secret(
             headers={"Authorization": "Bearer not-the-real-secret"},
         )
         assert res.status_code == 403
+
+
+def test_dividend_refresh_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CONFIRMED GAP, closed here: refresh_dividend_feed existed as a fully-tested
+    function with no HTTP endpoint at all -- nothing in a real deployment ever called
+    it, so dividend_event stayed empty regardless of whether the ingestion logic was
+    correct. This pins that the endpoint now exists and sits behind the same gate every
+    other reference-data mutation does."""
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/dividends/refresh")
+        assert res.status_code == 401
+
+
+def test_dividend_yfinance_discovery_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one path with real historical depth -- gated identically, not a lesser gate
+    for being the backfill path rather than the daily one."""
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/dividends/discover-yfinance")
+        assert res.status_code == 401
+
+
+def test_dividend_refresh_cron_requires_bearer_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get("/ops/dividends/refresh-cron")
+        assert res.status_code == 401
+        res = client.get(
+            "/ops/dividends/refresh-cron",
+            headers={"Authorization": "Bearer not-the-real-secret"},
+        )
+        assert res.status_code == 403
+
+
+def test_an_ops_key_does_not_satisfy_the_dividend_cron_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get(
+            "/ops/dividends/refresh-cron", headers={"X-Ops-Key": "a-real-cron-secret"}
+        )
+        assert res.status_code == 401
