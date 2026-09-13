@@ -96,6 +96,31 @@ in data, never in code.
   as deemed dividend in the shareholder's hands. Verify current treatment before
   implementing.
 
+## Dividend income — NOT modelled, inputs captured
+
+Dividends have been taxable in the shareholder's hands since FY 2020-21, at **slab rate**,
+as *income from other sources* — not as capital gains, and so outside everything else in
+this document. The company withholds TDS under **§194**: 10% where its dividend payments to
+one holder exceed the financial-year threshold (₹5,000 historically; ₹10,000 with effect
+from FY 2025-26), 20% without a valid PAN, nil against a valid 15G/15H.
+
+**None of that is computed here, and this engine has no slab machinery at all.** What
+exists is the data: `transaction.dividend_amount` (net received) and
+`transaction.tds_amount` (withheld, `NULL` when unknown — see `DATA_MODEL.md`), from which
+gross is derived. That is deliberate — build the seam, not the feature — and it means the
+inputs a later implementation needs are already being recorded per security per financial
+year rather than having to be reconstructed.
+
+What a later implementation would owe: the slab computation itself, an
+income-from-other-sources line in the ITR output, and **crediting the withheld TDS against
+total liability** rather than treating it as a cost. That last one is the part most likely
+to be got wrong, because TDS looks like an expense and is not — it is a prepayment of the
+holder's own tax.
+
+One boundary worth stating now: a figure labelled *expected* (a declared dividend sized to
+a holding) is **never** taxable income. Nothing has been received and nothing has been
+withheld. Tax attaches to `REALISED` rows only — `ARCHITECTURE_INVARIANTS.md` #18.
+
 ## Never mutate history
 
 An "Auto Corporate Actions" tool inserts **new adjustment transactions**. It never

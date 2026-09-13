@@ -588,27 +588,52 @@ add path 2 (direct application), and again to add path 3 (the table populates it
    needed to re-trigger it. A `DISPUTED` row (a human's explicit rejection) is the one
    thing the retry never revisits.
 
-   **DIVIDEND notices are parsed and then deliberately discarded, and this is the
-   single largest gap in the feed.** NSE's notice stream carries dividend declarations
-   alongside the bonus and split notices, and
-   `app.ingest.corporate_action_feed` classifies anything it does not recognise as a
-   BONUS/SPLIT — dividends included — as unrecognised and drops it. The consequence is
-   worth stating precisely, because it is easy to misdiagnose as a downstream bug:
-   **there is no automated write path for dividends at all.** `DIVIDEND` is already a
-   first-class ledger transaction with its own `dividend_amount` column (§4's table,
-   §10's contribution treatment, and the TWRR worked example in §5 all consume it), the
-   dividends endpoint and the dashboard card already exist, and manual entry already
-   works. What does not exist is anything that *creates* a `DIVIDEND` row without a
-   human. So Trackr+ today represents **actual received dividend payments that someone
-   entered**, never announced or merely entitled ones. If dividends look missing from a
-   portfolio, the cause is here — in ingestion — and not in XIRR, TWRR, contribution or
-   the UI.
+   **DIVIDENDS ARE READ, BUT THROUGH A SEPARATE TABLE AND A SEPARATE GUARD — AND NEVER
+   INTO THE LEDGER.** NSE's notice stream carries dividend declarations alongside the
+   bonus and split notices; `parse_dividend_feed` reads them from the same payload this
+   parser reads (one fetch, two parsers), and `Ticker.dividends` supplies the history NSE
+   has no depth for. They land in `dividend_event` (migration 029), not in
+   `corporate_action`.
 
-   A dividend does meet this feed's auto-apply criterion in principle (it is paid to
-   every holder of record, unconditionally, with no investor-specific election — unlike
-   a rights issue). The open questions are TDS treatment and whether entitlement can be
-   established from the ledger alone on the record date. Neither is settled here; see
-   `docs/ARCHITECTURE_INVARIANTS.md` § "Future work".
+   **Why not simply add `DIVIDEND` to `corp_action_type`**, which is the obvious cheap
+   move: `apply_known_actions_for_account` is allowed to bypass the review-then-promote
+   flow because of "three independent checks, not one" — VERIFIED, sourced, and a ratio
+   corroborated by the observed cum/ex price move. But `check_price_consistency` returns
+   `None` on its **first line** for any type that is not BONUS or SPLIT, so it passes
+   vacuously, and `check_sourced` only tests that two strings are non-empty. A `DIVIDEND`
+   member of that enum would inherit an auto-apply path to the ledger whose only surviving
+   check is "somebody typed a URL". Three further reasons — the unique key cannot hold an
+   interim and a special sharing an ex-date, there is nowhere to put an amount per share,
+   and that table's scope is multiplier events — are in migration 029's header.
+
+   **Price cannot corroborate a dividend, and this is arithmetic.** The band here is
+   0.70–1.40 of the multiplier, which catches an inverted ratio on a 2× or 5× move. A
+   dividend moves the price by roughly amount ÷ price: 0.3%–2% for a typical large-cap,
+   inside one day's noise. So the substitute is cross-source agreement, with its limits
+   written down — see `ARCHITECTURE_INVARIANTS.md` #19.
+
+   **The four states, because conflating any two is the defining mistake here.**
+   `DECLARED` (this table) → `EXPECTED` (declared amount × `quantity_held_before(ex_date)`,
+   computed on read, never stored — `app.engine.dividends.compute_expected_dividends`) →
+   `RECEIVED` (evidence says cash arrived) → `REALISED` (a `DIVIDEND` ledger row, which is
+   what §4's table, §10's contribution treatment and §5's TWRR worked example consume).
+   **There is deliberately no transition from `EXPECTED` to `REALISED`** — that edge is the
+   bug the whole design exists to prevent, and `ARCHITECTURE_INVARIANTS.md` #18 is the rule.
+
+   Neither source carries a payment amount or tax withheld, so receipt still needs a human
+   or a credit advice. A dividend *would* meet this feed's auto-apply criterion in
+   principle — paid to every holder of record, unconditionally, with no investor-specific
+   election — but meeting it is not sufficient: the criterion answers *eligibility*, and a
+   dividend's open question is *receipt*.
+
+   **One hazard that is invisible unless looked for, and is off by a whole multiplier.** A
+   per-share amount is declared against the share as it exists at declaration. If a split's
+   ex-date then falls before the dividend's, `quantity_held_before` correctly returns the
+   *post*-split quantity, and the product is wrong by the entire split factor with every
+   component correct and nothing reporting an error. `compute_expected_dividends` refuses
+   to project in that window (`DECLARATION_WINDOW`, 90 days) rather than publish a figure
+   on an unknown basis. A stored declaration date would make the test exact instead of
+   conservative; neither feed carries one reliably.
 
    **DEMERGER is out of scope for this feed, on purpose, not an oversight.**
    `check_price_consistency` has no expected price ratio for a demerger to corroborate

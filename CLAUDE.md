@@ -76,9 +76,20 @@ CAS statements are consumed only as declared holdings for reconciliation.
 Do not build for the out-of-scope list. Do make sure adding it later requires no
 schema migration — see `docs/DATA_MODEL.md`, the `asset_class` discriminator.
 
-**The nearest real gap is dividend ingestion**, and it is an ingestion-source gap, not a
-calculation one — see `docs/ARCHITECTURE_INVARIANTS.md` § "Future work" before assuming
-anything downstream is broken.
+**Dividends are modelled in four states, and conflating any two of them is the defining
+mistake in this area.** `DECLARED` (a company announced an amount per share — the
+`dividend_event` table) → `EXPECTED` (what a holder should receive: declared amount ×
+quantity held at the ex-date — a projection computed on read, never stored) → `RECEIVED`
+(evidence says cash arrived) → `REALISED` (a `DIVIDEND` ledger row exists, and therefore
+enters XIRR, TWRR, contribution and realised income).
+
+**There is deliberately no path from `EXPECTED` to `REALISED`.** "You should have received
+₹10,000" and "you received ₹10,000" are different claims, and only the second belongs in a
+performance figure. Declared and expected dividends are automated; **receipt is not**, and
+the remaining gap is an ingestion-source one — no available feed carries a payment amount
+or tax withheld, so `RECEIVED` needs a human or a credit advice. See
+`docs/ARCHITECTURE_INVARIANTS.md` § "Future work" and `docs/INGESTION.md` Adapter 6 before
+assuming anything downstream is broken.
 
 ## Correctness is defined, not opinion
 

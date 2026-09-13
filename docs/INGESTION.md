@@ -507,24 +507,45 @@ See `docs/ARCHITECTURE_INVARIANTS.md` #17.
 
 **What it actually recognises is narrower than what it fetches.** The notice type lives
 in free text (`"Bonus 1:1"`, `"Sub-Division ..."`, `"Dividend - Rs 1.50 Per Share"`), and
-the parser is a regex over that string. It classifies **BONUS and SPLIT only**.
-Everything else — **dividends**, rights, mergers, demergers, buybacks, AGM/EGM notices —
-is recognised as unhandled and dropped.
+the parser is a regex over that string. `parse_corporate_action_feed` classifies **BONUS
+and SPLIT only**; `parse_dividend_feed` reads **dividends** from the same payload (one
+fetch, two parsers, no row claimed twice). Everything else — rights, mergers, demergers,
+buybacks, AGM/EGM notices — is recognised as unhandled and dropped.
 
-> **This is where dividends go missing, and it is the only place they go missing.**
-> There is **no automated write path for dividends anywhere in this system.** Everything
-> downstream of a `DIVIDEND` row already works: it is a first-class ledger transaction
-> with its own `dividend_amount` column, it flows through XIRR, TWRR and contribution
-> analysis, the dividends endpoint and the dashboard card exist, and manual entry works.
-> The only thing that does not exist is anything that creates such a row without a human
-> typing it. **Trackr+ therefore represents actual received dividend payments that
-> someone recorded — never announced, declared, or merely entitled ones.** A portfolio
-> that looks light on dividend income is showing an ingestion gap, not a calculation
-> bug; do not go looking for the fault in the engine or the UI.
+### Adapter 6b — declared dividends specifically
 
-Building it is future work, not a defect to patch in passing — see
-`docs/ARCHITECTURE_INVARIANTS.md` § "Future work" for the open questions (TDS treatment,
-and establishing record-date entitlement from the ledger).
+Two sources, because NSE's notices API has no historical depth: `parse_dividend_feed` for
+live notices, and `app.ingest.corporate_action_yfinance.discover_dividend_candidates`
+(`Ticker.dividends`) for history. Both land in `dividend_event` via
+`app.db.dividend_events.upsert_declared_dividend`, which holds the whole cross-source merge
+in one place. Verification, the merge's five cases, and the provenance caveat on treating
+the two sources as independent are specified in migration 029's header and
+`app.engine.dividend_events.check_cross_sourced`; see `ARCHITECTURE_INVARIANTS.md` #19.
+
+**Four shapes the dividend parser refuses, each a real one in live data.** A percentage
+declaration (`"Dividend - 150%"` — that is 150% of FACE VALUE, needs a face value this feed
+does not carry and a later split changes, and reading 150 as rupees is a 100× error). Two
+amounts in one subject (`"Interim Rs 1.50 And Special Rs 2"` — both are present but pairing
+them is an inference about text order that silently swaps them when wrong). Two kinds named,
+same reason. And anything `_DISQUALIFYING_TERMS` catches, so a preference-share or debenture
+"dividend" never lands against an equity ISIN.
+
+> **WHAT THESE SOURCES CANNOT TELL YOU, which is the whole point of the four-state model.**
+> Both stop at **declaration**. Neither carries a payment date, an amount actually credited,
+> or tax withheld — those exist only on a bank credit, a broker funds statement, or a
+> registrar's advice. So a declared dividend can be verified, sized against the ledger, and
+> shown as **expected**, and none of that is evidence anybody was paid.
+>
+> `RECEIVED` therefore still requires a human or a credit advice, and **`EXPECTED` never
+> becomes `REALISED` on its own.** A figure labelled *received* is money that moved and
+> feeds XIRR, TWRR and contribution; a figure labelled *announced* or *expected* is a
+> projection and is never added to it. A portfolio showing a large expected figure and a
+> small received one is the two concepts working, not a bug.
+
+The automatable receipt path that fits this architecture is a **broker funds-statement
+adapter** — the same document family as the tradebook and contract-note adapters already
+here. It is a new ingestion source and is **not yet authorised**; see
+`docs/ARCHITECTURE_INVARIANTS.md` § "Future work".
 
 ---
 

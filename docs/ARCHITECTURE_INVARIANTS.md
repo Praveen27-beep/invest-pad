@@ -106,6 +106,36 @@ unaffected; this governs what leaves the system as an export, not what the engin
 with. A licensed vendor relationship, when one exists, replaces this constraint with
 whatever that licence actually permits, decided at that time, not assumed now.
 
+**18. A projection is never summed into a realised figure.** Trackr+ shows dividends in
+four states — `DECLARED` (a company announced an amount per share), `EXPECTED` (that amount
+× the quantity the ledger says was held at the ex-date), `RECEIVED` (evidence says cash
+arrived), `REALISED` (a `DIVIDEND` ledger row exists). Only `REALISED` may reach XIRR,
+TWRR, contribution or realised income, and **there is deliberately no path from `EXPECTED`
+to `REALISED`**: a declared amount times an eligible quantity is arithmetic about what
+*should* happen, and treating it as income would be the product claiming money arrived when
+all that is known is that a company said it would pay. `EXPECTED` is computed on read and
+never stored, for the same reason holdings are — it holds no fact not already stored, so a
+table for it is a cache that can disagree with its own inputs. Enforced by
+`tests/test_expected_dividends.py::test_a_projection_never_reaches_a_return_figure`, which
+carries a control proving the same rupees DO move XIRR once actually received.
+
+**19. Where price cannot corroborate, a second source must — and its limits must be
+written down.** A bonus or split divides the price by its multiplier, so
+`check_price_consistency` can corroborate a recorded ratio against a physically separate
+observation. **A dividend has no such analogue, and this is arithmetic rather than policy:**
+it moves the price by roughly amount ÷ price — 0.3%–2% for a typical large-cap, inside one
+day's ordinary noise — so no agreement band recovers a signal that is not there. A
+dividend is therefore verified by cross-source agreement
+(`app.engine.dividend_events.check_cross_sourced`), with the relationship between those
+sources stated explicitly: NSE's notices feed and Yahoo's dividend history are
+independently **operated** but not independently **originated**, since Yahoo's Indian
+corporate-action data is itself redistributed from the same exchange and registrar filings.
+Their agreement rules out a transcription or parse error on one side; it does **not** rule
+out an error in the upstream filing both derive from. That is corroboration, not proof, and
+it is weaker than a price check — which is why it unlocks a projection and never a ledger
+row. **Any future third source must have its origin independence argued in writing before
+it counts**; three sources agreeing is not stronger by arithmetic.
+
 ---
 
 ## Status of what these govern
@@ -150,20 +180,26 @@ Honest separation, so nobody reads an intention as a guarantee.
   usual cause is a tradebook export capped at 365 days.
 
 ### Future work
-- Dividend ingestion. The read path is complete (`app/engine/dividends.py`, the dividends
-  endpoint, the UI, and XIRR/TWRR/contribution all consume it) but **no write path exists
-  beyond manual entry** — NSE's feed carries dividend notices and the parser deliberately
-  skips them (`app/ingest/corporate_action_feed.py` classifies BONUS/SPLIT only). A
-  dividend does meet the auto-apply criterion (paid to every holder of record,
-  unconditionally, with no investor-specific election); TDS treatment and establishing
-  record-date entitlement from the ledger are the open questions.
+- **Dividend RECEIPT.** Declared dividends are now ingested and projected (see invariant 19
+  below); what is still missing is evidence that cash actually arrived. Neither source
+  behind `dividend_event` carries a payment amount or tax withheld — those appear only on a
+  bank credit, a broker funds statement or a registrar's advice — so `RECEIVED` requires a
+  human today. A broker funds-statement adapter is the one automatable path that fits the
+  current architecture and is **not yet authorised**; it is a new ingestion source, not an
+  extension of an existing one.
 
-  **What this means for every dividend figure the product shows, stated once:** Trackr+
-  represents **actual received dividend payments that someone recorded** — never announced,
-  declared, or merely entitled ones. That is a current property of the ingestion sources,
-  not a modelling decision, and it is the reason a portfolio can look light on dividend
-  income while every downstream calculation is correct. Diagnose a missing dividend at the
-  ingestion layer; the engine, the API and the UI are not where the fault is.
+  **What this means for every dividend figure the product shows, stated once:** a figure
+  labelled *received* comes from `DIVIDEND` ledger rows and is money that moved. A figure
+  labelled *announced* or *expected* is a projection from a declaration and is **never**
+  added to it, never in XIRR, TWRR, contribution or realised income. A portfolio can
+  therefore show a large expected figure and a small received one; that is the two
+  concepts working, not a bug. Diagnose a missing *received* dividend at the ingestion
+  layer; the engine, the API and the UI are not where the fault is.
+- **Dividend income tax.** The tax engine is capital-gains only. Dividends have been
+  taxable in the holder's hands at slab rate since FY 2020-21, and `transaction.tds_amount`
+  now captures what was withheld, but slab-rate computation, an "income from other sources"
+  schedule and crediting TDS against total liability are **not modelled**. The inputs are
+  stored so that work is unblocked; the feature is not built. See `docs/TAX_ENGINE.md`.
 - Rights, mergers and consolidations under the same fail-closed framework.
 - A licensed market-data vendor behind `BhavcopySource`, for redistribution rights and for
   historical corporate-action NOTICES (as distinct from prices).

@@ -384,6 +384,41 @@ writes here directly: an ISIN cannot alias to itself, and characters 1–7 must 
 (country + instrument type + issuer). A different issuer is a **merger**, not an
 identifier change.
 
+## `dividend_event` — declared dividends as reference data (migration 029)
+
+A fact about the **company**: this security declared this amount per share with this
+ex-date. It exists independently of any investor, and it is **not** a ledger, not a cash
+record, and not evidence anybody was paid.
+
+| column | note |
+|---|---|
+| `isin`, `ex_date`, `kind` | `UNIQUE` together. `kind` is `INTERIM`/`FINAL`/`SPECIAL`/`UNSPECIFIED`, and `UNSPECIFIED` means *this source did not say* — not a fourth kind. It is in the key because an interim and a special genuinely can share an ex-date; without it, a special declared alongside an interim is silently lost. |
+| `amount_per_share` | The declared amount. **Not** in the uniqueness key: a corrected amount is the same event with a better number, and keying on it would leave two contradictory claims about one fact with nothing able to choose between them at read time — the failure `security_alias`'s single-row primary key exists to prevent. |
+| `ex_date` | `NOT NULL`. The eligibility cutoff: `quantity_held_before()` reads the close *before* it. NSE sends `"-"` for a date not yet fixed, and such a notice produces **no row** rather than a guessed one. |
+| `record_date`, `payment_date` | Display and reconciliation only, **never computed from**. The record date is the legal entitlement date but is not observable from a trade-dated ledger; the ex-date is. |
+| `corroborated_by`, `corroborated_url` | The second, distinct source that read the same fact. This table's substitute for `corporate_action`'s price check, because a dividend's ex-date price move is inside daily noise. CHECK constraints refuse a corroborator with no URL, and refuse a source corroborating itself. |
+| `verification` | The same `corp_action_verification` enum as `corporate_action` and `security_alias` — one standard of evidence, deliberately not a parallel type. `DRAFT` is inert. |
+
+**The rule that matters most:** nothing here may become a `DIVIDEND` ledger row without
+evidence of **receipt**. A declared amount × an eligible quantity is a *projection*
+(`EXPECTED`), computed on read and never stored, for the same reason holdings are not. See
+`ARCHITECTURE_INVARIANTS.md` #18 and #19.
+
+## `transaction.tds_amount` (migration 030)
+
+`dividend_amount` is and stays **NET** — what reached the bank, and the figure
+`compute_xirr` and `compute_twrr` consume, because both model money actually moving.
+`tds_amount` is what was withheld at source, **as recorded on a document**; gross is
+`dividend_amount + COALESCE(tds_amount, 0)`, derived and never stored.
+
+**`NULL` means unknown, not zero**, and the column has no `DEFAULT` for exactly that
+reason. Zero asserts "no tax was withheld" — a real, checkable, different claim (true below
+the §194 threshold, true against a valid 15G/15H). Neither dividend source carries tax at
+all, so a default of `0` would have made a false assertion about every existing row the
+moment the migration ran. The §194 threshold is per company per financial year, so whether
+TDS applies is not a property of one dividend in isolation — which is why this records what
+a document states and nothing derives it from a rate.
+
 ## `cost_inflation_index`
 
 Static CBDT reference table for indexation (`docs/TAX_ENGINE.md` §Indexation), added by
