@@ -23,7 +23,7 @@ from typing import Any
 
 from app.db import audit
 from app.engine.corporate_actions import Verification
-from app.engine.dividend_events import DividendEvent, DividendKind
+from app.engine.dividend_events import DividendEvent, DividendKind, amounts_agree
 
 logger = logging.getLogger("dividend_events")
 
@@ -251,7 +251,7 @@ def corroborate_dividend_event(
     if source == event.source:
         return event.verification  # not a second observation
 
-    if amount_per_share != event.amount_per_share:
+    if not amounts_agree(amount_per_share, event.amount_per_share):
         note = (
             f"{event.notes}\nAMOUNT_CONFLICT: {event.source} reports "
             f"{event.amount_per_share}/share, {source} reports {amount_per_share}/share"
@@ -360,15 +360,321 @@ def update_dividend_event_dates(
 
 
 __all__ = [
+    "OUTCOME_AMBIGUOUS",
+    "OUTCOME_CLASSIFIED",
+    "OUTCOME_CONFLICT",
+    "OUTCOME_CORROBORATED",
+    "OUTCOME_INSERTED",
+    "OUTCOME_UNCHANGED",
     "DividendEventDateError",
     "add_dividend_event",
     "corroborate_dividend_event",
+    "discover_dividends_from_yfinance",
     "dispute_dividend_event",
     "get_dividend_event",
     "list_dividend_events",
     "list_pending_dividend_events",
     "match_unspecified",
+    "refresh_dividend_feed",
     "update_dividend_event_dates",
     "validate_dates",
+    "upsert_declared_dividend",
     "verify_dividend_event",
 ]
+
+
+# ===========================================================================
+# MERGE AND DISCOVERY -- where the two sources actually meet.
+# ===========================================================================
+
+#: Outcomes ``upsert_declared_dividend`` can report. Returned rather than logged-and-
+#: forgotten so a refresh run can tell a human what actually happened, and so the
+#: ambiguous case is COUNTED rather than silently doing nothing.
+OUTCOME_INSERTED = "inserted"
+OUTCOME_CORROBORATED = "corroborated"
+OUTCOME_CLASSIFIED = "classified"
+OUTCOME_CONFLICT = "conflict"
+OUTCOME_AMBIGUOUS = "ambiguous"
+OUTCOME_UNCHANGED = "unchanged"
+
+_NSE_SOURCE_NAME = "NSE corporate filings"
+_NSE_SOURCE_URL = "https://www.nseindia.com/companies-listing/corporate-filings-actions"
+
+
+def _classify_and_corroborate(
+    conn: Any,
+    event: DividendEvent,
+    candidate: DividendEvent,
+    actor_uid: str | None,
+) -> str:
+    """An UNSPECIFIED event on file turns out to have a name, supplied by a source that
+    also read its amount.
+
+    WHY CHANGING ``kind`` IS LEGITIMATE HERE even though it is part of the event's
+    identity. The row was always THIS dividend; what was missing was its label, because
+    ``Ticker.dividends`` does not carry one. An NSE notice naming it "Interim" is better
+    information about the same fact, not a different fact -- so this is a reference-data
+    correction, audited like any other, and not an identity change. It is safe against
+    collision because the caller has already established that no row of the target kind
+    exists for this (isin, ex_date): that lookup is what makes this branch reachable.
+
+    The amount is still checked. Better information about the label does not license
+    accepting a contradictory number.
+    """
+    if not amounts_agree(candidate.amount_per_share, event.amount_per_share):
+        note = (
+            f"{event.notes}\nAMOUNT_CONFLICT: {event.source} reports "
+            f"{event.amount_per_share}/share, {candidate.source} reports "
+            f"{candidate.amount_per_share}/share"
+        ).strip()
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE dividend_event SET verification = %s, notes = %s WHERE id = %s",
+                (Verification.DISPUTED.value, note, event.id),
+            )
+        audit.record(
+            conn, audit.ACTION_DIVIDEND_EVENT_DISPUTED, "dividend_event", event.id, actor_uid,
+            {"isin": event.isin, "reason": "AMOUNT_CONFLICT", "reported_by": candidate.source},
+        )
+        return OUTCOME_CONFLICT
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE dividend_event
+               SET kind = %s,
+                   record_date = COALESCE(record_date, %s),
+                   payment_date = COALESCE(payment_date, %s),
+                   corroborated_by = %s,
+                   corroborated_url = %s,
+                   verification = %s
+             WHERE id = %s
+            """,
+            (
+                candidate.kind.value, candidate.record_date, candidate.payment_date,
+                candidate.source, candidate.source_url,
+                Verification.VERIFIED.value, event.id,
+            ),
+        )
+    audit.record(
+        conn, audit.ACTION_DIVIDEND_EVENT_CORROBORATED, "dividend_event", event.id, actor_uid,
+        {
+            "isin": event.isin,
+            "kind_was": event.kind.value,
+            "kind_now": candidate.kind.value,
+            "corroborated_by": candidate.source,
+        },
+    )
+    return OUTCOME_CLASSIFIED
+
+
+def upsert_declared_dividend(
+    conn: Any, candidate: DividendEvent, actor_uid: str | None = None
+) -> str:
+    """Land one declared-dividend candidate, merging it with whatever is already on file.
+
+    THE WHOLE CROSS-SOURCE DESIGN LIVES HERE, so it lives in exactly one place rather than
+    being re-derived by each feed. Five cases, and the last one is the one that matters:
+
+    1. An event of the SAME (isin, ex_date, kind) is on file -> corroborate it. A different
+       source agreeing promotes it to VERIFIED; the same source repeating itself changes
+       nothing, because two reads of one feed are one observation.
+    2. The candidate NAMES a kind and an UNSPECIFIED event sits at that (isin, ex_date) ->
+       the candidate is that event, better labelled. Classify and corroborate it, rather
+       than inserting a second row for one dividend. This is the NSE-arrives-second case.
+    3. The candidate is UNSPECIFIED and exactly ONE event sits at that (isin, ex_date) ->
+       corroborate that one, whatever its kind. This is the yfinance-arrives-second case,
+       and without it the two feeds would never corroborate each other at all, because
+       ``Ticker.dividends`` cannot supply a kind.
+    4. Nothing is on file -> insert, DRAFT. One source is not enough to project from.
+    5. The candidate is UNSPECIFIED and SEVERAL events sit at that (isin, ex_date) -- an
+       interim and a special declared together -> AMBIGUOUS. Do nothing at all, and say so.
+       Attaching this source's agreement to one of them would promote it to VERIFIED on
+       evidence that may describe the other, and a wrong corroboration is worse than a
+       missing one because it converts DRAFT into a number the product will show.
+
+    Never raises ``UniqueViolation`` for the ordinary repeat case: case 1 resolves it by
+    lookup first, which is what lets a caller commit per row without a rollback in the
+    common path.
+    """
+    validate_dates(candidate)
+    existing = match_unspecified(conn, candidate.isin, candidate.ex_date)
+
+    same_kind = next((e for e in existing if e.kind is candidate.kind), None)
+    if same_kind is not None:
+        state = corroborate_dividend_event(
+            conn, same_kind.id, candidate.source, candidate.source_url,
+            candidate.amount_per_share, actor_uid=actor_uid,
+        )
+        update_dividend_event_dates(
+            conn, same_kind.id, candidate.record_date, candidate.payment_date
+        )
+        if state is Verification.DISPUTED and same_kind.verification is not Verification.DISPUTED:
+            return OUTCOME_CONFLICT
+        if same_kind.corroborated_by is None and state is Verification.VERIFIED:
+            return OUTCOME_CORROBORATED
+        return OUTCOME_UNCHANGED
+
+    if candidate.kind is not DividendKind.UNSPECIFIED:
+        unspecified = [e for e in existing if e.kind is DividendKind.UNSPECIFIED]
+        if len(unspecified) == 1:
+            return _classify_and_corroborate(conn, unspecified[0], candidate, actor_uid)
+    elif len(existing) == 1:
+        state = corroborate_dividend_event(
+            conn, existing[0].id, candidate.source, candidate.source_url,
+            candidate.amount_per_share, actor_uid=actor_uid,
+        )
+        return OUTCOME_CONFLICT if state is Verification.DISPUTED else OUTCOME_CORROBORATED
+    elif len(existing) > 1:
+        return OUTCOME_AMBIGUOUS
+
+    add_dividend_event(conn, candidate, actor_uid=actor_uid)
+    return OUTCOME_INSERTED
+
+
+def refresh_dividend_feed(
+    conn: Any,
+    start: date,
+    end: date,
+    source: Any | None = None,
+    actor_uid: str | None = None,
+) -> dict[str, Any]:
+    """Fetch NSE's notices for ``[start, end]`` and land every dividend among them.
+
+    Same posture as ``refresh_corporate_action_feed``, deliberately, down to the
+    per-row commit: without it, a later row's error would roll back every earlier row's
+    already-successful work in the same run, because Postgres aborts the whole transaction
+    until rolled back and rollback undoes everything since the last commit. Log-and-
+    continue only actually isolates one bad row if each row's work is committed first.
+
+    Never raises on a routine failure -- a fetch or parse problem is logged and returned in
+    the result dict, the same way a daily job should behave.
+
+    NOTE what this does NOT do, unlike its corporate-action counterpart: there is no
+    retry loop over pending ``DRAFT`` rows. A DRAFT corporate action is waiting for a PRICE
+    that a later bhavcopy will supply, so retrying it is productive. A DRAFT dividend is
+    waiting for a SECOND SOURCE, and re-reading the same feed cannot produce one -- the
+    thing that promotes it is the other feed running, which is its own entry point.
+    """
+    from app.ingest.corporate_action_feed import (
+        CorporateActionFeedFetchFailed,
+        CorporateActionFeedFormatError,
+        nse_corporate_action_feed,
+        parse_dividend_feed,
+    )
+
+    feed = source or nse_corporate_action_feed()
+    try:
+        payload = feed.fetch(start, end)
+    except CorporateActionFeedFetchFailed as exc:
+        logger.warning("dividend feed fetch failed for %s..%s: %s", start, end, exc)
+        return {"fetched": 0, "error": str(exc)}
+
+    try:
+        rows = parse_dividend_feed(payload)
+    except CorporateActionFeedFormatError as exc:
+        logger.warning("dividend feed format changed for %s..%s: %s", start, end, exc)
+        return {"fetched": 0, "error": str(exc)}
+
+    counts: dict[str, int] = {}
+    for row in rows:
+        candidate = DividendEvent(
+            isin=row.isin,
+            ex_date=row.ex_date,
+            amount_per_share=row.amount_per_share,
+            kind=DividendKind(row.kind),
+            record_date=row.record_date,
+            source=_NSE_SOURCE_NAME,
+            source_url=_NSE_SOURCE_URL,
+            verification=Verification.DRAFT,
+            notes=row.raw_subject,
+        )
+        try:
+            outcome = upsert_declared_dividend(conn, candidate, actor_uid=actor_uid)
+            conn.commit()
+            counts[outcome] = counts.get(outcome, 0) + 1
+        except Exception:
+            conn.rollback()
+            logger.warning(
+                "dividend candidate failed for isin=%s ex_date=%s -- skipped, not aborting "
+                "the run", row.isin, row.ex_date, exc_info=True,
+            )
+            counts["failed"] = counts.get("failed", 0) + 1
+
+    return {"fetched": len(rows), **counts}
+
+
+def discover_dividends_from_yfinance(
+    conn: Any,
+    isins: list[str] | None = None,
+    source: Any | None = None,
+    actor_uid: str | None = None,
+) -> dict[str, Any]:
+    """The historic-depth pass -- ``Ticker.dividends`` for every ISIN this system holds.
+
+    Occasional, not daily: a ticker's whole dividend history comes back in one call and
+    does not change day to day. ``isins`` defaults to every ISIN ever held
+    (``app.db.prices.held_isins``), never Yahoo's universe, so no call is spent on a
+    security nobody here owns.
+
+    Every candidate is UNSPECIFIED, because the kind is genuinely absent from the data --
+    see ``app.ingest.corporate_action_yfinance``'s dividend section on why inferring it
+    from the month or the size would be an invention. ``upsert_declared_dividend`` case 3
+    is what lets such a candidate corroborate an NSE notice anyway.
+    """
+    from app.db.prices import held_isins
+    from app.ingest.corporate_action_yfinance import (
+        YFINANCE_SOURCE_NAME,
+        YfinanceSource,
+        discover_dividend_candidates,
+    )
+    from app.securities import lookup as lookup_securities
+
+    yf_source = source or YfinanceSource()
+    target_isins = isins if isins is not None else held_isins(conn)
+    meta = lookup_securities(conn, target_isins)
+
+    counts: dict[str, int] = {}
+    errors: dict[str, str] = {}
+
+    for isin in target_isins:
+        symbol = (meta.get(isin) or {}).get("symbol")
+        if not symbol:
+            continue  # no security-master row -- the FK would reject it anyway
+        try:
+            candidates = discover_dividend_candidates(yf_source, isin, symbol)
+        except Exception as exc:
+            errors[isin] = str(exc)
+            logger.warning(
+                "yfinance dividend lookup failed for isin=%s symbol=%s", isin, symbol,
+                exc_info=True,
+            )
+            continue
+
+        for candidate in candidates:
+            event = DividendEvent(
+                isin=candidate.isin,
+                ex_date=candidate.ex_date,
+                amount_per_share=candidate.amount_per_share,
+                kind=DividendKind.UNSPECIFIED,
+                source=YFINANCE_SOURCE_NAME,
+                source_url=candidate.source_url,
+                verification=Verification.DRAFT,
+                notes=f"Discovered via yfinance dividend history for {symbol}.NS.",
+            )
+            try:
+                outcome = upsert_declared_dividend(conn, event, actor_uid=actor_uid)
+                conn.commit()
+                counts[outcome] = counts.get(outcome, 0) + 1
+            except Exception:
+                conn.rollback()
+                logger.warning(
+                    "yfinance dividend candidate failed for isin=%s ex_date=%s -- skipped",
+                    candidate.isin, candidate.ex_date, exc_info=True,
+                )
+                counts["failed"] = counts.get("failed", 0) + 1
+
+    result: dict[str, Any] = dict(counts)
+    if errors:
+        result["errors"] = errors
+    return result

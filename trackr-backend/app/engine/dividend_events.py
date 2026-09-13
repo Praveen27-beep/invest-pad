@@ -38,7 +38,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 # Reused, never re-declared: this system has one vocabulary for how much a reference
@@ -125,6 +125,35 @@ class GuardFailure:
 #: this guard. It is the difference between a 100x error and a plausible-looking wrong
 #: number, not a correctness proof.
 MAX_PLAUSIBLE_YIELD = Decimal("0.50")
+
+
+#: Dividends are declared in rupees and paise -- two decimal places -- so that is the
+#: granularity at which two sources' readings of the SAME declaration are compared.
+#:
+#: This is not a tolerance for disagreement, which would be this module deciding that two
+#: different amounts are close enough. It is the comparison granularity the underlying fact
+#: actually has. The reason it must be stated explicitly: one of the two sources
+#: (``yfinance``) arrives as a binary numeric value, and a true 1.10 can surface as
+#: 1.0999999999 -- see app.ingest.corporate_action_yfinance for where that boundary is
+#: crossed and converted. Compared
+#: exactly, that is a conflict and the event would be DISPUTED -- turning every
+#: such a corroboration into a false contradiction and defeating the only
+#: verification a dividend has. Compared at paise, it is the same declaration.
+#:
+#: A genuine disagreement is never smaller than a paisa, so nothing real is hidden by this.
+AMOUNT_QUANTUM = Decimal("0.01")
+
+
+def amounts_agree(left: Decimal, right: Decimal) -> bool:
+    """Whether two readings describe the same declared amount, at paise granularity.
+
+    ``ROUND_HALF_UP`` rather than Python's default banker's rounding: this compares money
+    as a human reading a notice would, and the asymmetry of banker's rounding at exact
+    half-paise would make agreement depend on which source reported first.
+    """
+    return left.quantize(AMOUNT_QUANTUM, rounding=ROUND_HALF_UP) == right.quantize(
+        AMOUNT_QUANTUM, rounding=ROUND_HALF_UP
+    )
 
 
 def check_sourced(event: DividendEvent) -> GuardFailure | None:
@@ -262,10 +291,12 @@ def screen(
 
 
 __all__ = [
+    "AMOUNT_QUANTUM",
     "MAX_PLAUSIBLE_YIELD",
     "DividendEvent",
     "DividendKind",
     "GuardFailure",
+    "amounts_agree",
     "check_amount_plausible",
     "check_cross_sourced",
     "check_sourced",

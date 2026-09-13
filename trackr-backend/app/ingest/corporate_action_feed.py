@@ -248,3 +248,165 @@ def parse_corporate_action_feed(payload: bytes) -> list[FeedRow]:
         # ...) is out of this parser's scope by design -- see the docstring above.
 
     return out
+
+
+# ===========================================================================
+# DIVIDEND NOTICES -- the same payload, a separate parser, a separate row type.
+#
+# WHY A SEPARATE PARSE FUNCTION rather than another branch inside
+# ``parse_corporate_action_feed``. A dividend is not a ``CorpActionType`` and must never
+# become one: see migration 029's header for the full argument, the short version being
+# that ``check_price_consistency`` passes vacuously for any non-BONUS/SPLIT type, so a
+# DIVIDEND member of that enum would inherit ``apply_known_actions_for_account``'s
+# auto-apply path with no real guard behind it. Keeping the row types apart means the two
+# kinds of notice cannot be confused downstream by a missing ``if``, and the existing
+# parser's behaviour is unchanged -- it still drops dividends, which is now correct rather
+# than merely incomplete, because this function is what reads them.
+#
+# WHAT THIS PARSER REFUSES TO DO, and why each refusal is safer than the alternative. Same
+# governing rule as the bonus/split parser: no candidate beats a wrong candidate, because
+# nothing downstream can tell "this parser guessed" from "this parser read a real notice".
+# ===========================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class DividendFeedRow:
+    """One dividend notice, structured but UNVERIFIED.
+
+    Carries no quantity and no total: multiplying by a holder's position is what turns a
+    declaration into an expectation, and that happens on read, never here.
+    """
+
+    isin: str
+    symbol: str
+    ex_date: date
+    amount_per_share: Decimal
+    kind: str  # a DividendKind value; kept as str so this module imports no engine enum
+    record_date: date | None = None
+    raw_subject: str = ""
+
+
+#: The notice must actually be about a dividend. Word-bounded so "Dividends" matches but a
+#: substring inside another word does not.
+_DIVIDEND_RE = re.compile(r"\bdividend", re.IGNORECASE)
+
+#: "Rs 1.50 Per Share", "Rs.1.50/-", "Re. 1 Per Share". The Rs/Re alternation is the same
+#: Indian-English singular/plural distinction ``_SPLIT_RE`` already documents -- "Re." for
+#: exactly one rupee, "Rs." otherwise -- and missing it would silently drop every Re. 1
+#: dividend, which is a common declaration.
+#:
+#: A BARE NUMBER IS DELIBERATELY NOT MATCHED. Requiring the currency marker is what stops
+#: this regex reading a ratio, a face value, a percentage or a year as an amount. It costs
+#: the occasional real notice phrased without one; a false negative here produces no
+#: candidate, which is recoverable, while a false positive produces a wrong rupee figure
+#: attached to a real security.
+_DIVIDEND_AMOUNT_RE = re.compile(r"\b(?:rs|re)\.?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+#: Which kind the notice says it is. Matched independently so a subject naming two kinds
+#: can be detected as ambiguous rather than silently resolved to whichever matched first.
+_DIVIDEND_KINDS = (
+    ("INTERIM", re.compile(r"\binterim\b", re.IGNORECASE)),
+    ("FINAL", re.compile(r"\bfinal\b", re.IGNORECASE)),
+    ("SPECIAL", re.compile(r"\bspecial\b", re.IGNORECASE)),
+)
+
+
+def parse_dividend_feed(payload: bytes) -> list[DividendFeedRow]:
+    """NSE's ``corporates-corporateActions`` JSON into structured, unverified dividends.
+
+    Reads the SAME payload ``parse_corporate_action_feed`` reads, so one fetch serves both
+    and the anti-bot session warm-up is paid once.
+
+    FOUR THINGS THIS REFUSES TO PARSE, each one a real shape in live NSE data:
+
+    1. A PERCENTAGE DECLARATION -- "Dividend - 150%". Historically common, and it means
+       150% OF FACE VALUE, not of price and not a rupee amount. Computing it needs the
+       security's face value AT THAT TIME, which this feed does not carry and which a
+       later split changes. Reading "150" as Rs 150 would be a 100x error on a Rs 1.50
+       dividend. No candidate.
+    2. MORE THAN ONE AMOUNT in one subject -- "Interim Dividend Rs 1.50 Per Share And
+       Special Dividend Rs 2 Per Share". Both amounts and both kinds are present, but
+       PAIRING them correctly is an inference about text order, and getting it backwards
+       silently swaps a Rs 2 special with a Rs 1.50 interim. A known gap, not a silent
+       one: no candidate, and the notice stays visible as unparsed.
+    3. MORE THAN ONE KIND NAMED, for the same reason -- the kind could not be attributed.
+    4. ANYTHING ``_DISQUALIFYING_TERMS`` CATCHES, reused unchanged. A preference-share or
+       debenture "dividend" is a different instrument's income and must not land against
+       an equity ISIN; a scheme of arrangement is not a plain dividend.
+
+    ``recDate`` is read when present and ignored when absent or "-", which NSE sends for a
+    date not yet fixed. It is never required: ``_REQUIRED_FIELDS`` deliberately does not
+    include it, so a feed that stops sending it degrades to a missing display field rather
+    than a format error that stops the run.
+
+    Raises:
+        CorporateActionFeedFormatError: same contract and same required fields as
+            ``parse_corporate_action_feed`` -- the payload is not a JSON array of objects,
+            or a row is missing a field every row has always carried.
+    """
+    import json
+
+    try:
+        records = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise CorporateActionFeedFormatError(f"not valid JSON: {exc}") from exc
+    if not isinstance(records, list):
+        raise CorporateActionFeedFormatError(f"expected a JSON array, got {type(records).__name__}")
+
+    out: list[DividendFeedRow] = []
+    for i, record in enumerate(records):
+        if not isinstance(record, dict) or not _REQUIRED_FIELDS <= set(record):
+            raise CorporateActionFeedFormatError(
+                f"row {i}: missing required field(s) {sorted(_REQUIRED_FIELDS - set(record))}"
+            )
+        isin = str(record["isin"]).strip()
+        symbol = str(record["symbol"]).strip()
+        subject = str(record["subject"]).strip()
+        if not isin or not subject:
+            continue  # blank rows are a known artefact of this feed, not a format break
+        if not _DIVIDEND_RE.search(subject):
+            continue  # not a dividend notice -- the bonus/split parser's business
+        if not _is_plain_notice(subject):
+            continue  # a qualifier changes what this is -- see _DISQUALIFYING_TERMS
+        if "%" in subject:
+            continue  # percentage of face value -- refusal 1 above
+
+        ex_date = _parse_nse_date(str(record["exDate"]).strip())
+        if ex_date is None:
+            continue  # "-" is a real, routine value for a not-yet-fixed date
+
+        amounts = _DIVIDEND_AMOUNT_RE.findall(subject)
+        if len(amounts) != 1:
+            continue  # none to read, or two that cannot be attributed -- refusal 2
+        try:
+            amount = Decimal(amounts[0])
+        except InvalidOperation:
+            continue
+        if amount <= 0:
+            continue  # a zero or negative declaration is not a dividend
+
+        kinds = [name for name, pattern in _DIVIDEND_KINDS if pattern.search(subject)]
+        if len(kinds) > 1:
+            continue  # two kinds named, neither attributable -- refusal 3
+        kind = kinds[0] if kinds else "UNSPECIFIED"
+
+        record_date = _parse_nse_date(str(record.get("recDate", "")).strip())
+        if record_date is not None and record_date < ex_date:
+            # A record date before the ex-date cannot be true and in practice means the
+            # fields were transposed. Drop the date rather than the notice: the ex-date is
+            # what eligibility uses, and record_date is display only.
+            record_date = None
+
+        out.append(
+            DividendFeedRow(
+                isin=isin,
+                symbol=symbol,
+                ex_date=ex_date,
+                amount_per_share=amount,
+                kind=kind,
+                record_date=record_date,
+                raw_subject=subject,
+            )
+        )
+
+    return out
