@@ -76,3 +76,30 @@ def migrate(conn: Any, directory: Path = MIGRATIONS_DIR) -> list[str]:
         applied.append(path.name)
 
     return applied
+
+
+def check_drift(conn: Any, directory: Path = MIGRATIONS_DIR) -> list[str]:
+    """Every migration on disk that has NOT been applied to ``conn``. Empty means this
+    database exactly matches the repository.
+
+    WHY THIS EXISTS. Six migrations (025 through 030 -- price-evidence waivers, snapshot
+    exclusions, security_alias, price-waiver basis, and the two dividend migrations) sat
+    fully written, fully tested, and fully committed while a real local database silently
+    stayed six versions behind for an unknown number of sessions. The full pytest suite
+    stayed green throughout, because ``tests/conftest_db.py`` migrates its own throwaway
+    cluster automatically on every run -- a passing suite proves the MIGRATIONS ARE
+    CORRECT, never that any particular real database has actually RUN them. Those are
+    different claims, and nothing before this function ever checked the second one.
+
+    This is consequently the one check in ``make lint`` that looks at a real database's
+    state rather than at source text -- every other check in that target is static
+    analysis (grep for a banned token, grep for a layer violation) and needs no service
+    running. This one needs ``DATABASE_URL`` to point at something reachable, and the
+    caller (``scripts/check_migrations.py``) is expected to skip cleanly, not fail, when
+    it does not -- the same posture ``tests/conftest_db.py`` takes when ``initdb``/
+    ``pg_ctl`` are absent. A skip here is a weaker signal than a check that ran and
+    passed, exactly as CLAUDE.md already says about the Postgres-backed test suite; it is
+    not a reason to make an unconfigured environment fail a gate it cannot evaluate.
+    """
+    applied = applied_versions(conn)
+    return [path.name for version, path in discover(directory) if version not in applied]

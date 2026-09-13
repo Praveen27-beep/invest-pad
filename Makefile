@@ -56,6 +56,16 @@ lint:                 ## the architecture rules, enforced
 	@echo "checking: no un-ignored client documents anywhere in the working tree"
 	@bad=$$(git ls-files --cached --others --exclude-standard -- '*.pdf' '*.xlsx' '*.xls' '*.csv' '*.zip' 2>/dev/null | grep -vE '^fixtures/(engine_cases\.json|bhavcopy/.*\.csv|nse_sector_sample\.csv|amfi_market_cap_sample\.xlsx)$$' || true); \
 	if [ -n "$$bad" ]; then echo "FAIL: client-document-shaped file(s) not covered by .gitignore:"; echo "$$bad"; exit 1; fi
+# The one check here that looks at a REAL database's state rather than at source text --
+# see app.db.migrate.check_drift and scripts/check_migration_drift.py for why this exists:
+# six migrations sat fully tested while a real local database silently stayed six
+# versions behind, because the test suite migrates its own throwaway cluster
+# automatically and this was the one comparison nothing else ever made. Skips cleanly
+# (exit 0) when trackr-backend/.env has no DATABASE_URL or it is unreachable -- same
+# posture as the Postgres-backed test suite skipping when initdb/pg_ctl are absent -- and
+# fails loudly when a real, reachable database is missing a migration that exists on disk.
+	@echo "checking: schema migrations match the configured database"
+	@export $$(grep -v '^\s*#' trackr-backend/.env 2>/dev/null | grep -v '^\s*$$' | xargs) >/dev/null 2>&1; 		$(PYTHON) scripts/check_migration_drift.py
 	$(RUFF) check .
 
 fmt:

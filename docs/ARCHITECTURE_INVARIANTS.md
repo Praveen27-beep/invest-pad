@@ -172,6 +172,45 @@ separate question requiring separate evidence.
 
 Honest separation, so nobody reads an intention as a guarantee.
 
+**A correction, dated 2026-09-13, kept here rather than quietly folded into the bullets
+below, because the failure mode is the point.** `security_alias`, the snapshot-exclusion
+columns, `waive_price_evidence`'s structured basis, and both dividend migrations
+(`dividend_event`, `transaction.tds_amount`) were committed as migrations 025-030,
+covered by tests, and green on every run of `pytest tests/` -- while a real, persistent
+local database sat six versions behind on `schema_migrations` for an unknown number of
+sessions, because `tests/conftest_db.py` migrates its own throwaway cluster automatically
+and nothing else ever compared a real database's applied versions against the files on
+disk. The GUJTHEM and SKMEGGPROD facts cited below are real, independently verified
+company facts and the logic that resolves them was genuinely exercised against them --
+but inside that throwaway cluster, not against any database this project actually kept
+running between sessions. **A green test suite proves the migration is correct. It does
+not prove any particular real database has run it.** Those are different claims, and
+this document conflated them until the gap was found and closed:
+
+- `app.db.migrate.check_drift`, wired into `make lint` (`scripts/check_migration_drift.py`),
+  now compares a configured `DATABASE_URL`'s `schema_migrations` against every file on
+  disk and fails loudly on any gap -- skipping cleanly, never silently passing, when no
+  database is reachable to check.
+- All thirty migrations have since been applied to the real local database this project
+  runs against day to day, backed up first (`pg_dump`) and verified non-regressive: every
+  holding's quantity, average cost and invested total were captured before and after and
+  are byte-identical, exactly as expected since `security_alias` landed with zero rows for
+  this database's own held securities (none of them has a recorded ISIN change) and an
+  empty reference table changes no resolution.
+- The real declared-dividend pipeline was then run for the first time against this
+  database's own 37 held ISINs: yfinance returned 682 real historical declarations, the
+  live NSE feed corroborated 15 of them into `VERIFIED` through genuine cross-source
+  agreement, and `compute_expected_dividends` produced 7 real, non-zero projections
+  (₹2,961.40 total) with the remaining 668 correctly withheld as `UNVERIFIED` -- the
+  single-sourced historical backlog NSE's rolling window cannot reach. This is the first
+  time any part of the dividend feature has run against real market data rather than a
+  fixture or a mock.
+
+The bullets below describe what the LOGIC does, verified either against real company
+facts inside the test suite or, as of the date above, against this real applied database.
+They do not by themselves prove every migration is applied everywhere this code runs --
+that is what the drift check is for, and it must pass before trusting anything below.
+
 ### Implemented and verified against real data
 - ISIN aliases end to end — `security_alias`, read-boundary resolution, cycle safety,
   post-alias reconciliation, quarantine. **SKMEGGPROD** (`INE411D01015 → INE411D01023`)
