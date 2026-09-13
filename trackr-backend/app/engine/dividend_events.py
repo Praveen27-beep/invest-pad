@@ -228,6 +228,12 @@ def check_cross_sourced(event: DividendEvent) -> GuardFailure | None:
       - Should a third source ever be added, it does not make this argument stronger by
         arithmetic. Whether it is genuinely separate in ORIGIN is the only question that
         matters, and it has to be answered in writing, here, before it counts.
+
+    This is an instance of a general rule, not a dividend-specific one -- see
+    docs/ARCHITECTURE_INVARIANTS.md #19, which states it for any reference data this system
+    verifies: corroboration requires independence of ORIGIN, that independence must be
+    argued in the code that relies on it, and same-origin agreement may unlock a projection
+    but never a ledger row.
     """
     if not event.corroborated_by or not event.corroborated_url:
         return GuardFailure(

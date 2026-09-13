@@ -119,22 +119,52 @@ table for it is a cache that can disagree with its own inputs. Enforced by
 `tests/test_expected_dividends.py::test_a_projection_never_reaches_a_return_figure`, which
 carries a control proving the same rupees DO move XIRR once actually received.
 
-**19. Where price cannot corroborate, a second source must — and its limits must be
-written down.** A bonus or split divides the price by its multiplier, so
-`check_price_consistency` can corroborate a recorded ratio against a physically separate
-observation. **A dividend has no such analogue, and this is arithmetic rather than policy:**
-it moves the price by roughly amount ÷ price — 0.3%–2% for a typical large-cap, inside one
-day's ordinary noise — so no agreement band recovers a signal that is not there. A
-dividend is therefore verified by cross-source agreement
-(`app.engine.dividend_events.check_cross_sourced`), with the relationship between those
-sources stated explicitly: NSE's notices feed and Yahoo's dividend history are
-independently **operated** but not independently **originated**, since Yahoo's Indian
-corporate-action data is itself redistributed from the same exchange and registrar filings.
-Their agreement rules out a transcription or parse error on one side; it does **not** rule
-out an error in the upstream filing both derive from. That is corroboration, not proof, and
-it is weaker than a price check — which is why it unlocks a projection and never a ledger
-row. **Any future third source must have its origin independence argued in writing before
-it counts**; three sources agreeing is not stronger by arithmetic.
+**19. Corroboration requires independence of ORIGIN, and that independence must be argued
+in writing.** This is a general rule about evidence, not a dividend rule; dividends are
+merely the first place it bit.
+
+Two sources agreeing is worth something only to the extent they could have been wrong
+independently. The distinction that matters is therefore **independently OPERATED** versus
+**independently ORIGINATED**. Two vendors with separate companies, separate engineers and
+separate APIs are independently operated; if both ultimately redistribute the same exchange
+or registrar filing, they are **not** independently originated, and their agreement rules
+out only a transcription, parse or transport error **on one side**. It says nothing about an
+error in the upstream record both derive from, and nothing about a convention both inherited
+from it.
+
+The rules that follow, and they apply to any reference data this system verifies:
+
+- **Before a source is counted as corroborating anything, its origin relationship to the
+  other sources must be stated in the code that uses it** — in the guard's own docstring,
+  not in a commit message. A source whose provenance chain nobody has written down does not
+  corroborate; it merely agrees.
+- **Same-origin corroboration may unlock a PROJECTION. It may never unlock a LEDGER ROW.**
+  A derived, clearly-labelled, recomputed-on-read figure can rest on agreement that might
+  both be wrong; an append-only financial record may not.
+- **Independent-ORIGIN corroboration is a different and stronger thing**, and is what
+  justifies acting. `check_price_consistency` is the model: a recorded bonus ratio is
+  checked against the actual traded close — a physically separate observation of the world,
+  not a second reading of the same filing — which is why that guard is allowed to support
+  an automatic ledger write (`apply_known_actions_for_account`) and cross-source agreement
+  is not.
+- **A human reading the issuer's own filing outranks any number of redistributors**, and is
+  the one path that may verify a single-sourced record.
+- **Adding an nth source does not strengthen the argument by arithmetic.** Three same-origin
+  sources agreeing is still one observation with three witnesses. Only a genuinely separate
+  origin adds evidence, and the claim that it is separate has to be made explicitly and
+  defended.
+
+**The instance this was drawn from.** A bonus or split divides the price by its multiplier,
+so `check_price_consistency` can corroborate the recorded ratio independently. **A dividend
+has no such analogue, and this is arithmetic rather than policy:** it moves the price by
+roughly amount ÷ price — 0.3%–2% for a typical large-cap, inside one day's ordinary noise —
+so no agreement band recovers a signal that is not there. Dividends are therefore verified
+by cross-source agreement (`app.engine.dividend_events.check_cross_sourced`), between NSE's
+notices feed and Yahoo's dividend history, which are independently operated and **not**
+independently originated — Yahoo's Indian corporate-action data is itself redistributed from
+the same exchange and registrar filings NSE publishes. Hence a verified dividend
+declaration unlocks a projection (`EXPECTED`) and never a ledger row, and receipt remains a
+separate question requiring separate evidence.
 
 ---
 

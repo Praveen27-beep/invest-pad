@@ -7,7 +7,7 @@ import { formatDate, formatMoney, formatPercent, signClass } from "@/lib/format"
 import type { PerformanceResponse } from "@/lib/api-types";
 import { Card, ErrorState, LoadingState, NoInvestorState } from "../PageState";
 import { KpiCard } from "../KpiCard";
-import { DualXirrCard } from "../DualXirrCard";
+import { XirrWindowCard } from "../XirrWindowCard";
 import { MissingPriceNotice } from "../MissingPriceNotice";
 import { NegativeHoldingNotice } from "../NegativeHoldingNotice";
 
@@ -53,12 +53,13 @@ export function PerformanceTab() {
 
   return (
     <div className="space-y-6">
-      {/* Both XIRR variants together, always — schema/performance.schema.json: "the gap
-          between them is itself the insight." DualXirrCard also folds in fy_xirr. */}
+      {/* THE WINDOW DECOMPOSITION, and only that. The canonical since-inception pair
+          (xirr_all / xirr_holdings) lives on the home dashboard and used to be rendered
+          here as well -- two identical analytical cards meant two places to change when
+          one was wrong. This tab is the drill-down: every trailing window, with TWRR
+          beside each, over the same span. See app/page.tsx's own note. */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        <DualXirrCard
-          xirrAll={p?.xirr_all ?? null}
-          xirrHoldings={p?.xirr_holdings ?? null}
+        <XirrWindowCard
           fyXirr={p?.fy_xirr ?? null}
           xirr1y={p?.xirr_1y ?? null}
           xirr3y={p?.xirr_3y ?? null}

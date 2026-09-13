@@ -35,7 +35,6 @@ import {
   SegmentedControl,
   VintageKpi,
   VintageKpiSkeleton,
-  VintageXirr,
   ledgerFig,
   type ArcSlice,
   type LedgerColumn,
@@ -43,7 +42,6 @@ import {
 
 type GroupBy = "asset_class" | "sector" | "market_cap";
 type ValueBasis = "current" | "invested";
-type XirrWindowKey = "fy" | "1y" | "3y";
 
 const GROUP_BY_LABEL: Record<GroupBy, string> = {
   asset_class: "Asset class",
@@ -78,7 +76,6 @@ export default function DashboardPage() {
   // in the control, and becomes the right default the moment a second asset class ships.
   const [groupBy, setGroupBy] = useState<GroupBy>("sector");
   const [basis, setBasis] = useState<ValueBasis>("current");
-  const [xirrWindow, setXirrWindow] = useState<XirrWindowKey>("fy");
 
   const query = { as_of: asOf, advised_only: advisedOnly || undefined };
 
@@ -366,12 +363,6 @@ export default function DashboardPage() {
     },
   ];
 
-  const xirrByWindow: Record<XirrWindowKey, number | null | undefined> = {
-    fy: p?.fy_xirr,
-    "1y": p?.xirr_1y,
-    "3y": p?.xirr_3y,
-  };
-  const activeXirr = xirrByWindow[xirrWindow];
 
   return (
     <>
@@ -437,50 +428,42 @@ export default function DashboardPage() {
                 />
               </>
             )}
+            {/*
+              THE CANONICAL XIRR PAIR, and the only return figure on this screen.
+
+              A trailing-window selector (FY / 1Y / 3Y) used to sit beside this and has
+              moved to the Performance tab, for two reasons:
+
+              1. This screen answers "how am I actually doing" -- a question with one
+                 answer. "How did I do over the last three arbitrary spans" is a
+                 drill-down, and a window switcher in the headline row invited reading
+                 whichever span happened to be selected as THE return.
+              2. xirr_all and xirr_holdings were rendered BOTH here and inside
+                 XirrWindowCard on the Performance tab. Two identical analytical cards means
+                 two places to change when one of them is wrong, and they drift.
+
+              The split is now: home = this pair, Performance = every window plus TWRR
+              beside each. See XirrWindowCard's own docstring.
+
+              Paired in ONE slip deliberately, because the GAP BETWEEN THEM is the insight
+              rather than either number alone. `xirr_all` replays every transaction ever
+              made, so it includes the realised outcome of positions already closed;
+              `xirr_holdings` replays only what is still held. A wide divergence says the
+              closed trades and the open book have behaved quite differently -- a fact
+              about the portfolio no single return figure states. These are also the two
+              values fixtures/golden_portfolio.json pins as acceptance criteria
+              (CLAUDE.md's table), so they are the figures a user can check this system
+              against.
+            */}
             {performance.loading ? (
               <VintageKpiSkeleton label="XIRR · since inception" />
             ) : p ? (
-              /*
-                The two CANONICAL XIRR figures, which the windowed slip beside this one
-                does not carry: fy/1y/3y are the same measure over recent spans, and
-                neither answers "how has this portfolio done, in total".
-
-                Paired in one slip deliberately, because the GAP BETWEEN THEM is the
-                insight rather than either number alone. `xirr_all` replays every
-                transaction ever made, so it includes the realised outcome of positions
-                already closed; `xirr_holdings` replays only what is still held. A wide
-                divergence says the closed trades and the open book have behaved quite
-                differently -- which is a fact about the portfolio no single return figure
-                states. These are also the two values fixtures/golden_portfolio.json pins
-                as acceptance criteria (CLAUDE.md's table), so they are the figures a user
-                can check this system against.
-              */
               <VintageKpi
                 label="XIRR · since inception"
                 value={formatPercent(p.xirr_all)}
                 foot="Current holdings only"
                 footValue={formatPercent(p.xirr_holdings)}
                 negative={(p.xirr_all ?? 0) < 0}
-              />
-            ) : null}
-            {performance.loading ? (
-              <VintageKpiSkeleton label="Return · XIRR" wide />
-            ) : p ? (
-              <VintageXirr
-                windows={[
-                  { key: "fy", label: "FY" },
-                  { key: "1y", label: "1Y" },
-                  { key: "3y", label: "3Y" },
-                ]}
-                activeWindow={xirrWindow}
-                onWindowChange={(k) => setXirrWindow(k as XirrWindowKey)}
-                value={formatPercent(activeXirr)}
-                caption={
-                  activeXirr == null
-                    ? "Not enough history for this window"
-                    : "Cash-flow · all external flows"
-                }
-                negative={(activeXirr ?? 0) < 0}
               />
             ) : performance.errorDetail?.isins?.length ? (
               <MissingPriceNotice
