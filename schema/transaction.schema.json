@@ -62,7 +62,11 @@
     },
     "dividend_amount": {
       "$ref": "#/$defs/decimal",
-      "description": "Used only when txn_type is DIVIDEND, where quantity and price are 0. A separate field rather than overloading `price`, because a dividend is a per-holding cash event, not a per-unit trade."
+      "description": "Used only when txn_type is DIVIDEND, where quantity and price are 0. A separate field rather than overloading `price`, because a dividend is a per-holding cash event, not a per-unit trade. NET of any tax withheld at source -- this is the cash-flow figure XIRR and TWRR consume, and what actually reached the bank. Gross is `dividend_amount` + `tds_amount`, derived and never stored."
+    },
+    "tds_amount": {
+      "oneOf": [{ "$ref": "#/$defs/decimal" }, { "type": "null" }],
+      "description": "Tax withheld at source on a dividend (Income Tax Act section 194), AS RECORDED ON A DOCUMENT -- never computed by this system from a rate, because the threshold is per company per financial year and so is not a property of one dividend in isolation. NULL MEANS UNKNOWN, NOT ZERO: zero asserts no tax was withheld, which is a different and checkable claim (true below the threshold, true against a valid 15G/15H). No default, deliberately -- neither corporate-action feed carries tax at all, so a default of 0 would make a false assertion about every row sourced from one. Dividend income tax itself (slab rate, income from other sources, crediting this against total liability) is NOT modelled; see docs/TAX_ENGINE.md."
     },
     "cost_transfer": {
       "$ref": "#/$defs/decimal",

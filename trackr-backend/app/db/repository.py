@@ -22,8 +22,8 @@ UNIQUE_VIOLATION = "23505"
 _INSERT = """
 INSERT INTO transaction (
     account_id, isin, txn_date, txn_type, quantity, price, charges, stt,
-    dividend_amount, cost_transfer, source, source_ref, dedupe_key, raw_payload
-) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    dividend_amount, tds_amount, cost_transfer, source, source_ref, dedupe_key, raw_payload
+) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (dedupe_key) DO NOTHING
 RETURNING id
 """
@@ -96,6 +96,7 @@ def save_transactions(
                     txn.charges,
                     txn.stt,
                     txn.dividend_amount,
+                    txn.tds_amount,
                     txn.cost_transfer,
                     str(txn.source) if txn.source else Source.MANUAL.value,
                     txn.source_ref,
@@ -193,7 +194,8 @@ def load_transactions(
         cur.execute(
             f"""
             SELECT t.id, t.account_id, t.isin, t.txn_date, t.txn_type, t.quantity,
-                   t.price, t.charges, t.stt, t.dividend_amount, t.cost_transfer,
+                   t.price, t.charges, t.stt, t.dividend_amount, t.tds_amount,
+                   t.cost_transfer,
                    t.source, t.source_ref, t.dedupe_key, t.raw_payload, t.created_at
             FROM transaction t
             JOIN account a ON a.id = t.account_id
@@ -220,12 +222,13 @@ def load_transactions(
                 charges=row[7],
                 stt=row[8],
                 dividend_amount=row[9],
-                cost_transfer=row[10],
-                source=Source(row[11]),
-                source_ref=row[12],
-                dedupe_key=row[13],
-                raw_payload=row[14],
-                created_at=row[15],
+                tds_amount=row[10],
+                cost_transfer=row[11],
+                source=Source(row[12]),
+                source_ref=row[13],
+                dedupe_key=row[14],
+                raw_payload=row[15],
+                created_at=row[16],
             )
             for row in rows
         ]

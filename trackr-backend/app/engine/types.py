@@ -154,7 +154,19 @@ class Transaction:
     price: Decimal
     charges: Decimal = ZERO
     stt: Decimal = ZERO
+    # NET dividend received -- what reached the bank, after any tax withheld at source.
+    # This is the figure app.engine.xirr takes as a positive cash flow and
+    # app.engine.twrr as a sub-period outflow, because both model money actually moving.
     dividend_amount: Decimal = ZERO
+    # Tax withheld at source on a dividend, as recorded on a document. NONE MEANS UNKNOWN,
+    # not zero -- zero asserts no tax was withheld, which is a different and checkable
+    # claim (true below the section 194 threshold, true against a valid 15G/15H). Neither
+    # corporate-action feed carries tax at all, so unknown is the honest default and the
+    # only one that does not make a false assertion about every existing row.
+    #
+    # Gross is dividend_amount + (tds_amount or 0), DERIVED -- see gross_dividend below.
+    # Storing all three would store one fact twice and invite them to disagree.
+    tds_amount: Decimal | None = None
     cost_transfer: Decimal = ZERO
     id: str | None = None
     account_id: str | None = None
@@ -163,6 +175,19 @@ class Transaction:
     dedupe_key: str | None = None
     raw_payload: dict[str, Any] | None = None
     created_at: datetime | None = None
+
+    @property
+    def gross_dividend(self) -> Decimal:
+        """Gross dividend: net plus whatever tax was withheld.
+
+        Derived rather than stored, so the three figures cannot drift apart. Equals
+        ``dividend_amount`` when ``tds_amount`` is unknown -- which is NOT a claim that no
+        tax was withheld, only the best available figure. A caller that needs to
+        distinguish "gross, known" from "gross, assumed equal to net" must test
+        ``tds_amount is None`` itself; this property deliberately does not encode that
+        distinction in a sentinel.
+        """
+        return self.dividend_amount + (self.tds_amount or ZERO)
 
 
 @dataclass(frozen=True, slots=True)

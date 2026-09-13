@@ -380,3 +380,65 @@ def test_adding_an_event_is_audited(db: object, investor: str) -> None:
             (event_id,),
         )
         assert [r[0] for r in cur.fetchall()] == ["DIVIDEND_EVENT_ADDED"]
+
+
+# ---------------------------------------------------------------------------- TDS
+
+
+def test_tds_round_trips_through_the_ledger(db: object, investor: str) -> None:
+    import os
+
+    from app.db import repository
+    from app.engine.types import Source, Transaction, TxnType
+
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    txn = Transaction(
+        isin=ISIN, txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"),
+        dividend_amount=Decimal("9000"), tds_amount=Decimal("1000"),
+        source=Source.MANUAL, source_ref="advice-1", account_id=account_id,
+    )
+    repository.save_transactions(db, [txn])
+    db.commit()
+
+    stored = repository.load_transactions(db, account_id=account_id)[0]
+    assert stored.dividend_amount == Decimal("9000.000000"), "net, as credited"
+    assert stored.tds_amount == Decimal("1000.000000")
+    assert stored.gross_dividend == Decimal("10000.000000")
+
+
+def test_an_unrecorded_tds_stays_null_in_the_database(db: object, investor: str) -> None:
+    """NOT coerced to zero on the way in or out. Unknown is the honest state for every
+    dividend the feeds produce, because neither feed carries tax at all."""
+    import os
+
+    from app.db import repository
+    from app.engine.types import Source, Transaction, TxnType
+
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    repository.save_transactions(db, [Transaction(
+        isin=ISIN, txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"), dividend_amount=Decimal("9000"),
+        source=Source.MANUAL, source_ref="advice-2", account_id=account_id,
+    )])
+    db.commit()
+
+    assert repository.load_transactions(db, account_id=account_id)[0].tds_amount is None
+    with db.cursor() as cur:
+        cur.execute('SELECT tds_amount FROM "transaction"')
+        assert cur.fetchone()[0] is None
+
+
+def test_a_negative_tds_is_refused_by_the_table(db: object, investor: str) -> None:
+    import os
+
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with db.cursor() as cur:
+            cur.execute(
+                'INSERT INTO "transaction" (account_id, isin, txn_date, txn_type, quantity, '
+                "price, dividend_amount, tds_amount, source, dedupe_key) "
+                "VALUES (%s,%s,%s,'DIVIDEND',0,0,%s,%s,'MANUAL',%s)",
+                (account_id, ISIN, date(2025, 8, 1), Decimal("9000"), Decimal("-1"), "k1"),
+            )
+    db.rollback()

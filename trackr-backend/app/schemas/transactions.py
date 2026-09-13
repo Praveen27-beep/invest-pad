@@ -38,6 +38,9 @@ class TransactionIn(BaseModel):
     charges: Decimal = Decimal("0")
     stt: Decimal = Decimal("0")
     dividend_amount: Decimal = Decimal("0")
+    # NET of tax withheld. None means UNKNOWN, not zero -- see migration 030. A manual
+    # dividend entry supplies this only when a document actually states it.
+    tds_amount: Decimal | None = None
     cost_transfer: Decimal = Decimal("0")
     source: Source | None = None
     source_ref: str | None = None
@@ -64,6 +67,9 @@ class TransactionOut(BaseModel):
     charges: str
     stt: str
     dividend_amount: str
+    # NET received. `tds_amount` is null when unknown -- which is NOT a claim that no tax
+    # was withheld. Gross is the sum of the two; it is derived, so it is not sent.
+    tds_amount: str | None = None
     cost_transfer: str
     source: str | None
     source_ref: str | None

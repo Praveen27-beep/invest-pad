@@ -292,3 +292,104 @@ def test_price_consistency_is_not_reachable_for_a_dividend() -> None:
 @pytest.mark.parametrize("kind", list(DividendKind))
 def test_every_kind_round_trips_through_its_value(kind: DividendKind) -> None:
     assert DividendKind(kind.value) is kind
+
+
+# ---------------------------------------------------------------------------- TDS
+
+
+def test_gross_is_derived_from_net_plus_withheld() -> None:
+    """Gross is never stored -- storing all three would store one fact twice and invite
+    the three to disagree, the same reason holdings are computed on read."""
+    from app.engine.types import Source, Transaction, TxnType
+
+    txn = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"),
+        dividend_amount=Decimal("9000"), tds_amount=Decimal("1000"),
+        source=Source.MANUAL,
+    )
+    assert txn.gross_dividend == Decimal("10000")
+
+
+def test_unknown_tds_leaves_gross_equal_to_net() -> None:
+    """NOT a claim that no tax was withheld -- only the best available figure.
+
+    A caller needing to distinguish "gross, known" from "gross, assumed equal to net" must
+    test ``tds_amount is None`` itself; the property deliberately encodes no sentinel.
+    """
+    from app.engine.types import Source, Transaction, TxnType
+
+    txn = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"),
+        dividend_amount=Decimal("9000"), source=Source.MANUAL,
+    )
+    assert txn.tds_amount is None, "unknown, not zero"
+    assert txn.gross_dividend == Decimal("9000")
+
+
+def test_tds_is_absent_by_default_not_zero() -> None:
+    """The load-bearing property of the column.
+
+    Zero asserts "no tax was withheld", which is a real and checkable claim -- true below
+    the section 194 threshold, true against a valid 15G/15H. Neither corporate-action feed
+    carries tax at all, so a default of 0 would have made a false assertion about every
+    row sourced from one the moment migration 030 ran.
+    """
+    from app.engine.types import Source, Transaction, TxnType
+
+    txn = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.BUY,
+        quantity=Decimal("10"), price=Decimal("100"), source=Source.MANUAL,
+    )
+    assert txn.tds_amount is None
+
+
+def test_tds_does_not_change_the_cash_flow_figure() -> None:
+    """dividend_amount stays NET, which is why migration 030 moves no existing number.
+
+    XIRR models money actually moving, and what moved is what the bank credited. A gross
+    reinterpretation would have silently altered every existing XIRR in every portfolio.
+    """
+    from app.engine.types import Source, Transaction, TxnType
+    from app.engine.xirr import compute_xirr
+
+    buy = Transaction(
+        isin="INE002A01018", txn_date=date(2024, 1, 1), txn_type=TxnType.BUY,
+        quantity=Decimal("100"), price=Decimal("100"), source=Source.MANUAL,
+    )
+    net_only = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"), dividend_amount=Decimal("9000"),
+        source=Source.MANUAL,
+    )
+    with_tds_recorded = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"), dividend_amount=Decimal("9000"),
+        tds_amount=Decimal("1000"), source=Source.MANUAL,
+    )
+    prices = {"INE002A01018": Decimal("130")}
+    as_of = date(2025, 12, 31)
+
+    assert compute_xirr([buy, net_only], prices, as_of) == compute_xirr(
+        [buy, with_tds_recorded], prices, as_of
+    ), "recording TDS must not move a return figure -- only gross, which XIRR never reads"
+
+
+def test_tds_is_not_part_of_the_dedupe_key() -> None:
+    """Learning the withheld amount later must not manufacture a second dividend row.
+
+    make_dedupe_key already excludes dividend_amount for the analogous reason; tds_amount
+    is absent from the key for free, and this pins that it stays so.
+    """
+    from dataclasses import replace
+
+    from app.engine.dedupe import make_dedupe_key
+    from app.engine.types import Source, Transaction, TxnType
+
+    txn = Transaction(
+        isin="INE002A01018", txn_date=date(2025, 8, 1), txn_type=TxnType.DIVIDEND,
+        quantity=Decimal("0"), price=Decimal("0"), dividend_amount=Decimal("9000"),
+        source=Source.MANUAL, source_ref="DIV:evt-1:1", account_id="acct-1",
+    )
+    assert make_dedupe_key(txn) == make_dedupe_key(replace(txn, tds_amount=Decimal("1000")))
