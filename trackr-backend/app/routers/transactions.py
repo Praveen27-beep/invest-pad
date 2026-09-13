@@ -264,11 +264,42 @@ def expected_dividends(
     """
     from app.db.corporate_actions import list_corporate_actions
     from app.db.dividend_events import list_dividend_events
+    from app.db.security_alias import verified_map
 
     rows = load_transactions(connection, investor_id=investor_id)
-    isins = sorted({t.isin for t in rows})
-    events = list_dividend_events(connection, isins=isins) if isins else []
+    current_isins = {t.isin for t in rows}
+
+    # ALIAS-EXPANDED, not just the current ISINs. `load_transactions` above already
+    # resolved every row to its TERMINAL isin (the GUJTHEM case: a ledger holding both
+    # INE942C01029 and INE942C01045 rows reads as INE942C01045 only). A dividend
+    # declared while the security still traded under the RETIRED identifier is stored
+    # in `dividend_event` under THAT identifier -- an automated feed has no reason to
+    # know about a rename that happened later, and a historic yfinance/NSE lookup
+    # reports whatever ISIN was current at the time. Querying dividend_event with only
+    # the resolved ISINs would silently miss every such event: not an error, not an
+    # entry in `unprojectable`, simply absent -- the exact failure mode this system
+    # already hit once for holdings (docs/DATA_MODEL.md's security_alias section) and
+    # must not repeat here. `verified_map()` gives old_isin -> terminal_isin for every
+    # VERIFIED alias; inverting it recovers every retired identifier that resolves into
+    # a security this investor currently holds.
+    aliases = verified_map(connection)
+    retired_isins = {old for old, current in aliases.items() if current in current_isins}
+    isins = sorted(current_isins | retired_isins)
+
+    raw_events = list_dividend_events(connection, isins=isins) if isins else []
     actions = list_corporate_actions(connection, isins) if isins else []
+
+    # RESOLVED TO THE SAME IDENTITY SPACE AS `rows`. Fetching the retired-ISIN events
+    # above is only half the fix: `compute_expected_dividends` matches `event.isin`
+    # against these already-alias-resolved transactions via `quantity_held_before`, so
+    # an event still carrying the RETIRED isin would look up a security nobody's ledger
+    # mentions any more and find zero quantity -- "not a holder", when the investor
+    # plainly is one under the identifier the ledger now uses. Both sides must speak the
+    # same identity before they are compared, exactly as `load_transactions` already
+    # ensures for the ledger itself.
+    from dataclasses import replace
+
+    events = [replace(e, isin=aliases.get(e.isin, e.isin)) for e in raw_events]
 
     expected, unprojectable = compute_expected_dividends(rows, events, actions, as_of=as_of)
 

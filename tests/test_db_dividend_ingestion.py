@@ -406,3 +406,95 @@ def test_neither_runner_writes_to_the_ledger(db: object, investor: str) -> None:
     with db.cursor() as cur:
         cur.execute('SELECT count(*) FROM "transaction"')
         assert cur.fetchone()[0] == 0
+
+
+# --------------------------------------------------- the GUJTHEM ISIN-alias interaction
+
+
+GUJTHEM_OLD = "INE942C01029"
+GUJTHEM_NEW = "INE942C01045"
+
+
+def _seed_gujthem_securities(db) -> None:
+    with db.cursor() as cur:
+        for isin in (GUJTHEM_OLD, GUJTHEM_NEW):
+            cur.execute(
+                "INSERT INTO security (isin) VALUES (%s) ON CONFLICT (isin) DO NOTHING",
+                (isin,),
+            )
+
+
+def test_a_dividend_declared_under_a_retired_isin_still_projects(
+    db: object, investor: str
+) -> None:
+    """CONFIRMED BUG, FIXED HERE: a dividend declared while a security still traded under
+    an identifier that was LATER retired must not silently vanish from the projection.
+
+    The real GUJTHEM case (docs/DATA_MODEL.md's security_alias section): bought as
+    INE942C01029, later re-identified as INE942C01045. `load_transactions` resolves every
+    ledger row to the TERMINAL isin, so a caller building `dividend_event` lookups from
+    those already-resolved rows would only ever query the NEW isin -- and a dividend an
+    automated feed declared under the OLD isin (because that is what was current when NSE
+    or yfinance reported it) would never be fetched at all. Not an error, not an entry in
+    `unprojectable` -- simply absent, with nothing anywhere saying why.
+
+    This pins the fix end to end, through the actual router function
+    (app.routers.transactions.expected_dividends), not just the engine call: the event is
+    declared under the OLD isin, the ledger uses the NEW one throughout, and the
+    projection must still appear with the right eligible quantity.
+    """
+    import os
+
+    from app.db import repository, security_alias
+    from app.db.security_alias import SecurityAlias
+    from app.engine.corporate_actions import Verification as CAVerification
+    from app.engine.types import Source, Transaction, TxnType
+    from app.routers.transactions import expected_dividends
+
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_gujthem_securities(db)
+
+    security_alias.add_alias(
+        db,
+        SecurityAlias(
+            old_isin=GUJTHEM_OLD, current_isin=GUJTHEM_NEW, effective_date=date(2023, 10, 10),
+            source="Gujarat Themis Biosyn ISIN change", source_url="https://example.invalid/gujthem",
+            verification=CAVerification.VERIFIED,
+        ),
+    )
+
+    # Bought entirely under the OLD isin, before the rename -- load_transactions resolves
+    # this to GUJTHEM_NEW from here on, exactly as the real ledger does.
+    repository.save_transactions(db, [
+        Transaction(
+            isin=GUJTHEM_OLD, txn_date=date(2022, 10, 19), txn_type=TxnType.BUY,
+            quantity=Decimal("100"), price=Decimal("714"), account_id=account_id,
+            source=Source.CONTRACT_NOTE,
+        )
+    ])
+    db.commit()
+
+    # The dividend is declared under the OLD isin -- exactly what an automated feed would
+    # report, since that is the identifier current at the time of declaration.
+    event_id = de.add_dividend_event(
+        db,
+        DividendEvent(
+            isin=GUJTHEM_OLD, ex_date=date(2023, 6, 1), amount_per_share=Decimal("2.50"),
+            kind=DividendKind.INTERIM, source=NSE, source_url=NSE_URL,
+        ),
+        actor_uid=ACTOR,
+    )
+    de.corroborate_dividend_event(db, event_id, YF, YF_URL, Decimal("2.50"), actor_uid=ACTOR)
+    db.commit()
+
+    body = expected_dividends(investor_id=investor, as_of=None, connection=db)
+
+    assert body["expected"], (
+        "the projection vanished silently -- the event was fetched under the retired "
+        "isin but never matched against the alias-resolved ledger"
+    )
+    row = body["expected"][0]
+    assert row["isin"] == GUJTHEM_NEW, "shown under the identifier the ledger now uses"
+    assert row["eligible_quantity"] == "100.000000"
+    assert row["gross_expected"] == "250.000000000000"
+    assert body["unprojectable"] == []
