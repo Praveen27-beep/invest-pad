@@ -1,5 +1,16 @@
 # Phase 1 Field Test — Trackr+
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **a Playwright field test of Phase 1, run 2026-08-20**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 **What this is:** a from-scratch account was walked through onboarding, then the three real
 broker documents you dropped into the repo root were fed into the running app — driven by
 Playwright (Chromium), not by hand — to see whether Phase 1 survives contact with a real

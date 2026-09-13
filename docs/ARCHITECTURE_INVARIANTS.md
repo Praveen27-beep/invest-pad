@@ -75,7 +75,7 @@ information that genuinely only they hold — what they paid, what they subscrib
 
 **14. Complex corporate actions require authoritative inputs.** A demerger's cost
 allocation comes from the prescribed ratio in the scheme document
-(`engine/demerger.py` takes it as a required argument) and is never inferred from
+(`app/engine/demerger.py` takes it as a required argument) and is never inferred from
 arithmetic. A rights issue's subscribed quantity is investor-specific and unknowable from
 any feed.
 
@@ -150,11 +150,20 @@ Honest separation, so nobody reads an intention as a guarantee.
   usual cause is a tradebook export capped at 365 days.
 
 ### Future work
-- Dividend ingestion. The read path is complete (`engine/dividends.py`, the dividends
+- Dividend ingestion. The read path is complete (`app/engine/dividends.py`, the dividends
   endpoint, the UI, and XIRR/TWRR/contribution all consume it) but **no write path exists
   beyond manual entry** — NSE's feed carries dividend notices and the parser deliberately
-  skips them. A dividend does meet the auto-apply criterion (paid to every holder of
-  record, unconditionally); TDS treatment is the open question.
+  skips them (`app/ingest/corporate_action_feed.py` classifies BONUS/SPLIT only). A
+  dividend does meet the auto-apply criterion (paid to every holder of record,
+  unconditionally, with no investor-specific election); TDS treatment and establishing
+  record-date entitlement from the ledger are the open questions.
+
+  **What this means for every dividend figure the product shows, stated once:** Trackr+
+  represents **actual received dividend payments that someone recorded** — never announced,
+  declared, or merely entitled ones. That is a current property of the ingestion sources,
+  not a modelling decision, and it is the reason a portfolio can look light on dividend
+  income while every downstream calculation is correct. Diagnose a missing dividend at the
+  ingestion layer; the engine, the API and the UI are not where the fault is.
 - Rights, mergers and consolidations under the same fail-closed framework.
 - A licensed market-data vendor behind `BhavcopySource`, for redistribution rights and for
   historical corporate-action NOTICES (as distinct from prices).

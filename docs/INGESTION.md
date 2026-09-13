@@ -488,6 +488,46 @@ incident, and keep the URL builder in one small, obviously-editable function.
 
 ---
 
+## Adapter 6 — Corporate-action notices (not a transaction source either)
+
+Like the price pipe, this is a **reference-data** feed: it populates the
+`corporate_action` table, and a separate engine path decides whether anything reaches a
+ledger. `app.ingest.corporate_action_feed` fetches NSE's corporate-actions notices;
+`app.db.corporate_actions.refresh_corporate_action_feed` classifies them and writes the
+table. The verification gates, the three ledger paths, and the DRAFT/VERIFIED/DISPUTED
+lifecycle are specified in `docs/ENGINE_SPEC.md` §7 and are not repeated here.
+
+Two properties belong in *this* document, because they are properties of the source:
+
+**The source is explicitly interim, and sits behind a swappable
+`CorporateActionFeedSource` Protocol** so a licensed vendor can replace it without the
+engine changing. Same provenance caveat as the bhavcopy archives above — fetched under
+the exchange's own terms for internal computation, not under a redistribution licence.
+See `docs/ARCHITECTURE_INVARIANTS.md` #17.
+
+**What it actually recognises is narrower than what it fetches.** The notice type lives
+in free text (`"Bonus 1:1"`, `"Sub-Division ..."`, `"Dividend - Rs 1.50 Per Share"`), and
+the parser is a regex over that string. It classifies **BONUS and SPLIT only**.
+Everything else — **dividends**, rights, mergers, demergers, buybacks, AGM/EGM notices —
+is recognised as unhandled and dropped.
+
+> **This is where dividends go missing, and it is the only place they go missing.**
+> There is **no automated write path for dividends anywhere in this system.** Everything
+> downstream of a `DIVIDEND` row already works: it is a first-class ledger transaction
+> with its own `dividend_amount` column, it flows through XIRR, TWRR and contribution
+> analysis, the dividends endpoint and the dashboard card exist, and manual entry works.
+> The only thing that does not exist is anything that creates such a row without a human
+> typing it. **Trackr+ therefore represents actual received dividend payments that
+> someone recorded — never announced, declared, or merely entitled ones.** A portfolio
+> that looks light on dividend income is showing an ingestion gap, not a calculation
+> bug; do not go looking for the fault in the engine or the UI.
+
+Building it is future work, not a defect to patch in passing — see
+`docs/ARCHITECTURE_INVARIANTS.md` § "Future work" for the open questions (TDS treatment,
+and establishing record-date entitlement from the ledger).
+
+---
+
 ## Phase 2+ adapters (design the seam, do not build)
 
 | adapter | note |
@@ -503,7 +543,7 @@ downstream. That is the test that this layer was designed correctly.
 
 ## Gmail OAuth adapter — NOT AUTHORIZED FOR CLIENT USE
 
-`ingest/gmail_oauth.py` reads a mailbox directly over OAuth with the `gmail.readonly`
+`app/ingest/gmail_oauth.py` reads a mailbox directly over OAuth with the `gmail.readonly`
 scope, as an alternative to forwarding. It exists to validate one capability forwarding
 structurally cannot have, and it is **restricted to the developer's own account**.
 
@@ -693,7 +733,7 @@ job are unaware there is more than one format:
 | BSE | `bseindia.com/…/BhavCopy_BSE_CM_…` (UDiFF) | `bseindia.com/…/EQ_ISINCODE_DDMMYY.zip` |
 
 Legacy files are re-shaped into UDiFF column names by `sources._to_udiff_csv` before
-parsing, so `prices/udiff.py` stays the only bhavcopy parser. Proven equivalent rather
+parsing, so `app/prices/udiff.py` stays the only bhavcopy parser. Proven equivalent rather
 than merely parseable: on 2024-01-02, where both BSE formats are still published, all
 3,975 equity closes agree exactly (`tests/test_prices.py`).
 
@@ -708,7 +748,7 @@ Three things are load-bearing, not hygiene:
 - **NSE's legacy host needs a warmed session cookie**; BSE's does not. One request
   against BSE, two against NSE.
 
-`NSE_BHAVCOPY_EARLIEST` (`prices/pipe.py`) is the backfill floor — **2015-04-01**, a date
+`NSE_BHAVCOPY_EARLIEST` (`app/prices/pipe.py`) is the backfill floor — **2015-04-01**, a date
 this system has actually exercised, not the archives' true limit. Lowering it is a
 follow-up that needs a verified fetch at the older date, not a constant edit.
 
@@ -720,13 +760,13 @@ gaps; **not** a redistribution licence. A licensed vendor becomes another
 ### Running it
 
 ```
-python -m prices.pipe          # today
+cd trackr-backend && python -m app.prices.pipe    # today
 ```
 
 Suggested crontab entry, ~18:30 IST on weekdays — **not installed by this repo**:
 
 ```
-30 18 * * 1-5 cd /path/to/portfolio && .venv/bin/python -m prices.pipe >> /var/log/prices.log 2>&1
+30 18 * * 1-5 cd /path/to/portfolio/trackr-backend && .venv/bin/python -m app.prices.pipe >> /var/log/prices.log 2>&1
 ```
 
 ### Failure handling
@@ -741,13 +781,13 @@ Suggested crontab entry, ~18:30 IST on weekdays — **not installed by this repo
 Alerting on holidays is not a harmless excess — it trains whoever reads the alerts to
 ignore them, which is how a genuine multi-day outage goes unnoticed.
 
-**Alert delivery is NOT wired.** `prices/alerts.py` defines the notifier and the pipe calls
+**Alert delivery is NOT wired.** `app/prices/alerts.py` defines the notifier and the pipe calls
 it on every failure path, but the default only logs. A green pipe is not evidence that a
 failure would reach a human until a real notifier is installed.
 
 ### Staleness
 
-`db/prices.latest_prices` omits any price older than `MAX_PRICE_STALENESS_DAYS` (5) rather
+`app/db/prices.latest_prices` omits any price older than `MAX_PRICE_STALENESS_DAYS` (5) rather
 than returning it. The holding then raises `MissingPriceError` naming the ISIN. A stale
 price does not fail — it produces a confidently wrong market value and a confidently wrong
 XIRR, which is far harder to notice than a red screen naming a security.
@@ -757,7 +797,7 @@ XIRR, which is far harder to notice than a red screen naming a security.
 
 ## Contract-note PDF adapter
 
-`ingest/zerodha_contract_note.py`. **The only source of charges.** A tradebook has
+`app/ingest/zerodha_contract_note.py`. **The only source of charges.** A tradebook has
 quantities and prices but no brokerage, STT, GST, SEBI turnover fee or stamp duty, so a
 cost basis built from tradebooks alone is understated by exactly those. Across the 40 real
 notes in this project that is **8,278.12**.
@@ -793,14 +833,14 @@ but the dedupe keys still differ for two independent reasons:
 2. Prices differ in precision — the tradebook exports `43.119999` where the note prints
    `43.12` — so even removing `source` would leave the keys different.
 
-Both would have to be addressed for the collision to work. `engine/dedupe.py`'s own
+Both would have to be addressed for the collision to work. `app/engine/dedupe.py`'s own
 docstring asserts these *should* collide; they do not.
 `tests/test_zerodha_contract_note.py::test_the_same_trade_from_two_sources_does_not_currently_dedupe`
 pins the current behaviour so the gap stays visible.
 
 ### The current rule: source precedence at the ingestion layer
 
-Until the key is fixed, `db/precedence.py` arbitrates. **A contract note beats a
+Until the key is fixed, `app/db/precedence.py` arbitrates. **A contract note beats a
 tradebook**, because the note carries charges and the tradebook does not — preferring the
 tradebook would import the same trade with a cost basis understated by its brokerage, STT,
 GST and stamp duty.

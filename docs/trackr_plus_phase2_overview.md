@@ -1,5 +1,16 @@
 # Trackr-Plus Phase 2: Analytics Depth — Overview & Status
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **a point-in-time codebase map for Phase 2**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Generated 2026-08-18, at the start of Phase 2, as a skeleton — before any Phase 2 code
 existed. **Updated 2026-08-20** against the actual state of the working tree, not
 assumption: every claim below was checked directly against the code, the migrations,

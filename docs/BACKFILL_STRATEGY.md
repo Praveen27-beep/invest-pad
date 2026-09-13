@@ -125,7 +125,7 @@ flowchart TD
 
 **Step 4 is the thing you were actually asking for**, and it is better than selecting
 emails by hand: the selection is driven by a **measured gap**, not a guess.
-`engine/reconcile.py` already turns a quantity delta into a named cause:
+`app/engine/reconcile.py` already turns a quantity delta into a named cause:
 
 | ratio declared/computed | what reconcile.py already concludes |
 |---|---|

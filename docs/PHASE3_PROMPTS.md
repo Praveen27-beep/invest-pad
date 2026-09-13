@@ -1,5 +1,16 @@
 # Phase 3 (Tax Engine) — implementation prompts
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **Phase 3 tax-engine session prompts, generated 2026-08-20**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Generated 2026-08-20, audited directly against the current codebase (not inferred from
 `docs/BACKEND_REUSE_AND_GAP_ANALYSIS.md` or any other planning doc). Companion to
 `docs/PHASE2_PROMPTS.md` — same format, same "hand this whole block to a fresh session"

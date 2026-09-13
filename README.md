@@ -1,11 +1,14 @@
-# Portfolio Intelligence Platform — Specification
+# Trackr+ — Portfolio Intelligence Platform
 
-A complete build specification. Two audiences, one repo.
+A portfolio intelligence platform for Indian listed equities. **Built and running**, not
+a plan: FastAPI + raw SQL + PostgreSQL behind a Next.js dashboard.
 
 ## If you are Claude Code
 
-Read **`CLAUDE.md`** first, every session. Then work through
-**`docs/BUILD_PLAN.md`** one session at a time. Never skip the fixtures.
+Read **`CLAUDE.md`** first, every session, then **`docs/ARCHITECTURE_INVARIANTS.md`**
+before touching anything financial. Do not work through a phase plan or a prompt archive
+— `CLAUDE.md` separates the live specification from the historical archive, and the
+archive is provenance, not requirements.
 
 ## If you are the developer maintaining this
 
@@ -17,21 +20,33 @@ The stack is disposable. **The contracts are the product:**
 | `schema/*.schema.json` | the object shapes |
 | `fixtures/*.json` | the correctness bar |
 
-Any language or framework honouring those three is a valid implementation. Prefer
-Node + Prisma? Go + sqlc? Django? Fine — generate types with `quicktype`, generate
-server stubs with `openapi-generator`, port the fixtures into your test runner, keep
-the layer rule from `docs/ARCHITECTURE.md`. Nothing here assumes Python beyond the
-reference implementation.
+Any language or framework honouring those three is a valid implementation — generate
+types with `quicktype`, generate server stubs with `openapi-generator`, port the fixtures
+into your test runner, keep the layer rule from `docs/ARCHITECTURE.md`. Nothing here
+assumes Python beyond the reference implementation. (One caveat: `docs/STACK_DECISION.md`
+originally picked Django; that verdict was **reversed** and the file says so at the top.
+Its Postgres-over-Firebase reasoning still stands.)
 
 ## Read in this order
 
 ```
-1. docs/PRODUCT_VISION.md   what it is, and what it refuses to be
-2. docs/ARCHITECTURE.md     four layers, dependency rule, stack swapping
-3. docs/DATA_MODEL.md       six tables, invariants, extension points
-4. docs/ENGINE_SPEC.md      exact maths - FIFO, XIRR, corporate actions
-5. docs/INGESTION.md        Gmail forwarding, CSV, the legal boundary
-6. docs/BUILD_PLAN.md       twelve sessions, in order
+1. CLAUDE.md                       the contract — scope, rules, where things live
+2. docs/ARCHITECTURE_INVARIANTS.md the non-negotiable financial rules, and what is
+                                   implemented vs unresolved vs deliberately excluded
+3. docs/PRODUCT_VISION.md          what it is, and what it refuses to be
+4. docs/ARCHITECTURE.md            four layers, dependency rule, stack swapping
+5. docs/DATA_MODEL.md              tables, invariants, extension points
+6. docs/ENGINE_SPEC.md             exact maths — FIFO, XIRR, corporate actions
+7. docs/INGESTION.md               Gmail forwarding, CSV, the price pipe, legal boundaries
+```
+
+## Running it
+
+```
+make install      # editable-installs the root package and trackr-backend
+make test         # acceptance gate: engine, contribution, tax, golden, fixture + lint
+pytest tests/     # the full suite; DB tests need a live Postgres
+make dev          # uvicorn app.main:app --reload
 ```
 
 ## The three things that matter most

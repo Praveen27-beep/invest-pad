@@ -53,18 +53,32 @@ Consequences you must respect:
    OTP secrets. Ingestion is file- and email-based by design. See
    `docs/INGESTION.md` for why this is a legal requirement, not a preference.
 
-## MVP scope — Phase 1 only
+## Scope — where the build actually is
 
-**In:** Indian listed equities. Manual entry, CSV import, tradebook import, Gmail
-forwarding. Holdings, FIFO lots, average cost, realised + unrealised P/L, dividends,
-XIRR, absolute return, CAGR (per-holding only — never a portfolio figure, see
-`docs/ENGINE_SPEC.md` §5), allocation, benchmark comparison, historical value.
+**Asset class: Indian listed equities only.** That has not changed and is the boundary
+that matters most. Phases 1–3 of `docs/FEATURE_BACKLOG.md` have substantially landed;
+the phase numbers are a backlog ordering, not a statement that only Phase 1 exists.
+
+**Built and in use:** manual entry, CSV import, tradebook import, Gmail forwarding,
+contract-note PDF parsing, LLM-assisted extraction (off by default, staging-only). The
+daily bhavcopy price pipe with historical archive tiers on both exchanges. Holdings,
+FIFO lots, average cost, realised + unrealised P/L, XIRR, TWRR, absolute return, CAGR
+(per-holding only — never a portfolio figure, see `docs/ENGINE_SPEC.md` §5), allocation,
+contribution analysis, benchmark comparison, snapshots and historical value.
+Corporate actions end to end — the reference table, three ledger paths, automated
+BONUS/SPLIT verification, ISIN-change aliases. The Phase 3 tax engine — grandfathering,
+indexation, Schedule 112A, ITR capital gains.
 
 **Out (build the seams, not the features):** mutual funds, bonds, SGB, NPS, PMS, AIF,
-REIT/InvIT, international, crypto, derivatives, CAS parsing, execution.
+REIT/InvIT, international, crypto, derivatives, execution. CAS *parsing* is still out;
+CAS statements are consumed only as declared holdings for reconciliation.
 
 Do not build for the out-of-scope list. Do make sure adding it later requires no
 schema migration — see `docs/DATA_MODEL.md`, the `asset_class` discriminator.
+
+**The nearest real gap is dividend ingestion**, and it is an ingestion-source gap, not a
+calculation one — see `docs/ARCHITECTURE_INVARIANTS.md` § "Future work" before assuming
+anything downstream is broken.
 
 ## Correctness is defined, not opinion
 
@@ -82,7 +96,26 @@ Headline values you must reproduce exactly:
 | XIRR — all transactions | `-0.174361` |
 | XIRR — current holdings only | `-0.348107` |
 
-Run `make test` before claiming anything works.
+Run `make test` before claiming anything works — but know what it covers. `make test` is
+the **acceptance gate**: the hand-computed engine cases, contribution, the tax suite, the
+golden portfolio, the demo fixture, and `make lint` (the architecture rules — no `float`
+in the engine, no layer violation, no credential storage, no un-ignored client
+documents). It is **not** the whole suite. The full run is:
+
+```
+.venv/bin/pytest tests/          # everything
+```
+
+A change that passes `make test` but was never put through `pytest tests/` has not been
+regression-tested. Run the full suite before committing anything that touches `app/db/`,
+`app/ingest/` or `app/routers/`.
+
+**Two kinds of skip are normal and are not failures.** The `test_db_*.py` files spin up a
+*throwaway* Postgres cluster from local binaries (`tests/conftest_db.py`) and skip cleanly
+if `initdb`/`pg_ctl` are absent — install `postgresql@17` to actually exercise them. The
+`test_zerodha_*` and redaction fixtures skip when real client documents are not on the
+machine. **A green run with the DB tests skipped is a much weaker signal than it looks**;
+check the skip reasons (`pytest tests/ -rs`) rather than the pass count alone.
 
 ## How to work
 
@@ -96,12 +129,13 @@ Run `make test` before claiming anything works.
 
 ## Scope discipline — read before adding anything
 
-`schema/asset_classes.json` lists 30 asset classes. **Phase 1 builds exactly one: `EQ`.**
-The list exists so the enum never needs a migration, not as a to-do list. Seeding all
-codes is correct; building all codes is not.
+`schema/asset_classes.json` lists 30 asset classes. **This system builds exactly one:
+`EQ`.** The list exists so the enum never needs a migration, not as a to-do list. Seeding
+all codes is correct; building all codes is not.
 
-Likewise `docs/FEATURE_BACKLOG.md` is a backlog, not a plan. If a feature is not in the
-Phase 1 table there, do not build it — say so and move on.
+Likewise `docs/FEATURE_BACKLOG.md` is a backlog, not a plan. A row there is not
+authorisation to build it — confirm the work is wanted before starting, and say so rather
+than expanding scope on your own.
 
 ## Three things that must never appear in this codebase
 
@@ -111,33 +145,79 @@ Phase 1 table there, do not build it — say so and move on.
 2. **A holdings table written by anything but a rebuild** — holdings are computed on
    read. A cache is permitted only once profiling proves it necessary, and must always
    be reproducible from the ledger.
-3. **`float` anywhere in `engine/`** — `make lint` fails the build.
+3. **`float` anywhere in `trackr-backend/app/engine/`** — `make lint` fails the build.
 
 ## Where things live
 
+**Code.** Everything that runs lives under `trackr-backend/app/` and `trackr-frontend/`.
+The repo root still contains empty `engine/`, `db/`, `ingest/`, `prices/`, `api/` and
+`storage/` directories holding nothing but `__pycache__` — leftovers from the
+`trackr-backend/` move. They are **not** the source tree; ignore them, and read any
+older doc that says `engine/x.py` as `trackr-backend/app/engine/x.py`.
+
 ```
-docs/PRODUCT_VISION.md   why this exists, and what it refuses to be
-docs/BLUEPRINT_REVIEW.md what was merged from the stack blueprints, and what was corrected
-docs/STACK_DECISION.md   Django + Postgres, and why the stack is disposable anyway
-docs/COMPLIANCE.md       DPDP + SEBI obligations and go-live gates
-docs/FEATURE_BACKLOG.md  everything MProfit does, phased by value
-docs/TAX_ENGINE.md       Phase 3 spec - grandfathering, indexation, CII
-docs/ARCHITECTURE.md     layers, boundaries, and what may import what
-docs/DATA_MODEL.md       tables, columns, invariants
+trackr-backend/app/engine/    pure calculation — Decimal only, no framework imports
+trackr-backend/app/ingest/    parsers and feeds — produce Transactions and stop
+trackr-backend/app/prices/    the bhavcopy pipe and its sources
+trackr-backend/app/db/        raw SQL repositories + numbered .sql migrations
+trackr-backend/app/routers/   the HTTP surface
+trackr-frontend/app/          Next.js App Router dashboard
+tests/                        run from the repo root; imports `app.*` editable-installed
+```
+
+**Live specification — these describe what is true today.**
+
+```
+docs/ARCHITECTURE_INVARIANTS.md  the non-negotiable financial rules; READ FIRST
 docs/ENGINE_SPEC.md      exact calculation rules — FIFO, XIRR, corporate actions
-docs/INGESTION.md        Gmail forwarding, CSV, tradebook; legal boundaries
-docs/BUILD_PLAN.md       session-by-session build order for Claude Code
-docs/DEPLOYMENT.md       Vercel-for-both deploy steps, env vars, cron wiring
+docs/DATA_MODEL.md       tables, columns, invariants
+docs/INGESTION.md        Gmail forwarding, CSV, tradebook, the price pipe; legal boundaries
+docs/ARCHITECTURE.md     layers, boundaries, and what may import what
+docs/TAX_ENGINE.md       grandfathering, indexation, CII, Schedule 112A
+docs/COMPLIANCE.md       DPDP + SEBI obligations and go-live gates
+docs/DEPLOYMENT.md       deploy steps, env vars, cron wiring
+docs/KEY_ROTATION.md     encryption key rotation procedure
+docs/BACKFILL_STRATEGY.md   how missing history is recovered, and what cannot be
+docs/EMAIL_BACKFILL.md      the mailbox-history path specifically
+docs/ONBOARDING_FLOW.md     the onboarding the app actually implements
+docs/ONBOARDING_AS_IS_VS_TO_BE.md  a click-by-click trace of onboarding as it stands,
+                         with the gaps named; dated 2026-09-07 against this branch
+docs/ACCOUNT_AGGREGATOR.md  the AA route: why it is not taken today
+docs/PRODUCT_VISION.md   why this exists, and what it refuses to be
+docs/STACK_DECISION.md   why Postgres and one service — Django verdict SUPERSEDED, see its header
+docs/FEATURE_BACKLOG.md  everything MProfit does, phased by value
 schema/*.schema.json     JSON Schema for every core object (language-agnostic)
 schema/asset_classes.json  the 30 asset-class codes; seed all, build only `EQ`
 contracts/openapi.yaml   HTTP API contract — swap any backend behind this
 fixtures/*.json          golden test data with verified answers
 ```
 
+**Historical archive — do NOT read these as requirements.** They are dated session
+prompts, build plans and point-in-time audits. Live code and tests cite them for
+provenance, which is why they are kept, but every one of them describes the state of the
+repo on the day it was written. **Where an archive doc and the live specification above
+disagree, the live specification wins; where the live specification and the code
+disagree, the code wins.** Never open a session by working through one of these.
+
+```
+docs/BUILD_PLAN.md, docs/PHASE1_CLOSEOUT_PROMPTS.md, docs/PHASE2_PROMPTS.md,
+docs/PHASE3_PROMPTS.md, docs/PHASE3_SESSION10_STT_FIX.md,
+docs/trackr_plus_phase1_overview.md, docs/trackr_plus_phase2_overview.md,
+docs/trackr_plus_phase3_overview.md, docs/structure_revamp_plan.md,
+docs/BACKEND_REUSE_AND_GAP_ANALYSIS.md, docs/FULL_VISION_BACKEND_ROADMAP.md,
+docs/BLUEPRINT_REVIEW.md, PHASE1_FIELD_TEST_REPORT.md
+```
+
 ## Reference stack
 
-Django 5 + DRF + PostgreSQL, one deployable service. Engine and parsers stay pure and
-framework-free so the stack remains swappable — see `docs/STACK_DECISION.md`.
+**FastAPI + raw SQL (`psycopg`) + numbered `.sql` migrations + PostgreSQL**, with a
+Next.js App Router frontend. There is **no Django, no DRF and no ORM** in this repository
+— `docs/STACK_DECISION.md`'s original Django verdict was reversed on 14-08-2026 and that
+file now carries the correction at the top. Introducing an ORM or a web framework is not
+a refactor; it reopens a closed decision, and belongs in an update to
+`STACK_DECISION.md` first.
+
+Engine and parsers stay pure and framework-free so the stack remains swappable.
 
 ## For the human maintaining this
 

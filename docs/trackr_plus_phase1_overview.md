@@ -1,5 +1,16 @@
 # Trackr-Plus Phase 1: Complete System & Codebase Guide
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **a point-in-time codebase map, verified 2026-08-17**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 This document is a plain-English map of what Trackr-Plus Phase 1 actually does today —
 not what it is planned to do. Every claim below was checked against the source code and
 the real test suite on **17 August 2026**: the backend test suite was executed

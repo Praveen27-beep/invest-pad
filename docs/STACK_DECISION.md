@@ -1,6 +1,21 @@
 # Stack Decision
 
-## Verdict: Django 5 + DRF + PostgreSQL
+> **Superseded on the Django question — 14-08-2026.** The verdict below was reversed
+> during the `trackr-backend/` / `trackr-frontend/` split. **What is actually built and
+> running is FastAPI + raw SQL (`psycopg`) + numbered `.sql` migrations + PostgreSQL,
+> with a Next.js App Router frontend.** There is no Django, no DRF and no ORM anywhere in
+> this repository, and reintroducing one is not a refactor — it reopens a closed decision.
+> The reasoning for the reversal is recorded in `docs/structure_revamp_plan.md`
+> ("Corrections made in this review", item 1): Django's value is its ORM, admin,
+> migrations and auth, and this system deliberately uses none of them.
+>
+> **What survives unchanged is everything below the verdict line** — the Postgres-over-
+> Firebase evaluation, the cost meters, and "what not to build" — because those turned on
+> relational integrity and deployment surface, not on the web framework. Read this file
+> for *why Postgres and one deployable service*, never as a statement of the current
+> stack. For that, see "Reference stack" in `CLAUDE.md`.
+
+## Original verdict (reversed): Django 5 + DRF + PostgreSQL
 
 Your developer evaluated three stacks and reached this conclusion independently. Agreed,
 and the reasoning is worth recording because it explains why the *contracts* matter more
@@ -22,8 +37,8 @@ to Firebase." That is a correct self-diagnosis, and it decides the question.
 ## Why this matters less than it appears
 
 The stack is **disposable**. The system is defined by `contracts/openapi.yaml`,
-`schema/*.schema.json` and `fixtures/*.json`. Django is the reference implementation, not
-the specification. If your developer prefers Go, Rails or Node, the migration path is
+`schema/*.schema.json` and `fixtures/*.json`. The framework is the reference
+implementation, not the specification. If your developer prefers Go, Rails or Node, the migration path is
 mechanical — generate types, generate stubs, port the fixtures.
 
 What is *not* negotiable is the layer rule in `docs/ARCHITECTURE.md`: the engine stays

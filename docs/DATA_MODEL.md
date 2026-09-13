@@ -113,7 +113,7 @@ for the same reason: the amount moving between the original and demerged securit
 capital-basis movement, not a per-unit trade, on a row whose `quantity` and `price` are
 both zero. The two rows always arrive as a pair — same `cost_transfer`, same `txn_date`
 (the demerger's ex-date, not whenever the scheme document is confirmed) — produced by
-`engine/demerger.py`'s `demerger_cost_split`. See `ENGINE_SPEC` §11.
+`app/engine/demerger.py`'s `demerger_cost_split`. See `ENGINE_SPEC` §11.
 
 ### `dedupe_key`
 
@@ -139,7 +139,7 @@ refuses it, not application logic that someone later forgets to call.
 > tradebook trades are also described by a contract note**, so importing both would insert
 > every one of them twice.
 >
-> **Interim measure in place:** `db/precedence.py` arbitrates at the ingestion layer — a
+> **Interim measure in place:** `app/db/precedence.py` arbitrates at the ingestion layer — a
 > contract note outranks a tradebook, exclusions are recorded and audited. See
 > `docs/INGESTION.md` § "The current rule".
 >

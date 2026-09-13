@@ -1,5 +1,16 @@
 # Build Plan
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **the original twelve-session Phase 1 build order**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Twelve sessions. One session ≈ one evening, one commit, one working thing.
 
 **Rules for every session:** use plan mode for anything touching schema or engine.

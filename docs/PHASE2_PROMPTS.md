@@ -1,5 +1,16 @@
 # Phase 2 (Analytics Depth) — closeout prompts
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **Phase 2 closeout session prompts, rewritten 2026-08-20**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Originally generated 2026-08-18 as eight from-scratch build prompts. **Rewritten
 2026-08-20** after auditing the actual codebase against those eight: seven sessions are
 implemented, tested, and committed; the eighth (contribution analysis) is implemented

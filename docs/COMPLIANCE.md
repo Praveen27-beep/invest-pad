@@ -133,7 +133,7 @@ Data-protection gates:
       `investor_secret`, Fernet, key from env; PAN lookup hash is HMAC-peppered because a
       bare digest of a 10-character fixed-format value is reversible by brute force
 - [x] **No credential storage anywhere** — `make lint` enforces this, with one narrow
-      named exception for `ingest/gmail_oauth.py` (a revocable Google OAuth grant over the
+      named exception for `app/ingest/gmail_oauth.py` (a revocable Google OAuth grant over the
       developer's own mailbox, not a broker secret). Probed: the ban still fires on every
       other file, including others in `ingest/`
 - [x] Private object storage; signed-URL access only — `storage/` with two backends
@@ -164,7 +164,7 @@ Data-protection gates:
       `app/config.py::_validate_llm_parsing`
 - [ ] Breach playbook exists and can hit the 72-hour Board filing window —
       **outside the codebase**, an operational task
-- [x] Grievance intake with a 90-day clock — `grievance` table plus `db/grievance.py`.
+- [x] Grievance intake with a 90-day clock — `grievance` table plus `app/db/grievance.py`.
       The deadline is maintained by a trigger and recomputed on every write, so no path
       (application, migration or manual psql) can extend a statutory ceiling. A grievance
       cannot be closed without recording how, nor backdated to land inside the window —

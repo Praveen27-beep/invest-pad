@@ -1,5 +1,16 @@
 # Phase 3, Session 10 — STT must not reduce taxable capital gains
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **a single Phase 3 session prompt**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Companion to `docs/PHASE3_PROMPTS.md` (same format, same "hand this whole block to a
 fresh session" intent), written after Session 9's real-data reconciliation dry run
 surfaced this as the one genuine bug candidate worth its own session. Read

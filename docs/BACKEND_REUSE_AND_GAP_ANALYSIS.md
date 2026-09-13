@@ -1,5 +1,16 @@
 # Backend Reuse & Implementation Gap Analysis
 
+> ### ⚠️ HISTORICAL ARCHIVE — not a specification, and not a to-do list
+>
+> This is **a module-by-module plan for that same split, since executed**. It describes the repository **as it was on the day it was written**
+> and has not been maintained since. Live code and tests cite it for provenance, which is
+> why it is kept.
+>
+> **Do not treat anything here as a requirement, and never open a session by working
+> through it.** Where this file and `docs/ARCHITECTURE_INVARIANTS.md`, `docs/ENGINE_SPEC.md`,
+> `docs/DATA_MODEL.md` or `docs/INGESTION.md` disagree, **those win**. Where they and the
+> code disagree, **the code wins**. Start from `CLAUDE.md`.
+
 Companion to `docs/structure_revamp_plan.md`. That document says *where* things go; this
 one says, module by module, *what is reused verbatim, what is modified, and what is
 genuinely new* — so the move from the current flat layout to `trackr-backend/app/` is a

@@ -187,7 +187,7 @@ remaining open: 50 @ 300
 
 MVP computes and displays realised gains. It does **not** produce a tax return —
 Section 112A grandfathering and bonus stripping are Phase 2. Demerger cost ratios are
-specified in §11 and implemented in `engine/demerger.py`.
+specified in §11 and implemented in `app/engine/demerger.py`.
 
 ---
 
@@ -588,10 +588,32 @@ add path 2 (direct application), and again to add path 3 (the table populates it
    needed to re-trigger it. A `DISPUTED` row (a human's explicit rejection) is the one
    thing the retry never revisits.
 
+   **DIVIDEND notices are parsed and then deliberately discarded, and this is the
+   single largest gap in the feed.** NSE's notice stream carries dividend declarations
+   alongside the bonus and split notices, and
+   `app.ingest.corporate_action_feed` classifies anything it does not recognise as a
+   BONUS/SPLIT — dividends included — as unrecognised and drops it. The consequence is
+   worth stating precisely, because it is easy to misdiagnose as a downstream bug:
+   **there is no automated write path for dividends at all.** `DIVIDEND` is already a
+   first-class ledger transaction with its own `dividend_amount` column (§4's table,
+   §10's contribution treatment, and the TWRR worked example in §5 all consume it), the
+   dividends endpoint and the dashboard card already exist, and manual entry already
+   works. What does not exist is anything that *creates* a `DIVIDEND` row without a
+   human. So Trackr+ today represents **actual received dividend payments that someone
+   entered**, never announced or merely entitled ones. If dividends look missing from a
+   portfolio, the cause is here — in ingestion — and not in XIRR, TWRR, contribution or
+   the UI.
+
+   A dividend does meet this feed's auto-apply criterion in principle (it is paid to
+   every holder of record, unconditionally, with no investor-specific election — unlike
+   a rights issue). The open questions are TDS treatment and whether entitlement can be
+   established from the ledger alone on the record date. Neither is settled here; see
+   `docs/ARCHITECTURE_INVARIANTS.md` § "Future work".
+
    **DEMERGER is out of scope for this feed, on purpose, not an oversight.**
    `check_price_consistency` has no expected price ratio for a demerger to corroborate
    against (see below), and a demerger always needs a separate, manual cost-ratio
-   number from the scheme document besides — see `engine/demerger.py`. Any DEMERGER
+   number from the scheme document besides — see `app/engine/demerger.py`. Any DEMERGER
    notice a human wants on file still goes through `add_corporate_action` by hand,
    landing `DRAFT` in the same `Exceptions` surface.
 
@@ -689,7 +711,7 @@ is not independently sourced.
 cross into the engine. Three reasons, in order of importance:
 
 1. **Tax correctness.** The obvious alternative — a `TRANSFER_OUT`/`TRANSFER_IN` pair —
-   handles quantity and cost but opens a new lot dated at the change (§1, `engine/lots.py`),
+   handles quantity and cost but opens a new lot dated at the change (§1, `app/engine/lots.py`),
    silently turning a long-term holding short-term. An ISIN change is not a taxable event
    and must not restart the clock.
 2. The engine needs no new cases and stays free of the database.
@@ -758,7 +780,7 @@ in the price pipe, fixable by fetching it, and quietly dropping the holding woul
 temporary gap into a permanently understated total that looks perfectly healthy. The one
 exception is a price the archive has ANSWERED about without carrying (`price_absent`): a
 retired identifier no future fetch will ever produce. `_run_snapshots` resolves those via
-`db.prices.absent_on_or_before` and passes them as `exclude_isins`; the engine cannot make
+`app.db.prices.absent_on_or_before` and passes them as `exclude_isins`; the engine cannot make
 that call itself, because only the database can tell "confirmed absent" from "not fetched
 yet".
 
@@ -775,7 +797,7 @@ describe the same holdings.
 | `DuplicateTransactionError` | `dedupe_key` collision | skip silently, count, report in import summary |
 | `UnparseableRowError` | ingestion cannot map a row | reject that row with row number; import the rest |
 | `NegativeHoldingError` | sells exceed buys for an ISIN | flag loudly — indicates missing buy history |
-| `CapitalGainsNotApplicableError` | `classify_term` (Phase 3, `engine/tax_classification.py`) called for an asset class whose `long_term_days` is `null` | raise; never return a guessed SHORT/LONG |
+| `CapitalGainsNotApplicableError` | `classify_term` (Phase 3, `app/engine/tax_classification.py`) called for an asset class whose `long_term_days` is `null` | raise; never return a guessed SHORT/LONG |
 | `DemergerAdjustmentError` | `DEMERGER_COST_OUT`/`DEMERGER_COST_IN` (§11) replays against an ISIN with no current position | raise; the paired `DEMERGER_IN`/`BUY` history is missing or the rows are mis-ordered or mis-dated |
 
 `NegativeHoldingError` is the signal that a tradebook was downloaded with a date
@@ -817,7 +839,7 @@ flow-adjustment (`_period_flow` / `sub_return`'s numerator), applied per-holding
 of portfolio-wide, expressed as a rupee amount instead of a ratio, and not chained or
 annualised because contribution answers "how many rupees did this holding add," not
 "at what rate." The acquiring/disposing type grouping is `ACQUIRING_TYPES` /
-`DISPOSING_TYPES` from `engine/types.py` — the same grouping `compute_holdings` uses for
+`DISPOSING_TYPES` from `app/engine/types.py` — the same grouping `compute_holdings` uses for
 the cost pool — **not** TWRR's `PORTFOLIO_IN_TYPES` / `PORTFOLIO_OUT_TYPES`, which
 deliberately omit transfers. That is a required divergence, not an inconsistency: a
 `TRANSFER_IN` moves `market_value_i` (shares appear) without being gain, so leaving it
@@ -983,7 +1005,7 @@ date instead would leave those interim sells permanently wrong. This falls direc
 of the "recompute on every read" architecture; it is not a preference.
 
 **Ordering — `DEMERGER_COST_IN` must be inserted after the existing `DEMERGER_IN` row.**
-`engine/ledger.py`'s `ordered()` sorts by `txn_date` alone and relies on Python's stable
+`app/engine/ledger.py`'s `ordered()` sorts by `txn_date` alone and relies on Python's stable
 sort to break same-date ties by insertion order — there is no `id` tiebreak. Since
 `DEMERGER_COST_IN` shares `DEMERGER_IN`'s date, it must come after it in the list the
 caller assembles, or the FIFO replay (below) tries to spread cost across a lot that does
