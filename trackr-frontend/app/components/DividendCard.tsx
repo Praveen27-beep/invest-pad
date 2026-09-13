@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
 import { usePortfolioRefresh } from "@/lib/onboarding";
-import type { TransactionOut } from "@/lib/api-types";
+import type { ExpectedDividendsOut, TransactionOut } from "@/lib/api-types";
 import { EMPTY_VALUE, formatDate } from "@/lib/format";
 import { RANGES, RANGE_SPAN_LABEL, startFor, type RangeKey } from "@/lib/ranges";
 import { Card, EmptyState, SegmentedControl, Skeleton } from "./ds";
@@ -53,9 +53,17 @@ const MAX_BARS = 12;
  * The bars are per-security within the window, not per-month, because that is the
  * resolution the rows carry.
  *
- * The "Announced" figure stays a dash for the same honesty reason: declared-but-unpaid
- * payouts come from a corporate-actions feed that is not wired up, and a plausible number
- * here would be indistinguishable from a real one.
+ * **"Announced" is a PROJECTION and is kept visually subordinate for that reason.** It is
+ * `/dividends/expected` — a declared amount per share times the quantity the ledger says
+ * was held at each ex-date — and it is NEVER added to Received. One is money that arrived
+ * and feeds XIRR, TWRR and contribution; the other is money a company said it would pay.
+ * A single figure containing both would be a number that means nothing, so the two are
+ * fetched from separate endpoints and rendered as separate figures with different weight.
+ *
+ * A dash still appears where there is genuinely nothing to show — no verified declaration
+ * covering a security held at its ex-date — which is a true zero rather than a missing
+ * value. Declarations that could not be sized are counted in a footnote instead of being
+ * folded silently into the figure or dropped.
  */
 export function DividendCard({ names }: { names?: Record<string, string> }) {
   const { investorId, token, asOf } = useAuth();
@@ -71,9 +79,20 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
     token
   );
 
+  // Declared dividends, sized to this ledger. A SEPARATE request on purpose, matching the
+  // separate endpoint: nothing in this component may end up in a position to sum the two.
+  // `as_of` bounds it to dividends whose ex-date has passed, so the card never projects a
+  // payout the rest of the screen is not valuing yet.
+  const expected = useFetch<ExpectedDividendsOut>(
+    investorId ? `/investors/${investorId}/dividends/expected` : null,
+    { as_of: asOf },
+    token
+  );
+
   // An import appends DIVIDEND rows like any other; holdings are recomputed on read, and
   // so is this. See lib/onboarding.ts.
   usePortfolioRefresh(ledger.refetch);
+  usePortfolioRefresh(expected.refetch);
 
   /** Every DIVIDEND row, oldest first. Amounts stay strings until they are summed for
    *  display — no figure computed here is ever fed back into a calculation. */
@@ -136,6 +155,25 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
 
   const received = windowRows.reduce((sum, t) => sum + Number(t.dividend_amount), 0);
   const max = Math.max(...bars.map((b) => b.amount), 1);
+
+  /** Declared but not yet received, across the whole ledger -- NOT windowed like Received.
+   *
+   *  Deliberately not filtered to the selected range: an outstanding declaration is
+   *  outstanding whatever window is on screen, and a "3 months" filter on it would suggest
+   *  the older ones had been paid. `null` rather than 0 when there is nothing projected, so
+   *  the figure reads as a dash -- a true "nothing is outstanding", distinct from a sized
+   *  projection that happens to total zero.
+   *
+   *  This value and `received` are never added. See the component docstring. */
+  const announced =
+    expected.data && expected.data.expected.length > 0
+      ? Number(expected.data.total_gross_expected)
+      : null;
+
+  /** Declarations that could not be sized -- surfaced as a count, never folded into the
+   *  figure. Mostly single-sourced declarations awaiting corroboration, which is a normal
+   *  resting state, so this is a footnote rather than a warning. */
+  const unsized = expected.data?.unprojectable.length ?? 0;
 
   const label = (isin: string) => names?.[isin] ?? isin;
 
@@ -202,7 +240,7 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
             <div>
               <span style={figureLabel}>Announced</span>
               <span className="tabular-nums" style={figureValue(true)}>
-                {EMPTY_VALUE}
+                {announced === null ? EMPTY_VALUE : fmtINR(announced)}
               </span>
             </div>
           </div>
@@ -310,7 +348,12 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
               Received, per security
             </span>
             <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-              Announced payouts need a corporate-actions feed, which is not live yet.
+              {announced === null
+                ? "Announced is declared-but-unpaid, projected from your holdings at each ex-date. Nothing is outstanding."
+                : "Announced is declared-but-unpaid, projected from your holdings at each ex-date — not income, and not counted in returns."}
+              {unsized > 0
+                ? ` ${unsized} declaration${unsized === 1 ? "" : "s"} could not be sized; see Exceptions.`
+                : ""}
             </p>
           </div>
         </>

@@ -172,6 +172,7 @@ def test_no_token_at_all_is_unauthorized_on_data_reads(client) -> None:
         f"/investors/{investor_id}/lots",
         f"/investors/{investor_id}/realised",
         f"/investors/{investor_id}/dividends",
+        f"/investors/{investor_id}/dividends/expected",
         f"/ingest/batches?investor_id={investor_id}",
     ):
         res = client.get(path)
@@ -326,3 +327,31 @@ def test_register_is_rate_limited_per_ip(client) -> None:
         assert blocked.status_code == 429
     finally:
         limiter.enabled = False
+
+
+def test_expected_dividends_are_kept_in_their_own_envelope(client) -> None:
+    """The projection endpoint's shape, and the reason it is a separate endpoint.
+
+    /dividends reports money that ARRIVED and feeds XIRR, TWRR and contribution.
+    /dividends/expected reports money a company SAID IT WOULD PAY. Returning them together
+    would invite a caller to add them, and the sum of those two numbers is not a quantity
+    that means anything -- so the envelopes are checked to be genuinely separate here.
+    """
+    registered = _register(client, "div-expected@example.com")
+    investor_id = registered["investor_id"]
+    token = client.post(
+        "/auth/login", json={"email": "div-expected@example.com", "password": "password-1"}
+    ).json()["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    res = client.get(f"/investors/{investor_id}/dividends/expected", headers=auth)
+    assert res.status_code == 200
+    body = res.json()
+    assert set(body) == {"expected", "unprojectable", "total_gross_expected"}
+    assert body["expected"] == []
+    assert body["unprojectable"] == []
+    assert body["total_gross_expected"] == "0"
+
+    received = client.get(f"/investors/{investor_id}/dividends", headers=auth)
+    assert received.status_code == 200
+    assert received.json() == [], "received and expected are answered separately"

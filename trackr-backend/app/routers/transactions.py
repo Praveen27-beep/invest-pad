@@ -1,5 +1,6 @@
 """GET /investors/{id}/transactions, POST /investors/{id}/transactions,
-GET /investors/{id}/lots, GET /investors/{id}/realised, GET /investors/{id}/dividends."""
+GET /investors/{id}/lots, GET /investors/{id}/realised, GET /investors/{id}/dividends,
+GET /investors/{id}/dividends/expected."""
 
 from __future__ import annotations
 
@@ -12,12 +13,13 @@ from app.auth.dependencies import require_owned_investor
 from app.database import get_conn, money
 from app.db.consent import require_consent
 from app.db.repository import account_belongs_to, load_transactions, save_transactions
-from app.engine.dividends import compute_dividends
+from app.engine.dividends import compute_dividends, compute_expected_dividends
 from app.engine.lots import compute_lots
 from app.engine.realised import compute_realised
-from app.engine.types import Transaction
+from app.engine.types import ZERO, Transaction
 from app.schemas.transactions import (
     DividendSummaryOut,
+    ExpectedDividendsOut,
     ImportSummaryOut,
     LotOut,
     RealisedOut,
@@ -227,3 +229,65 @@ def dividends(investor_id: str, connection: Any = Depends(get_conn)) -> list[dic
         }
         for d in compute_dividends(rows)
     ]
+
+
+@router.get(
+    "/{investor_id}/dividends/expected",
+    response_model=ExpectedDividendsOut,
+    dependencies=[Depends(require_owned_investor)],
+)
+def expected_dividends(
+    investor_id: str,
+    as_of: date | None = None,
+    connection: Any = Depends(get_conn),
+) -> dict[str, Any]:
+    """Declared dividends sized to this investor's ledger -- PROJECTIONS, not income.
+
+    A SEPARATE ENDPOINT FROM ``/dividends``, DELIBERATELY, and the separation is the
+    product decision rather than a routing convenience. ``/dividends`` reports money that
+    ARRIVED, aggregated from ``DIVIDEND`` ledger rows, and feeds the same figures XIRR,
+    TWRR and contribution consume. This reports money a company SAID IT WOULD PAY, sized
+    by what the ledger says was held at each ex-date. Returning them in one envelope would
+    invite a caller to add them, and the sum of those two numbers is not a quantity that
+    means anything.
+
+    ``as_of`` bounds the projection to dividends whose ex-date has passed. Omit it to
+    include upcoming declarations, which is what an "upcoming dividends" view wants and
+    why the default is to include them.
+
+    Anything that could not be sized comes back in ``unprojectable`` with a reason code --
+    an unverified declaration, or a bonus/split close enough before the ex-date that the
+    declared amount per share and the held quantity may be on different bases. Withheld
+    and named, never silently dropped.
+    """
+    from app.db.corporate_actions import list_corporate_actions
+    from app.db.dividend_events import list_dividend_events
+
+    rows = load_transactions(connection, investor_id=investor_id)
+    isins = sorted({t.isin for t in rows})
+    events = list_dividend_events(connection, isins=isins) if isins else []
+    actions = list_corporate_actions(connection, isins) if isins else []
+
+    expected, unprojectable = compute_expected_dividends(rows, events, actions, as_of=as_of)
+
+    return {
+        "expected": [
+            {
+                "isin": e.isin,
+                "ex_date": e.ex_date,
+                "kind": e.kind,
+                "amount_per_share": money(e.amount_per_share),
+                "eligible_quantity": money(e.eligible_quantity),
+                "gross_expected": money(e.gross_expected),
+                "record_date": e.record_date,
+                "payment_date": e.payment_date,
+                "event_id": e.event_id,
+            }
+            for e in expected
+        ],
+        "unprojectable": [
+            {"isin": u.isin, "ex_date": u.ex_date, "code": u.code, "detail": u.detail}
+            for u in unprojectable
+        ],
+        "total_gross_expected": money(sum((e.gross_expected for e in expected), ZERO)),
+    }

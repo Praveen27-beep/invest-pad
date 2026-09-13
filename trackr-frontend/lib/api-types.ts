@@ -328,6 +328,44 @@ export interface DividendSummaryOut {
   by_year: DividendYearOut[];
 }
 
+// GET /investors/{id}/dividends/expected -- app/schemas/transactions.py's
+// ExpectedDividendsOut. A PROJECTION, never income: a declared amount per share times the
+// quantity the ledger says was held at the ex-date.
+//
+// NEVER ADD total_gross_expected TO A RECEIVED FIGURE. One is money that arrived and feeds
+// XIRR, TWRR and contribution; the other is money a company said it would pay. The sum of
+// the two is not a quantity that means anything, which is why the API keeps them in
+// separate envelopes and why this type has no field that could be mistaken for received.
+export interface ExpectedDividendOut {
+  isin: string;
+  ex_date: string;
+  kind: string;
+  amount_per_share: string;
+  eligible_quantity: string;
+  gross_expected: string;
+  record_date: string | null;
+  payment_date: string | null;
+  event_id: string | null;
+}
+
+// A declared dividend that could not be sized, and why -- shown rather than dropped.
+// `SHARE_COUNT_CHANGED` means a bonus or split landed close enough before the ex-date that
+// the declared amount per share and the held quantity may be on different bases;
+// `UNCORROBORATED` means only one source has reported it so far, which is the normal
+// resting state rather than a fault.
+export interface UnprojectableDividendOut {
+  isin: string;
+  ex_date: string;
+  code: string;
+  detail: string;
+}
+
+export interface ExpectedDividendsOut {
+  expected: ExpectedDividendOut[];
+  unprojectable: UnprojectableDividendOut[];
+  total_gross_expected: string;
+}
+
 // ---------------------------------------------------------------------------
 // Ingest / staging -- app/schemas/ingest.py (not in openapi.yaml -- confirmed by grep)
 // ---------------------------------------------------------------------------

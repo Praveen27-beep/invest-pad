@@ -97,3 +97,46 @@ class DividendSummaryOut(BaseModel):
     isin: str
     total: str
     by_year: list[DividendYearOut]
+
+
+class ExpectedDividendOut(BaseModel):
+    """A declared dividend sized to this investor -- a PROJECTION, never income.
+
+    ``gross_expected`` is gross because nothing has been withheld from money that has not
+    moved. There is deliberately no ``net`` and no ``tds`` field: both would imply a
+    payment happened.
+    """
+
+    isin: str
+    ex_date: date
+    kind: str
+    amount_per_share: str
+    eligible_quantity: str
+    gross_expected: str
+    record_date: date | None = None
+    payment_date: date | None = None
+    event_id: str | None = None
+
+
+class UnprojectableDividendOut(BaseModel):
+    """A declared dividend that could not be sized, and why -- shown rather than dropped,
+    the same contract the holdings exclusions surface already has."""
+
+    isin: str
+    ex_date: date
+    code: str
+    detail: str
+
+
+class ExpectedDividendsOut(BaseModel):
+    """The projection envelope.
+
+    ``total_gross_expected`` is a subtotal of PROJECTIONS ONLY and must never be added to
+    the received figure from ``/dividends``: one is money that arrived, the other is money
+    a company said it would pay. Kept in separate envelopes so no caller can sum them by
+    accident.
+    """
+
+    expected: list[ExpectedDividendOut]
+    unprojectable: list[UnprojectableDividendOut]
+    total_gross_expected: str

@@ -15,9 +15,14 @@ Nothing here needs a substitute; there is nothing missing.
 
 from __future__ import annotations
 
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from decimal import Decimal
 
+from app.engine.corporate_actions import CorpActionType, CorporateAction
+from app.engine.dividend_events import DividendEvent
+from app.engine.dividend_events import screen as screen_events
+from app.engine.holdings import quantity_held_before
 from app.engine.types import ZERO, DividendSummary, DividendYear, Transaction, TxnType
 from app.engine.xirr import financial_year_start
 
@@ -65,4 +70,254 @@ def compute_dividends(transactions: list[Transaction]) -> list[DividendSummary]:
     ]
 
 
-__all__ = ["compute_dividends"]
+
+
+# ===========================================================================
+# EXPECTED -- what a holder should receive, computed on read and never stored.
+#
+# THIS IS A PROJECTION, NOT A TRANSACTION, and the distinction is the point of the whole
+# module. An expected dividend holds no fact that is not already stored: it is a declared
+# amount (dividend_event) times a quantity the ledger already determines. Storing it would
+# be the same mistake as an ``UPDATE holdings SET quantity`` -- a cache that can silently
+# disagree with what it was derived from. Computed on read it self-corrects the moment a
+# late contract note changes the eligible quantity, which is exactly the property a stored
+# version would lose.
+#
+# NOTHING HERE MAY REACH XIRR, TWRR, CONTRIBUTION OR REALISED INCOME. Those consume
+# ``DIVIDEND`` ledger rows and only those. An expectation that leaked into a return figure
+# would be the product claiming money arrived when all that is known is that a company
+# declared it -- see docs/ARCHITECTURE_INVARIANTS.md and migration 029's header.
+# ===========================================================================
+
+
+#: How far before a dividend's ex-date a share-count change is treated as possibly
+#: predating the declaration -- see ``_intervening_share_change``.
+#:
+#: Indian boards declare a dividend at a results meeting and the ex-date follows two to
+#: eight weeks later. 90 days covers that comfortably. It is deliberately generous because
+#: the cost of the two errors is wildly asymmetric: an over-wide window withholds a
+#: projection and says why, while a too-narrow one publishes a figure wrong by the whole
+#: split multiplier -- a 5x error every component of which looks correct.
+#:
+#: A stored declaration date would make this exact instead of conservative. Neither feed
+#: carries one reliably today; recorded as future work rather than guessed at.
+DECLARATION_WINDOW = timedelta(days=90)
+
+
+@dataclass(frozen=True, slots=True)
+class ExpectedDividend:
+    """One declared dividend, sized to a holder. DERIVED, NEVER STORED.
+
+    ``gross_expected`` is named gross deliberately: no TDS has been withheld from a
+    projection, because no money has moved. It is what the company declared times what the
+    ledger says was held, and nothing more.
+    """
+
+    isin: str
+    ex_date: date
+    kind: str
+    amount_per_share: Decimal
+    eligible_quantity: Decimal
+    gross_expected: Decimal
+    record_date: date | None = None
+    payment_date: date | None = None
+    event_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UnprojectableDividend:
+    """A declared dividend this holder cannot be given a number for, and why.
+
+    Mirrors ``compute_holdings_partitioned``'s exclusion shape rather than inventing a
+    second one: a thing withheld must be visible with a reason, never dropped.
+    """
+
+    isin: str
+    ex_date: date
+    code: str
+    detail: str
+
+
+def _intervening_share_change(
+    actions: list[CorporateAction], isin: str, ex_date: date
+) -> CorporateAction | None:
+    """A bonus or split whose ex-date falls close enough before this dividend's to have
+    landed AFTER the dividend was declared.
+
+    THE HAZARD, which is invisible unless looked for and is off by a whole multiplier
+    rather than by a rounding. A company declares "Rs 1.50 per share" against the share as
+    it exists at declaration. If a 1:4 split's ex-date then falls before the dividend's
+    ex-date, ``quantity_held_before`` correctly returns the POST-split quantity -- and
+    multiplying the two gives a figure five times too large, with every individual
+    component correct and nothing anywhere reporting an error.
+
+    Only the notice itself says which basis the amount is on, and this system does not
+    store a declaration date to test it against. So the answer is to refuse: a projection
+    withheld with a named reason costs a number nobody sees, and a projection published on
+    the wrong basis costs trust in every number beside it.
+
+    DEMERGER is not checked. It changes the cost pool and adds a second security; it does
+    not restate the per-share basis of the security being paid on.
+    """
+    window_start = ex_date - DECLARATION_WINDOW
+    for action in actions:
+        if action.isin != isin:
+            continue
+        if action.action_type not in (CorpActionType.BONUS, CorpActionType.SPLIT):
+            continue
+        if window_start < action.ex_date <= ex_date:
+            return action
+    return None
+
+
+def compute_expected_dividends(
+    transactions: list[Transaction],
+    events: list[DividendEvent],
+    actions: list[CorporateAction] | None = None,
+    as_of: date | None = None,
+) -> tuple[list[ExpectedDividend], list[UnprojectableDividend]]:
+    """Size every VERIFIED declared dividend to this holder's own ledger.
+
+    Returns ``(expected, unprojectable)``. An event appears in exactly one of them, so a
+    caller can render a total and a "could not be computed" note from the same call --
+    the same contract ``compute_holdings_partitioned`` already has.
+
+    ELIGIBILITY IS ``quantity_held_before``, REUSED VERBATIM. It computes the quantity held
+    at the close before the ex-date, which is the correct reference point for a dividend
+    for exactly the reason it is for a bonus: holding at that close is what puts a holder
+    on the register at the record date. There is no second holdings engine here, and there
+    must not be one -- see CLAUDE.md's one architectural rule.
+
+    Events already realised in the ledger are omitted, matched EXACTLY through the
+    ``source_ref`` an ingested dividend carries (``app.engine.dividends.event_source_ref``)
+    -- never inferred from a nearby date and amount, which would quietly hide a real second
+    dividend that happened to resemble one already received.
+
+    ``as_of`` bounds which dividends are considered: an ex-date after it has not happened
+    yet, so nobody is eligible and nothing is projected. Defaults to considering every
+    event given, which is what a caller listing upcoming dividends wants.
+    """
+    safe, failures = screen_events(events)
+    unprojectable = [
+        UnprojectableDividend(f.event.isin, f.event.ex_date, f.code, f.detail) for f in failures
+    ]
+    already_realised = realised_event_ids(transactions)
+    corporate_actions = actions or []
+    expected: list[ExpectedDividend] = []
+
+    for event in safe:
+        if as_of is not None and event.ex_date > as_of:
+            continue  # has not happened yet -- not withheld, simply not due
+        if event.id is not None and event.id in already_realised:
+            continue  # the money arrived; the ledger row is the truth now
+
+        intervening = _intervening_share_change(corporate_actions, event.isin, event.ex_date)
+        if intervening is not None:
+            unprojectable.append(
+                UnprojectableDividend(
+                    event.isin, event.ex_date, "SHARE_COUNT_CHANGED",
+                    f"a {intervening.action_type.value} with ex-date {intervening.ex_date} may "
+                    f"postdate this dividend's declaration, so the declared amount per share "
+                    f"and the held quantity may be on different bases",
+                )
+            )
+            continue
+
+        quantity = quantity_held_before(transactions, event.isin, event.ex_date)
+        if quantity <= ZERO:
+            continue  # not a holder at the cutoff -- this dividend does not apply here
+
+        expected.append(
+            ExpectedDividend(
+                isin=event.isin,
+                ex_date=event.ex_date,
+                kind=str(event.kind),
+                amount_per_share=event.amount_per_share,
+                eligible_quantity=quantity,
+                gross_expected=event.amount_per_share * quantity,
+                record_date=event.record_date,
+                payment_date=event.payment_date,
+                event_id=event.id,
+            )
+        )
+
+    expected.sort(key=lambda e: (e.ex_date, e.isin))
+    unprojectable.sort(key=lambda u: (u.ex_date, u.isin))
+    return expected, unprojectable
+
+
+#: Prefix identifying a ledger row created from a declared dividend event.
+SOURCE_REF_PREFIX = "DIV"
+
+
+def event_source_ref(event_id: str, revision: int = 1) -> str:
+    """The ``source_ref`` a ``DIVIDEND`` ledger row carries: ``DIV:{event_id}:{revision}``.
+
+    WHY THIS SHAPE IS FORCED, not chosen. ``app.engine.dedupe.make_dedupe_key`` hashes
+    ``account_id | source | source_ref | isin | txn_date | txn_type | quantity | price``
+    and deliberately EXCLUDES ``dividend_amount``; a DIVIDEND row also has zero quantity
+    and zero price. So for a dividend the key collapses to account, source, source_ref,
+    ISIN and date -- and ``source_ref`` is the ONLY field left that can distinguish one
+    dividend row from another.
+
+    Two consequences follow, and both are load-bearing:
+
+      - Re-ingesting the same event at the same revision produces the same key, and the
+        UNIQUE index refuses the duplicate. Idempotency is free, provided the id is stable.
+      - A CORRECTION is only expressible by bumping the revision. The ledger is append-only
+        by trigger, so a wrong amount cannot be updated; it must be reversed and re-added.
+        Without a revision in the key, the reversing row would collide with the row it
+        reverses and be silently skipped by ``dedupe()`` -- leaving the wrong figure
+        standing and the correction discarded with no error anywhere.
+
+    Two dividends on one date (an interim and a special) are likewise distinguished, since
+    they are different events with different ids.
+    """
+    return f"{SOURCE_REF_PREFIX}:{event_id}:{revision}"
+
+
+def parse_event_source_ref(source_ref: str | None) -> tuple[str, int] | None:
+    """``(event_id, revision)`` from a dividend row's ``source_ref``, or ``None`` if it is
+    not one. Tolerant by design: a manually entered dividend has a free-form
+    ``source_ref``, and that is not an error, just an unlinked row."""
+    if not source_ref or not source_ref.startswith(f"{SOURCE_REF_PREFIX}:"):
+        return None
+    parts = source_ref.split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        return parts[1], int(parts[2])
+    except ValueError:
+        return None
+
+
+def realised_event_ids(transactions: list[Transaction]) -> set[str]:
+    """Every declared-dividend event that already has a ledger row against it.
+
+    Exact, through ``source_ref``. A manually entered dividend contributes nothing here --
+    it is real income and counts in ``compute_dividends``, but it is not linked to a
+    declared event, so the corresponding expectation is not suppressed. That is the honest
+    behaviour: guessing the link from a nearby date and a similar amount would hide a real
+    second dividend that happened to resemble one already received.
+    """
+    linked: set[str] = set()
+    for txn in transactions:
+        if txn.txn_type is not TxnType.DIVIDEND:
+            continue
+        parsed = parse_event_source_ref(txn.source_ref)
+        if parsed is not None:
+            linked.add(parsed[0])
+    return linked
+
+
+__all__ = [
+    "DECLARATION_WINDOW",
+    "SOURCE_REF_PREFIX",
+    "ExpectedDividend",
+    "UnprojectableDividend",
+    "compute_dividends",
+    "compute_expected_dividends",
+    "event_source_ref",
+    "parse_event_source_ref",
+    "realised_event_ids",
+]
