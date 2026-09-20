@@ -152,6 +152,16 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-20b"
     llm_parsing_enabled: bool = False
 
+    # --- demerger/amalgamation notification watch (app/ingest/demerger_watch.py) ----
+    # OFF BY DEFAULT AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE circulars source
+    # app.ingest.isin_change_feed already relies on (interim, unofficial, confirmed live
+    # -- see that module's docstring) rather than adding a second, less-vetted
+    # third-party dependency; this feature adds no new ToS exposure of its own. It
+    # writes NOTHING to the ledger, NOTHING to security_alias, and never touches
+    # app.engine.demerger -- it only shortens the gap between a company filing an
+    # apportionment letter and a human knowing to go read it. A log line, not a queue.
+    demerger_watch_enabled: bool = False
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
