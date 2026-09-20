@@ -468,3 +468,206 @@ def test_price_evidence_does_not_follow_a_draft_alias(db, investor) -> None:
 
     cum, _ex = _price_evidence(db, NEW, date(2026, 1, 12))
     assert cum is None
+
+
+# --- 10. automated promotion: reconcile_after_alias, wired up ---------------------
+
+
+def test_promotion_verifies_an_alias_with_no_affected_accounts(db, investor) -> None:
+    """The common case: an ISIN change for a company nothing in this ledger holds.
+    Vacuously safe -- nothing exists for the alias to break."""
+    _seed_securities(db, OLD, NEW)
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    assert summary.verified == 1
+    assert summary.quarantined == 0
+    assert OLD in alias_db.verified_map(db)
+
+
+def test_promotion_verifies_a_clean_split(db, investor) -> None:
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "1", "194.06", "2025-04-25", account_id),
+            _txn(NEW, "BUY", "10", "232.35", "2026-06-02", account_id),
+        ],
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    assert summary.verified == 1
+    holdings = compute_holdings(
+        repository.load_transactions(db, account_id=account_id), date(2026, 9, 20)
+    )
+    assert [h.isin for h in holdings] == [NEW]
+
+
+def test_promotion_quarantines_an_alias_missing_its_corporate_action(db, investor) -> None:
+    """The GUJTHEM shape again, but reached through the automated path this time: 65
+    held cannot cover 487 sold until a split is on file, so promotion must not verify."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "65", "700", "2022-10-19", account_id),
+            _txn(NEW, "SELL", "487", "254.75", "2025-03-18", account_id),
+        ],
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    assert summary.verified == 0
+    assert summary.quarantined == 1
+    assert OLD not in alias_db.verified_map(db)
+    [stored] = alias_db.list_aliases(db)
+    assert stored.verification is Verification.DISPUTED
+    assert "corporate action" in stored.notes
+    assert account_id in stored.notes, "the notes name which account failed"
+
+
+def test_promotion_quarantines_if_any_one_of_several_accounts_fails(db, investor) -> None:
+    """Two accounts hold the same aliased ISIN pair; one reconciles cleanly, the other
+    does not. The alias is GLOBAL -- verification must not partially apply."""
+    account_a = os.environ["_TEST_ACCOUNT_ID"]
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO account (investor_id, broker, is_advised) "
+            "VALUES (%s, 'ZERODHA', true) RETURNING id",
+            (investor,),
+        )
+        account_b = str(cur.fetchone()[0])
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "1", "194.06", "2025-04-25", account_a),
+            _txn(NEW, "BUY", "10", "232.35", "2026-06-02", account_a),
+            _txn(OLD, "BUY", "65", "700", "2022-10-19", account_b),
+            _txn(NEW, "SELL", "487", "254.75", "2025-03-18", account_b),
+        ],
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    assert summary.verified == 0
+    assert summary.quarantined == 1
+    assert OLD not in alias_db.verified_map(db)
+    # Account A's own clean reconcile must not leak through as a partial verification.
+    holdings_a = compute_holdings(
+        repository.load_transactions(db, account_id=account_a), date(2026, 9, 20)
+    )
+    assert sorted(h.isin for h in holdings_a) == [OLD, NEW], "still unverified for A too"
+
+
+def test_promotion_leaves_draft_when_reconcile_raises_rather_than_quarantining(
+    db, investor, monkeypatch
+) -> None:
+    """An unrelated exception is not evidence the identity claim is wrong. Quarantining
+    on it would be a one-way door -- verify_alias refuses to un-quarantine a DISPUTED
+    row -- so an inconclusive round must leave the alias exactly as it found it."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db, [_txn(OLD, "BUY", "1", "194.06", "2025-04-25", account_id)]
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated transient failure")
+
+    monkeypatch.setattr(alias_db, "reconcile_after_alias", _boom)
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    assert summary.verified == 0
+    assert summary.quarantined == 0
+    assert summary.inconclusive == 1
+    [stored] = alias_db.list_aliases(db)
+    assert stored.verification is Verification.DRAFT, "untouched, not quarantined"
+
+
+def test_promotion_is_idempotent_on_an_already_quarantined_alias(db, investor) -> None:
+    """Re-running the job must not re-examine a row that is no longer DRAFT."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "65", "700", "2022-10-19", account_id),
+            _txn(NEW, "SELL", "487", "254.75", "2025-03-18", account_id),
+        ],
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    first = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+    assert first.quarantined == 1
+
+    second = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+    assert second.verified == 0
+    assert second.quarantined == 0
+    assert second.inconclusive == 0
+    [stored] = alias_db.list_aliases(db)
+    assert stored.verification is Verification.DISPUTED, "still disputed, not re-verified"
+
+
+def test_promotion_scope_includes_hand_entered_drafts(db, investor) -> None:
+    """No special-casing by origin -- a DRAFT written directly via add_alias gets the
+    same automated treatment as one a feed created."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "1", "194.06", "2025-04-25", account_id),
+            _txn(NEW, "BUY", "10", "232.35", "2026-06-02", account_id),
+        ],
+    )
+    alias_db.add_alias(
+        db,
+        _alias(
+            verification=Verification.DRAFT,
+            source="Hand-entered by ops",
+            source_url="https://example.invalid/manual",
+        ),
+    )
+    db.commit()
+
+    summary = alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+    assert summary.verified == 1
+
+
+def test_quarantine_notes_name_broker_and_investor_code_not_just_a_uuid(db, investor) -> None:
+    """The usability gap surfaced reviewing this feature: a raw UUID in notes forces a
+    second lookup before a human can act. broker/investor.code must lead, with the UUID
+    kept alongside for an exact match rather than replaced by it."""
+    account_id = os.environ["_TEST_ACCOUNT_ID"]
+    _seed_securities(db, OLD, NEW)
+    repository.save_transactions(
+        db,
+        [
+            _txn(OLD, "BUY", "65", "700", "2022-10-19", account_id),
+            _txn(NEW, "SELL", "487", "254.75", "2025-03-18", account_id),
+        ],
+    )
+    alias_db.add_alias(db, _alias(verification=Verification.DRAFT))
+    db.commit()
+
+    alias_db.promote_draft_aliases(db, as_of=date(2026, 9, 20))
+
+    [stored] = alias_db.list_aliases(db)
+    assert "ZERODHA/C001" in stored.notes, stored.notes
+    assert account_id in stored.notes, "the exact UUID stays available too"

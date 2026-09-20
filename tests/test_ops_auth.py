@@ -182,3 +182,65 @@ def test_an_ops_key_does_not_satisfy_the_dividend_cron_gate(
             "/ops/dividends/refresh-cron", headers={"X-Ops-Key": "a-real-cron-secret"}
         )
         assert res.status_code == 401
+
+
+# --- /ops/security-alias/* -- same two gates: this mutates security_alias, a shared
+# reference table every investor's holdings replay depends on. ------------------------
+
+
+def test_security_alias_refresh_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CONFIRMED GAP, closed here, same shape as the dividend gap above:
+    refresh_isin_change_feed and promote_draft_aliases existed as fully-tested
+    functions with no HTTP endpoint at all -- nothing in a real deployment ever called
+    either one, so a DRAFT alias could sit unpromoted forever regardless of whether the
+    reconcile logic was correct."""
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/security-alias/refresh")
+        assert res.status_code == 401
+
+
+def test_security_alias_refresh_cron_requires_bearer_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get("/ops/security-alias/refresh-cron")
+        assert res.status_code == 401
+        res = client.get(
+            "/ops/security-alias/refresh-cron",
+            headers={"Authorization": "Bearer not-the-real-secret"},
+        )
+        assert res.status_code == 403
+
+
+def test_an_ops_key_does_not_satisfy_the_security_alias_cron_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get(
+            "/ops/security-alias/refresh-cron", headers={"X-Ops-Key": "a-real-cron-secret"}
+        )
+        assert res.status_code == 401
+
+
+# --- /ops/demerger-watch/* -- same two gates. The feature-flag gate underneath (off by
+# default until the _DISQUALIFYING_TERMS audit is trusted) is a separate concern,
+# covered in test_demerger_watch.py -- not an auth question, so not duplicated here. ---
+
+
+def test_demerger_watch_check_requires_ops_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    with client_with_settings(monkeypatch, ops_api_key="a-real-ops-key") as client:
+        res = client.post("/ops/demerger-watch/check")
+        assert res.status_code == 401
+
+
+def test_demerger_watch_check_cron_requires_bearer_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with client_with_settings(monkeypatch, cron_secret="a-real-cron-secret") as client:
+        res = client.get("/ops/demerger-watch/check-cron")
+        assert res.status_code == 401
+        res = client.get(
+            "/ops/demerger-watch/check-cron",
+            headers={"Authorization": "Bearer not-the-real-secret"},
+        )
+        assert res.status_code == 403

@@ -135,17 +135,32 @@ docstring explains why the encryption key and the PAN pepper specifically must d
 
 ## 5. Wire the cron jobs
 
-`trackr-backend/vercel.json` already declares both schedules:
+`trackr-backend/vercel.json` already declares every schedule:
 
 ```json
 {
   "crons": [
     { "path": "/ops/cron/prices-refresh", "schedule": "30 10 * * *" },
     { "path": "/ops/corporate-actions/refresh-cron", "schedule": "45 10 * * *" },
-    { "path": "/ops/cron/snapshots-run", "schedule": "0 11 * * *" }
+    { "path": "/ops/demerger-watch/check-cron", "schedule": "50 10 * * *" },
+    { "path": "/ops/cron/snapshots-run", "schedule": "0 11 * * *" },
+    { "path": "/ops/security-alias/refresh-cron", "schedule": "30 11 * * 0" }
   ]
 }
 ```
+
+**Corrected here**: `corporate-actions/refresh-cron` was documented as already declared
+but was missing from the committed file entirely -- the exact "fully-tested function,
+zero HTTP endpoint reachable in production" gap `tests/test_ops_auth.py`'s dividend-cron
+test names elsewhere, just one layer further out (the endpoint existed; nothing told
+Vercel to call it). Added here rather than left for someone to notice via a quiet gap in
+corporate-action coverage.
+
+Vercel's per-plan cron limits (confirmed 2026): up to 100 scheduled tasks per project on
+every plan including Hobby, with a floor of once-per-day cadence -- an expression firing
+more than once a day fails at deploy time. None of the five schedules above are more
+frequent than daily, so this fits Hobby without change; the weekly alias job (`* * 0`,
+Sundays only) is under that floor, not over it.
 
 `prices-refresh` does two jobs: bhavcopy for every held ISIN, and a trailing-window
 refresh of the NIFTY TRI levels behind the dashboard's benchmark line. The second is
@@ -164,13 +179,38 @@ snapshot rather than showing up a day late. Its own guard is fail-closed by desi
 notice's price lands it in `Exceptions` rather than guessing, so a failure here never
 produces a wrong ledger write, only a delayed one.
 
+`demerger-watch/check-cron` sits right after it, daily, for a related but distinct
+reason: it reads the SAME NSE payload `corporate-actions/refresh-cron` just fetched
+(`app.ingest.demerger_watch` re-reads the rows that feed's own ratio parser correctly
+refuses to classify — see that module's docstring) and logs a warning when one names a
+tracked symbol. Nothing here writes anywhere; it exists only to shrink the gap between a
+company filing a demerger/merger apportionment letter and a human knowing to go read it.
+**Off by default** (`DEMERGER_WATCH_ENABLED`, unset) until the term-list coverage audit
+behind it is trusted on live data — the cron entry can stay declared regardless, since a
+disabled poll returns `{"skipped": true}` rather than doing anything.
+
+`security-alias/refresh-cron` is weekly, not daily, and deliberately its own job rather
+than two: it runs `app.db.isin_change_circulars.refresh_isin_change_feed` (turns NSE's
+"Change in ISIN" circulars into DRAFT `security_alias` rows) and
+`app.db.security_alias.promote_draft_aliases` (reconciles each DRAFT against every
+account it could affect and promotes or quarantines it) BACK TO BACK, in that order,
+every time. Running them on independent schedules would leave a freshly-created DRAFT
+alias sitting unpromoted until whatever gap two unrelated cron ticks happen to leave —
+this way promotion follows ingestion by minutes, not days. Every promotion this job makes
+still only produces `VERIFIED` after `reconcile_after_alias` checks unchanged transaction
+count, no new negative holding, no invented acquisition dates, and cost pool stability;
+any account failing any one of those quarantines the alias immediately, and the job's
+JSON response (`feed` + `promotion`, see `app/schemas/security_alias.py`) is what to read
+after each run — that response body is the log this job produces; nothing else persists
+a promotion-run history.
+
 Times are UTC (Vercel Cron is always UTC) — 10:30/11:00 UTC is roughly 4:00/4:30pm IST,
 after NSE/BSE bhavcopy is normally published; adjust if you find it publishes later.
 Nothing else to do here — the `CRON_SECRET` env var from step 3 is what Vercel signs
 these requests with automatically, and `app/auth/ops.py::require_cron_secret` verifies
-it. **If you're on Vercel's Hobby plan**, cron jobs run once per day only and at some
-point within the scheduled hour, not the exact minute — both of these schedules already
-fit that constraint.
+it. **If you're on Vercel's Hobby plan**, cron jobs run once per day at most (weekly and
+less-frequent schedules are fine, just not more-than-daily ones) and at some point within
+the scheduled hour, not the exact minute — every schedule above already fits that.
 
 You can trigger either job manually any time via the `POST` route instead (useful for a
 backfill, or to test before waiting for the schedule):

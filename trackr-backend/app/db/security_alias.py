@@ -350,6 +350,141 @@ def reconcile_after_alias(
     return ReconcileResult(ok=not failures, failures=tuple(failures))
 
 
+@dataclass(frozen=True, slots=True)
+class PromotionSummary:
+    """What one ``promote_draft_aliases`` run did, for a log line or a review command.
+
+    ``inconclusive`` is not a fourth alias state -- an alias counted here is still
+    ``DRAFT`` on disk, exactly as it was before the run. It exists only so an unexpected
+    failure is visible in the summary rather than silently indistinguishable from "still
+    correctly waiting to be checked."
+    """
+
+    verified: int = 0
+    quarantined: int = 0
+    inconclusive: int = 0
+    details: tuple[str, ...] = ()
+
+
+def _affected_accounts(conn: Any, old_isin: str, current_isin: str) -> list[tuple[str, str]]:
+    """Every account that has ever transacted in either ISIN, paired with a label a
+    human can act on without a second lookup -- ``broker/investor.code``, the same
+    identifier ``app.db.repository.list_accounts`` exists to show instead of a raw
+    UUID "nobody remembers" (that function's own words). An account with neither ISIN
+    is excluded rather than reconciled against trivially-true output.
+
+    Returns ``(account_id, label)`` rather than the label alone: the UUID is kept in
+    every failure string alongside the label for an exact lookup, since ``label`` is
+    not guaranteed unique (an investor can hold two accounts at the same broker)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT a.id, a.broker, i.code
+            FROM transaction t
+            JOIN account a ON a.id = t.account_id
+            JOIN investor i ON i.id = a.investor_id
+            WHERE t.isin IN (%s, %s)
+            """,
+            (old_isin, current_isin),
+        )
+        return [
+            (str(account_id), f"{broker}/{code}") for account_id, broker, code in cur.fetchall()
+        ]
+
+
+def promote_draft_aliases(
+    conn: Any, as_of: date | None = None, actor_uid: str | None = None
+) -> PromotionSummary:
+    """Run ``reconcile_after_alias`` against every account a DRAFT alias could affect,
+    and route the result to ``verify_alias`` or ``quarantine_alias``.
+
+    No check logic lives here -- ``reconcile_after_alias`` already implements all four
+    (unchanged transaction count, no new negative holding, no invented acquisition
+    dates, cost pool stable within Rule B's own rounding tolerance). This function only
+    decides what an alias's AGGREGATE result across every affected account means:
+
+      - zero affected accounts, or every one reconciling cleanly -> VERIFY. The zero
+        case is the common one in practice (an ISIN change for a company nothing in
+        this ledger holds) and is vacuously safe: nothing exists for the alias to break.
+      - any affected account failing -> QUARANTINE, immediately, on the first failure --
+        matching ``quarantine_alias``'s own stated philosophy that a ledger-breaking
+        alias is automatically wrong, not merely worth a second look. The reason string
+        names every failing account and check, so ``security_alias.notes`` tells a human
+        exactly what to fix before ever reopening it.
+      - ``reconcile_after_alias`` itself raising for some account -> LEAVE DRAFT. A
+        transport or database hiccup is not evidence the identity claim is wrong, and
+        ``verify_alias`` refuses to un-quarantine a DISPUTED row -- wrongly quarantining
+        on an unrelated failure would be a one-way door. Retried on the next run.
+
+    Scope is every DRAFT row, not only ones a particular feed created --
+    ``reconcile_after_alias`` doesn't care where an alias came from, and a hand-entered
+    DRAFT deserves the same automated promotion path as an automated one.
+
+    Idempotent by construction: an alias promoted or quarantined by an earlier run is no
+    longer DRAFT, so ``list_aliases(conn, verification=Verification.DRAFT)`` naturally
+    excludes it from every later run without any separate attempt-tracking needed.
+    """
+    as_of = as_of or date.today()
+    verified = quarantined = inconclusive = 0
+    details: list[str] = []
+
+    for alias in list_aliases(conn, verification=Verification.DRAFT):
+        affected = _affected_accounts(conn, alias.old_isin, alias.current_isin)
+
+        failures: list[str] = []
+        raised = False
+        for account_id, label in affected:
+            try:
+                result = reconcile_after_alias(
+                    conn, account_id, alias.old_isin, alias.current_isin, as_of
+                )
+            except Exception:
+                logger.warning(
+                    "reconcile_after_alias raised for %s -> %s, account %s (%s) -- "
+                    "leaving DRAFT rather than quarantining on an unrelated failure",
+                    alias.old_isin, alias.current_isin, account_id, label, exc_info=True,
+                )
+                raised = True
+                continue
+            if not result.ok:
+                # Both the human-readable label and the exact UUID: label alone is not
+                # guaranteed unique (an investor can hold two accounts at one broker).
+                failures.append(
+                    f"{label} (account {account_id}): {'; '.join(result.failures)}"
+                )
+
+        if raised:
+            # An exception on ANY account makes the round's picture incomplete -- even
+            # if every OTHER account reconciled cleanly, that is not the same as knowing
+            # this alias is safe. Left DRAFT; retried in full next run.
+            inconclusive += 1
+            details.append(
+                f"{alias.old_isin} -> {alias.current_isin}: inconclusive "
+                "(reconcile_after_alias raised for at least one account)"
+            )
+            continue
+
+        if failures:
+            reason = "; ".join(failures)
+            quarantine_alias(conn, alias.old_isin, reason, actor_uid=actor_uid)
+            conn.commit()
+            quarantined += 1
+            details.append(f"{alias.old_isin} -> {alias.current_isin}: quarantined -- {reason}")
+        else:
+            verify_alias(conn, alias.old_isin, actor_uid=actor_uid)
+            conn.commit()
+            verified += 1
+            details.append(
+                f"{alias.old_isin} -> {alias.current_isin}: verified "
+                f"({len(affected)} account(s) checked)"
+            )
+
+    return PromotionSummary(
+        verified=verified, quarantined=quarantined, inconclusive=inconclusive,
+        details=tuple(details),
+    )
+
+
 def _with_isin(txn: Any, isin: str) -> Any:
     from dataclasses import replace
 
