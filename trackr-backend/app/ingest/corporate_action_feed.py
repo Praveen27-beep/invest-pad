@@ -160,6 +160,18 @@ _DISQUALIFYING_TERMS = (
     "demerger",
     "merger",
     "amalgamation",
+    # Confirmed live in TWO independent 3-year pulls (2020-2022: "Capital Reduction
+    # Pursuant To Nclt Order"; 2023-2025: "Capital Reduction"), found auditing this list
+    # for demerger/merger phrasing coverage. Neither occurrence was ratio-shaped, so this
+    # was not yet a live miscost -- but a capital reduction changes share count/value by
+    # a mechanism a plain bonus/split ratio must never be asked to represent, exactly the
+    # "qualifier that changes what the ratio means" this list exists to name. "Redemption"
+    # (also seen in that audit, 2 occurrences) was NOT added: it names an instrument-level
+    # event (debenture/warrant redemption, already covered by those terms when paired with
+    # one) rather than a company-level restructuring, and neither occurrence was
+    # ratio-shaped either -- added on a repeat sighting, not preemptively.
+    "reduction of capital",
+    "capital reduction",
 )
 
 

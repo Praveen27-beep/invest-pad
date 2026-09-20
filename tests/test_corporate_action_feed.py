@@ -84,11 +84,28 @@ def test_a_scheme_of_arrangement_bonus_is_not_classified():
 
 @pytest.mark.parametrize(
     "term",
-    ["Merger", "Demerger", "Amalgamation", "Preference Share", "Debenture", "Warrant"],
+    [
+        "Merger", "Demerger", "Amalgamation", "Preference Share", "Debenture", "Warrant",
+        "Capital Reduction", "Reduction Of Capital",
+    ],
 )
 def test_other_disqualifying_terms_are_not_classified(term: str) -> None:
     rows = parse_corporate_action_feed(_payload(_record(subject=f"Bonus 1:1 - {term}")))
     assert rows == []
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        # Real, confirmed-live subjects: "Capital Reduction Pursuant To Nclt Order"
+        # (2020-2022 pull) and "Capital Reduction" (2023-2025 pull) -- neither was
+        # ratio-shaped, so this pins the disqualification rather than a ratio miss.
+        "Capital Reduction",
+        "Capital Reduction Pursuant To Nclt Order",
+    ],
+)
+def test_real_capital_reduction_subjects_produce_no_candidate(subject: str) -> None:
+    assert parse_corporate_action_feed(_payload(_record(subject=subject))) == []
 
 
 def test_an_unrecognised_notice_type_is_simply_not_included() -> None:
