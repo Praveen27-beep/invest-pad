@@ -28,11 +28,27 @@ const NO_FLASH_THEME_SCRIPT = `
 })();
 `;
 
+// The marketing page at "/" is part of the prerendered HTML so the route is indexable
+// (auth resolves in an effect, so anything gated on it is invisible to a crawler). The
+// cost is that a signed-in user would see the landing for the one paint before that
+// effect runs. Marking the document here -- synchronously, ahead of hydration, the same
+// way the theme script does -- lets landing.css hide it from the very first frame.
+// Reads the key written by lib/auth-context.tsx; presence is a hint about which view to
+// paint, never a claim that the token is still valid.
+const NO_FLASH_SESSION_SCRIPT = `
+(function () {
+  try {
+    if (localStorage.getItem("trackr.token")) document.documentElement.dataset.session = "1";
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: NO_FLASH_THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: NO_FLASH_SESSION_SCRIPT }} />
       </head>
       <body>
         <ThemeProvider>

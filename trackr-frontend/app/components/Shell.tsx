@@ -7,11 +7,20 @@ import { AIChatProvider } from "@/lib/ai-chat-context";
 import { Ribbon } from "./Ribbon";
 import { OnboardingWizard } from "./onboarding/OnboardingWizard";
 import { AIChatDrawer } from "./AIChatDrawer";
+import { Landing } from "./landing/Landing";
 
-/** `/terms` is public because the registration form links to it: someone deciding
- *  whether to accept the terms has not signed in yet, and redirecting them to /login
- *  would lose the half-filled form they left behind. */
-const PUBLIC_PATHS = ["/login", "/register", "/terms"];
+/** `/terms` and `/privacy` are public because they are linked from places a signed-out
+ *  person reaches them: the registration form (someone deciding whether to accept the
+ *  terms has not signed in yet, and redirecting them to /login would lose the
+ *  half-filled form they left behind) and the landing page's footer. `/coming-soon` is
+ *  where the landing's not-yet-built links (Pricing, About, Blog, ...) point, and a
+ *  signed-out visitor clicking one must see that placeholder, not a login wall. */
+const PUBLIC_PATHS = ["/login", "/register", "/terms", "/privacy", "/coming-soon"];
+
+/** `/` serves two different pages — the marketing landing to a signed-out visitor, the
+ *  dashboard to a signed-in one — so it is the one private route that must not bounce
+ *  to /login. */
+const LANDING_PATH = "/";
 
 /**
  * The app shell: a sticky ribbon over a full-width main column.
@@ -24,12 +33,32 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { token, ready } = useAuth();
   const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isLanding = pathname === LANDING_PATH;
 
   useEffect(() => {
-    if (ready && !token && !isPublic) router.replace("/login");
-  }, [ready, token, isPublic, router]);
+    if (ready && !token && !isPublic && !isLanding) router.replace("/login");
+  }, [ready, token, isPublic, isLanding, router]);
 
   if (isPublic) return <>{children}</>;
+
+  // Rendered here rather than inside app/page.tsx so the dashboard — which starts
+  // fetching holdings and performance the moment it mounts — never mounts at all for a
+  // visitor with no session.
+  //
+  // This deliberately does NOT wait for `ready`. The landing has to be in the
+  // prerendered HTML for `/` to be indexable, and rendering it pre-auth is also what
+  // keeps hydration matching, since the client's first render has `ready` false exactly
+  // like the server's. A returning user never sees it — the session script in
+  // app/layout.tsx marks the document and landing.css hides it from the first paint,
+  // with `l-session-hold` reserving the ribbon's height in its place.
+  if (isLanding && !token) {
+    return (
+      <>
+        <Landing />
+        <div className="l-session-hold" aria-hidden="true" />
+      </>
+    );
+  }
 
   // Auth resolves from localStorage in an effect, so the first paint always happens
   // before `ready`. Rendering a centred "Loading…" there and the real chrome a tick later
