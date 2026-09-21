@@ -181,6 +181,8 @@ tests/                        run from the repo root; imports `app.*` editable-i
 ```
 docs/ARCHITECTURE_INVARIANTS.md  the non-negotiable financial rules; READ FIRST
 docs/ENGINE_SPEC.md      exact calculation rules — FIFO, XIRR, corporate actions
+docs/ISIN_AUTOMATION.md  identity vs ratio; what's auto-verified vs permanently manual;
+                         why merger/demerger never will be — dated 2026-09-20
 docs/DATA_MODEL.md       tables, columns, invariants
 docs/INGESTION.md        Gmail forwarding, CSV, tradebook, the price pipe; legal boundaries
 docs/ARCHITECTURE.md     layers, boundaries, and what may import what
