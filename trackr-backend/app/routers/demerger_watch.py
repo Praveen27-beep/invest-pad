@@ -2,11 +2,13 @@
 
 Gated TWICE, deliberately: the same ``X-Ops-Key``/``CRON_SECRET`` credential every other
 ops route uses, AND ``Settings.demerger_watch_enabled``. The credential gate stops an
-outsider from triggering it; the feature flag stops it from running at all before the
-``_DISQUALIFYING_TERMS`` coverage audit (see app.ingest.corporate_action_feed) is trusted
-enough to enable it. A disabled poll returns ``skipped: true`` rather than a 404 or an
-error, so the cron schedule can be declared in ``vercel.json`` ahead of time and simply
-does nothing every day until the flag flips.
+outsider from triggering it; the feature flag is what a deployment that does not want
+the warnings turns off. That flag defaulted to false until 2026-09-22, gating the feature
+on the ``_DISQUALIFYING_TERMS`` coverage audit (see app.ingest.corporate_action_feed) and
+on a first look at real output; both are done and the default is now true -- see
+``Settings.demerger_watch_enabled`` for the 90-day measurement behind that. A disabled
+poll still returns ``skipped: true`` rather than a 404 or an error, which is what let the
+cron schedule be declared in ``vercel.json`` ahead of the flip.
 """
 
 from __future__ import annotations

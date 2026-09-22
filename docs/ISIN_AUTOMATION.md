@@ -1,8 +1,10 @@
 # ISIN Automation
 
-**Point-in-time snapshot: 2026-09-20.** This describes the system as it stands today, not
+**Point-in-time snapshot: 2026-09-22.** This describes the system as it stands today, not
 how it was built. Where a stated fact depends on a one-time manual step still pending as
-of this date, that is called out explicitly rather than assumed complete.
+of this date, that is called out explicitly rather than assumed complete. As of this
+revision nothing here is pending: the one gate the 2026-09-20 version carried
+(`demerger_watch_enabled`) is discharged and recorded in §4.
 
 ## 1. The core principle: identity is not ratio
 
@@ -127,9 +129,85 @@ as one combined job rather than two independently-scheduled ones, is in
 
 ### Feature flags — current state
 
-| Flag | Value as of 2026-09-20 | What flips it |
+| Flag | Value as of 2026-09-22 | Notes |
 |---|---|---|
-| `demerger_watch_enabled` | **`False`** | Pending a one-time manual verification of an unrelated database incident from this build's review, plus a first look at the endpoint's live output — an operational gate, not a technical blocker. The route, the parser, and the notification logic are all built, tested, and have been manually triggered once against real NSE data with the flag off (confirming the route itself is reachable and correctly skips). Flip `DEMERGER_WATCH_ENABLED=true` once that verification is done. |
+| `demerger_watch_enabled` | **`True`** (default, `app/config.py`) | Enabled 2026-09-22. Both gates the 2026-09-20 version of this table named are discharged — see "Why this flag flipped" immediately below. The flag itself stays rather than being deleted: a deployment that does not want the warnings sets `DEMERGER_WATCH_ENABLED=false` with no code change, and `tests/test_demerger_watch.py` pins both the default and that it can still be turned off. |
+
+#### Why this flag flipped, and on what evidence
+
+Two things gated it, neither of them a code defect, and both are now closed.
+
+**1. A first look at real output.** Run 2026-09-22 against the live NSE
+corporates-corporateActions feed over a 90-day window (2026-06-24 → 2026-09-22), reading
+the same payload `corporate-actions/refresh-cron` already fetches:
+
+| Measure | Result |
+|---|---|
+| Feed reachable, payload size | yes, 361,565 bytes |
+| Notices matching `_DEMERGER_SUBJECT_RE` market-wide | **8** (≈ one every 11 days) |
+| Of those, naming a symbol this database tracks | **0** |
+| What `/ops/demerger-watch/check` would therefore have returned | `{"skipped": false, "logged": 0}` |
+
+The 8 were `GUJENERGY`, `TRIVENI`, `INOXGREEN`, `SIYSIL` (×2, "Scheme Of Arrangement -
+Bonus Ncrps"), `INDIAGLYCO`, `HEGAM`, `TVSHLTD` — all genuine company restructurings, no
+false positives in the sample, and the two NCRPS rows are exactly the kind of notice
+`_DISQUALIFYING_TERMS` is right to refuse to classify and this watch is right to mention.
+**The steady state of this feature is silence**, against a 62-symbol tracked universe.
+That is the measurement behind calling it a log line rather than a queue, and the reason
+enabling it by default cannot bury anything.
+
+**2. Independent verification of the database incident from this build's review.** Done
+2026-09-22, against the real local database rather than from a report, and the finding
+differs from what the report claimed — it is written up in full at the end of this
+section because a correction is more useful than a tick.
+
+> **Checked:** the `audit_log` of the configured database (`localhost:5433/portfolio`,
+> 929 rows spanning 2026-08-26 → 2026-09-21) holds **exactly one** `ERASURE` row, dated
+> **2026-09-05 11:45 UTC**, attributed to an actor uid, recording
+> `{transactions_deleted: 70, investors_deleted: 1, documents_deleted: 0}`. There is **no
+> `erase_investor` call from 2026-09-21**; that day's audit activity is 785
+> `DIVIDEND_EVENT_ADDED`, 32 `DIVIDEND_EVENT_CORROBORATED` and 1
+> `DIVIDEND_EVENT_DISPUTED`, and nothing else. The claimed event is not in this database's
+> record.
+>
+> **Why that is the expected answer rather than a missing audit row.** The `C001` /
+> `ZERODHA` / `INE411D01015`→`INE411D01023` combination is `tests/conftest_db.py`'s
+> `investor` fixture plus `tests/test_db_ops_wiring.py`'s `OLD`/`NEW` constants, and those
+> only ever exist inside the **`portfolio_test`** database the suite drops and recreates
+> per session (`conftest_db.py`, `_existing_server_admin_url` path) — never in
+> `portfolio`. `portfolio_test` does not currently exist on the cluster, so the rows in
+> question were destroyed with it, exactly as designed, and are not queryable after the
+> fact by anyone.
+>
+> **What was independently confirmed instead, which answers the question the gate was
+> actually asking.** No client data was at risk, because there is none: all 22 investors
+> in `portfolio` are self-evidently test accounts (`SMOKETES-*`, `BUGCHECK-*`, `TESTSEPT-*`,
+> `FLOW*`, `DUPCSV-*`). `security_alias` in `portfolio` is **empty** — so the quarantine
+> example quoted later in this section is illustrative, built from the test fixture's own
+> identifiers, and not the record of a real quarantine. `isin_change_circular` is **empty**
+> too: the circular feed has never been run against this database. The six real
+> transactions carrying `INE411D01015`/`INE411D01023` (SKM Egg Products — **not** Indosolar,
+> whose ISIN is unrelated) belong to six test investors, were created 2026-08-26 →
+> 2026-09-08 by import and smoke-test flows, and are dev residue in the dev database rather
+> than anything the erasure path touched.
+>
+> **The one thing that could not be confirmed, stated as such:** whether the reported
+> erasure happened at all. It left no trace in the only durable record, and the database
+> it would have run against no longer exists. Absence of a trace is not proof it did not
+> happen; it is proof the report cannot be checked. The gate is discharged on the second
+> finding — nothing real was exposed and nothing real could have been — not on the first.
+
+**What that verification changed in the code**, because "nobody will make that mistake
+again" is not a safeguard: `app/db/scratch.py` now exists. An ad hoc or one-off script
+that wants a database gets `connect_scratch()`, which refuses anything but a database
+explicitly tagged as disposable and never falls back to `DATABASE_URL`; five guards, of
+which only the in-database tag vouches and the rest merely reject, in the same shape as
+`docs/ARCHITECTURE_INVARIANTS.md` rule 10. `make lint` carries the matching rule — no `.py`
+outside `trackr-backend/app/` or `tests/` may open its own connection, with
+`scripts/check_migration_drift.py` the one named, read-only exception. That module's
+docstring states what it cannot do: a script in `/tmp` that calls `psycopg.connect`
+directly is outside every lint's reach, so this makes the safe path the easy path rather
+than making the unsafe path impossible.
 
 There is no flag gating the security-alias job — `refresh_isin_change_feed` and
 `promote_draft_aliases` run unconditionally once the cron fires, because nothing in that

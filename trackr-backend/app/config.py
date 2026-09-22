@@ -153,14 +153,24 @@ class Settings(BaseSettings):
     llm_parsing_enabled: bool = False
 
     # --- demerger/amalgamation notification watch (app/ingest/demerger_watch.py) ----
-    # OFF BY DEFAULT AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE circulars source
-    # app.ingest.isin_change_feed already relies on (interim, unofficial, confirmed live
-    # -- see that module's docstring) rather than adding a second, less-vetted
-    # third-party dependency; this feature adds no new ToS exposure of its own. It
-    # writes NOTHING to the ledger, NOTHING to security_alias, and never touches
-    # app.engine.demerger -- it only shortens the gap between a company filing an
-    # apportionment letter and a human knowing to go read it. A log line, not a queue.
-    demerger_watch_enabled: bool = False
+    # ON BY DEFAULT since 2026-09-22 AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE
+    # circulars source app.ingest.isin_change_feed already relies on (interim,
+    # unofficial, confirmed live -- see that module's docstring) rather than adding a
+    # second, less-vetted third-party dependency; this feature adds no new ToS exposure
+    # of its own. It writes NOTHING to the ledger, NOTHING to security_alias, and never
+    # touches app.engine.demerger -- it only shortens the gap between a company filing
+    # an apportionment letter and a human knowing to go read it. A log line, not a queue.
+    #
+    # WHAT DEFAULTING IT TO TRUE COMMITS TO, since a default is the value most
+    # deployments will actually run. One GET to a feed this codebase already polls
+    # daily, and warnings on stderr. Measured before flipping, over a real 90-day NSE
+    # window (2026-06-24..2026-09-22): 8 notices matched company-restructuring terms
+    # market-wide -- roughly one every eleven days -- and 0 of them named a symbol this
+    # project's own database tracks. The steady state of this feature is therefore
+    # silence, which is why it is a log line and not a queue, and why enabling it cannot
+    # bury anything. If that ratio ever inverts, the thing to revisit is the notification
+    # channel, not this flag.
+    demerger_watch_enabled: bool = True
 
     @property
     def cors_origin_list(self) -> list[str]:

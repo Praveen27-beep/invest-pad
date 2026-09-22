@@ -56,6 +56,25 @@ lint:                 ## the architecture rules, enforced
 	@echo "checking: no un-ignored client documents anywhere in the working tree"
 	@bad=$$(git ls-files --cached --others --exclude-standard -- '*.pdf' '*.xlsx' '*.xls' '*.csv' '*.zip' 2>/dev/null | grep -vE '^fixtures/(engine_cases\.json|bhavcopy/.*\.csv|nse_sector_sample\.csv|amfi_market_cap_sample\.xlsx)$$' || true); \
 	if [ -n "$$bad" ]; then echo "FAIL: client-document-shaped file(s) not covered by .gitignore:"; echo "$$bad"; exit 1; fi
+# An ad hoc script must not be able to inherit the real database. The incident class is
+# written up in app/db/scratch.py's docstring: a one-off probe imports the same connect()
+# the application uses, gets DATABASE_URL, and the only thing between a read-only script
+# and a destructive one is that whoever typed it did not make a mistake. That module is
+# the runtime guard for a script that ASKS for a disposable connection; this rule is for
+# the script that does not ask, and it works by refusing to let one into the repo.
+# NAMED EXCEPTION: scripts/check_migration_drift.py, whose whole job is to inspect the
+# configured real database. It is read-only, and it is the one file reviewed as such.
+	@echo "checking: no ad hoc script opens its own database connection"
+	@bad=$$(git ls-files '*.py' \
+		| grep -v '^trackr-backend/app/' \
+		| grep -v '^tests/' \
+		| grep -v '^scripts/check_migration_drift\.py$$' \
+		| xargs -r grep -lE 'psycopg\.connect|connection\.connect|database_url\(\)' || true); \
+	if [ -n "$$bad" ]; then \
+		echo "FAIL: script(s) open a database connection directly. Use"; \
+		echo "      app.db.scratch.connect_scratch, which refuses anything but a tagged"; \
+		echo "      disposable database, instead of inheriting DATABASE_URL:"; \
+		echo "$$bad"; exit 1; fi
 # The one check here that looks at a REAL database's state rather than at source text --
 # see app.db.migrate.check_drift and scripts/check_migration_drift.py for why this exists:
 # six migrations sat fully tested while a real local database silently stayed six

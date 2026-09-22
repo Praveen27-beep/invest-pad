@@ -45,7 +45,10 @@ consecutive days. A human seeing the same warning twice is a minor nuisance, not
 correctness bug -- adding a persisted "already notified" table to prevent it would be the
 queue this module deliberately declines to become, for a problem this small.
 
-OFF BY DEFAULT (``Settings.demerger_watch_enabled``, ``app/config.py``).
+ON BY DEFAULT since 2026-09-22 (``Settings.demerger_watch_enabled``,
+``app/config.py``), where the measurement that justified the default is recorded. The
+flag stays, so a deployment that does not want the warnings can still set
+``DEMERGER_WATCH_ENABLED=false`` without a code change.
 """
 
 from __future__ import annotations

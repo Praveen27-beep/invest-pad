@@ -182,7 +182,7 @@ tests/                        run from the repo root; imports `app.*` editable-i
 docs/ARCHITECTURE_INVARIANTS.md  the non-negotiable financial rules; READ FIRST
 docs/ENGINE_SPEC.md      exact calculation rules — FIFO, XIRR, corporate actions
 docs/ISIN_AUTOMATION.md  identity vs ratio; what's auto-verified vs permanently manual;
-                         why merger/demerger never will be — dated 2026-09-20
+                         why merger/demerger never will be — dated 2026-09-22
 docs/DATA_MODEL.md       tables, columns, invariants
 docs/INGESTION.md        Gmail forwarding, CSV, tradebook, the price pipe; legal boundaries
 docs/ARCHITECTURE.md     layers, boundaries, and what may import what
@@ -212,14 +212,21 @@ repo on the day it was written. **Where an archive doc and the live specificatio
 disagree, the live specification wins; where the live specification and the code
 disagree, the code wins.** Never open a session by working through one of these.
 
+They now all live in **`docs/archive/`** (moved 17-09-2026), so the thirteen files
+below are out of the way of a normal session rather than interleaved with the live
+specification. Nothing was deleted — the paths changed, the provenance did not.
+
 ```
-docs/BUILD_PLAN.md, docs/PHASE1_CLOSEOUT_PROMPTS.md, docs/PHASE2_PROMPTS.md,
-docs/PHASE3_PROMPTS.md, docs/PHASE3_SESSION10_STT_FIX.md,
-docs/trackr_plus_phase1_overview.md, docs/trackr_plus_phase2_overview.md,
-docs/trackr_plus_phase3_overview.md, docs/structure_revamp_plan.md,
-docs/BACKEND_REUSE_AND_GAP_ANALYSIS.md, docs/FULL_VISION_BACKEND_ROADMAP.md,
-docs/BLUEPRINT_REVIEW.md, PHASE1_FIELD_TEST_REPORT.md
+docs/archive/    BUILD_PLAN, PHASE1_CLOSEOUT_PROMPTS, PHASE2_PROMPTS, PHASE3_PROMPTS,
+                 PHASE3_SESSION10_STT_FIX, trackr_plus_phase{1,2,3}_overview,
+                 structure_revamp_plan, BACKEND_REUSE_AND_GAP_ANALYSIS,
+                 FULL_VISION_BACKEND_ROADMAP, BLUEPRINT_REVIEW,
+                 PHASE1_FIELD_TEST_REPORT
 ```
+
+**Older docs cite these by their pre-move paths.** Read any reference to
+`docs/BUILD_PLAN.md` (or any other name in the block above) as
+`docs/archive/BUILD_PLAN.md`.
 
 ## Reference stack
 

@@ -210,15 +210,30 @@ def test_format_failure_returns_zero_and_never_raises(caplog) -> None:
     assert logged == 0
 
 
-def test_settings_flag_defaults_to_disabled() -> None:
+def _settings(**overrides: object):
     from app.config import Settings
 
-    settings = Settings(
+    return Settings(
         _env_file=None,
         debug=True,
         database_url="postgresql://localhost/test",
         portfolio_encryption_key="test-encryption-key",
         portfolio_pan_pepper="test-pan-pepper",
         jwt_secret="test-jwt-secret",
+        **overrides,
     )
-    assert settings.demerger_watch_enabled is False
+
+
+def test_settings_flag_defaults_to_enabled() -> None:
+    """Flipped 2026-09-22, after a 90-day live NSE window showed 8 matching notices
+    market-wide and 0 touching a tracked symbol -- see Settings.demerger_watch_enabled.
+    The value is asserted rather than assumed because the flag is the ONLY thing standing
+    between the cron declared in vercel.json and a daily outbound fetch."""
+    assert _settings().demerger_watch_enabled is True
+
+
+def test_the_flag_can_still_be_turned_off() -> None:
+    """A default is not a hard-coding. A deployment that does not want the warnings must
+    be able to silence the feature without a code change, which is the reason the flag
+    survives its own flip rather than being deleted as satisfied."""
+    assert _settings(demerger_watch_enabled=False).demerger_watch_enabled is False

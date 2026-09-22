@@ -185,9 +185,13 @@ reason: it reads the SAME NSE payload `corporate-actions/refresh-cron` just fetc
 refuses to classify — see that module's docstring) and logs a warning when one names a
 tracked symbol. Nothing here writes anywhere; it exists only to shrink the gap between a
 company filing a demerger/merger apportionment letter and a human knowing to go read it.
-**Off by default** (`DEMERGER_WATCH_ENABLED`, unset) until the term-list coverage audit
-behind it is trusted on live data — the cron entry can stay declared regardless, since a
-disabled poll returns `{"skipped": true}` rather than doing anything.
+**On by default since 2026-09-22** (`DEMERGER_WATCH_ENABLED`; set it to `false` to
+silence the warnings without a code change). It was off until the term-list coverage audit
+behind it had been trusted on live data, which it now has: a 90-day live window showed 8
+matching notices market-wide and 0 touching a tracked symbol, so the expected daily output
+is `{"skipped": false, "logged": 0}` — see `docs/ISIN_AUTOMATION.md` §4 for the numbers.
+The cron entry could stay declared throughout either way, since a disabled poll returns
+`{"skipped": true}` rather than doing anything.
 
 `security-alias/refresh-cron` is weekly, not daily, and deliberately its own job rather
 than two: it runs `app.db.isin_change_circulars.refresh_isin_change_feed` (turns NSE's

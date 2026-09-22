@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -42,7 +41,6 @@ from app.ingest.isin_change_feed import (
     IsinChangeFeedFetchFailed,
     IsinChangePdfExtractionError,
     ParsedCircular,
-    classify_isin_change_reason,
     extract_pdf_text,
     nse_circular_list_feed,
     parse_circular_listing,
@@ -210,7 +208,6 @@ def refresh_isin_change_feed(
     start: date,
     end: date,
     source: Any | None = None,
-    jev_client: Any = None,
     actor_uid: str | None = None,
 ) -> dict[str, Any]:
     """Poll NSE's "Change in ISIN" circulars for ``[start, end]`` and write a DRAFT
@@ -219,11 +216,10 @@ def refresh_isin_change_feed(
     counted toward the circuit breaker, exactly the log-and-continue posture
     ``refresh_corporate_action_feed`` already documents for its own feed.
 
-    ``jev_client`` is passed straight through to ``classify_isin_change_reason`` --
-    ``None``, or an ``app.ai.jev.JevClient`` constructed by the caller from ``Settings``,
-    same convention as ``app.db.dividend_events.refresh_dividend_feed``. Its outcome
-    only ever enriches ``isin_change_circular.reason_class`` for the review queue; it is
-    never consulted before writing an alias.
+    ``isin_change_circular.reason_class``/``reason_confidence`` are written NULL. A
+    model-backed classifier of the circular's Remarks text used to fill them; it was
+    removed, and nothing downstream ever consulted it -- an alias has always rested on
+    the symbol join and ``add_alias``'s structural gates, never on a classification.
     """
     failures_before, breaker_open_until = _get_poll_state(conn, FEED_NAME)
     now = datetime.now(UTC)
@@ -285,16 +281,6 @@ def refresh_isin_change_feed(
             skipped += 1
             continue
 
-        reason_class, reason_confidence = classify_isin_change_reason(
-            jev_client, parsed.remarks_raw, parsed.symbol, parsed.new_isin
-        )
-        parsed_with_reason = ParsedCircular(
-            symbol=parsed.symbol, new_isin=parsed.new_isin, remarks_raw=parsed.remarks_raw,
-            wef_date=parsed.wef_date, ex_date=parsed.ex_date,
-            reason_class=reason_class,
-            reason_confidence=Decimal(str(reason_confidence)) if reason_confidence else None,
-        )
-
         old_isin, skip_reason = _resolve_old_isin(conn, parsed.symbol, parsed.new_isin)
         alias_created = False
         if old_isin is not None:
@@ -333,7 +319,7 @@ def refresh_isin_change_feed(
 
         try:
             _upsert_circular(
-                conn, listing, parsed_with_reason, old_isin=old_isin,
+                conn, listing, parsed, old_isin=old_isin,
                 alias_created=alias_created, skip_reason=skip_reason,
             )
         except psycopg.errors.UniqueViolation:

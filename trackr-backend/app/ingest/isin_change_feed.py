@@ -53,10 +53,8 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
-from app.ai.jev import JevResponseError, JevUnavailable
 from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS, _ssl_context
 
 NSE_HOMEPAGE_URL = "https://www.nseindia.com/"
@@ -75,10 +73,6 @@ _ISIN_CHANGE_SUBJECT_RE = re.compile(r"change in isin", re.IGNORECASE)
 #: Requests per second across one poll run -- the homepage warm-up, the circulars-list
 #: call, and every matched circular's PDF fetch all draw from the same bucket.
 _MAX_REQUESTS_PER_SECOND = 3
-
-#: Same floor as corporate_action_feed's dividend-attribution caller -- one standard
-#: of confidence for every Jev call in this codebase, not a per-caller tuning knob.
-_JEV_CONFIDENCE_FLOOR = Decimal("0.5")
 
 #: Transient-failure backoff: up to this many retries (5 attempts total: the first try
 #: plus these 4), with the delay growing 1s -> 2s -> 4s -> 8s between them.
@@ -239,9 +233,12 @@ class CircularListing:
 class ParsedCircular:
     """One ISIN-change circular's PDF, structured. Deliberately carries no ``old_isin``
     -- see the module docstring's "why the old ISIN is never in this module's output".
-    ``reason_class``/``reason_confidence`` are set by ``classify_isin_change_reason``
-    when a Jev client is supplied, and are ``None`` otherwise -- never required for
-    anything downstream to proceed."""
+    ``reason_class``/``reason_confidence`` are ALWAYS ``None`` today. They existed for a
+    model-backed classifier of the Remarks text that has since been removed from this
+    codebase; the ``isin_change_circular`` columns behind them (migration 031) are kept
+    because they are nullable, purely a review-queue enrichment, and nothing downstream
+    has ever branched on them. The fields stay so a future classifier has somewhere to
+    land without a migration."""
 
     symbol: str
     new_isin: str
@@ -339,7 +336,27 @@ def parse_isin_change_circular(pdf_text: str) -> ParsedCircular:
     field is absent, which is the signal a format change happened, not a row to quietly
     skip. Confirmed against three live circulars, including the Remarks-wrap case; see
     the module docstring and ``_extract_remarks``."""
-    symbol = _required(_SUBJECT_SYMBOL_RE, pdf_text, "the symbol in the Sub: line")
+    # WORDED FOR THE HUMAN WHO SCANS THE QUEUE, not for the parser. This is the guard a
+    # non-equity ISIN-change circular -- an NCD, debenture or bond series -- fails, every
+    # time and by design: the "Sub:" line's trailing parenthesis holds an equity trading
+    # SYMBOL, and a debt instrument has none to put there. The old message ("circular is
+    # missing the symbol in the Sub: line") described the regex rather than the situation,
+    # so a perfectly correct skip read like a bug to anyone reviewing the queue later.
+    #
+    # It stays a parse_failed and stays in the queue, and is worded "typically" rather
+    # than "is", because the SAME absence is also what a genuine format change on a real
+    # equity circular would look like. Reclassifying this as benign on the strength of a
+    # guess about which one it was is the reclassification that would eventually swallow a
+    # real ISIN change. Naming the likely cause is a hint to the reviewer; it is not a
+    # decision, and nothing downstream branches on it.
+    symbol = _required(
+        _SUBJECT_SYMBOL_RE,
+        pdf_text,
+        'an equity trading symbol in its "Sub:" line -- typically a non-equity '
+        "(NCD/debenture/bond) ISIN change, which this equity-only system skips by design; "
+        "review it only if the circular does concern a listed equity, in which case the "
+        "circular format has changed",
+    )
     new_isin = _required(_NEW_ISIN_RE, pdf_text, "a New ISIN")
     wef_raw = _required(_WEF_DATE_RE, pdf_text, "the w.e.f. date")
     ex_raw = _required(_EX_DATE_RE, pdf_text, "the Ex-date")
@@ -415,68 +432,3 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
             return "\n".join(page.extract_text() or "" for page in pdf.pages)
     except Exception as exc:  # noqa: BLE001 - pdfplumber raises assorted types
         raise IsinChangePdfExtractionError(f"could not read circular PDF: {exc}") from exc
-
-
-#: Closed set of reasons a "Change in ISIN" circular's Remarks can classify into.
-#: MERGER_OR_SCHEME and DEMERGER are included so they surface distinctly in the review
-#: queue, exactly the way the corporate-action-feed docstring's own disqualifying-terms
-#: list treats them: never a ratio to apply automatically, always a name for a human to
-#: recognise. This classification never feeds a ratio or an alias decision -- see the
-#: module docstring's Jev section.
-ISIN_CHANGE_REASON_CLASSES = (
-    "SUB_DIVISION",
-    "CONSOLIDATION",
-    "MERGER_OR_SCHEME",
-    "DEMERGER",
-    "RENAME",
-    "OTHER",
-)
-
-_REASON_CRITERIA = {
-    "SUB_DIVISION": "A face-value sub-division / stock split -- the same shares, now at "
-    "a smaller face value (e.g. 'Sub-Division from Rs. 10/- to Rs. 2/-').",
-    "CONSOLIDATION": "A reverse split / consolidation -- shares combined into a smaller "
-    "number at a larger face value.",
-    "MERGER_OR_SCHEME": "A merger, amalgamation, or scheme of arrangement between "
-    "companies -- the ISIN changed because the issuing entity itself changed.",
-    "DEMERGER": "A demerger or spin-off -- part of the company separated into a new "
-    "entity with its own ISIN.",
-    "RENAME": "The company changed its name or reconstituted without any of the above "
-    "-- the security is otherwise unchanged.",
-    "OTHER": "None of the above, or the wording does not clearly say which.",
-}
-
-
-def classify_isin_change_reason(
-    jev_client: Any, remarks_raw: str, symbol: str, new_isin: str
-) -> tuple[str | None, Any]:
-    """Ask Jev which of ``ISIN_CHANGE_REASON_CLASSES`` a circular's Remarks describes.
-
-    Same client, same ``choose()`` Choice-question call, and the identical failure
-    posture as ``app.ingest.corporate_action_feed._attribute_with_jev``: no client, a
-    transport failure, or confidence under the floor all degrade to ``(None, None)`` --
-    never a raised exception, and nothing downstream depends on this succeeding. This is
-    the second of exactly two Jev callers in the codebase; see the module docstring.
-
-    What crosses this boundary is the circular's own public Remarks text plus the
-    symbol and new ISIN it was filed against -- a company-wide NSE notice, not investor
-    data, the same boundary ``app.ai.jev``'s own docstring already states for the
-    dividend-attribution caller.
-    """
-    if jev_client is None:
-        return None, None
-
-    state = {"remarks": remarks_raw, "symbol": symbol, "new_isin": new_isin}
-    instructions = (
-        "An NSE 'Change in ISIN' circular's Remarks field describes why a listed "
-        "company's ISIN changed. Given `remarks`, which kind of event does it describe?"
-    )
-    try:
-        answer = jev_client.choose(state, instructions, _REASON_CRITERIA)
-    except (JevUnavailable, JevResponseError):
-        return None, None
-
-    if answer.confidence < _JEV_CONFIDENCE_FLOOR:
-        return None, None
-    return answer.choice, answer.confidence
-

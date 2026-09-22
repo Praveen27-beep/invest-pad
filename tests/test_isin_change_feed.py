@@ -1,4 +1,4 @@
-"""NSE ISIN-change circular parser, throttle, backoff and Jev classifier --
+"""NSE ISIN-change circular parser, throttle and backoff --
 app.ingest.isin_change_feed.
 
 The three circular texts below are real, confirmed-live extractions (pdfplumber), not
@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import urllib.error
 from datetime import date
-from decimal import Decimal
 
 import pytest
 from app.ingest.isin_change_feed import (
@@ -25,7 +24,6 @@ from app.ingest.isin_change_feed import (
     NseCircularListSource,
     _is_transient,
     _TokenBucket,
-    classify_isin_change_reason,
     parse_circular_listing,
     parse_isin_change_circular,
 )
@@ -128,6 +126,28 @@ def test_wrapped_remarks_cell_is_reassembled_in_reading_order() -> None:
 def test_malformed_circular_raises_format_error_not_a_bare_exception(mangled: str) -> None:
     with pytest.raises(IsinChangeCircularFormatError):
         parse_isin_change_circular(mangled)
+
+
+def test_a_non_equity_circular_says_so_instead_of_naming_the_regex() -> None:
+    """A debt-series ISIN change has no equity trading symbol to put in its "Sub:" line,
+    so it fails this guard every time and correctly creates nothing. What it lands in
+    ``isin_change_circular.skip_reason`` is the message asserted here, and the reason that
+    wording is worth a test is that the reviewer of a queue row is a human months later:
+    "missing the symbol in the Sub: line" read as a parser bug, when it was the system
+    working. Still a parse_failed, still in the queue -- the same absence is what a real
+    equity circular's format change would look like, so the message names the likely cause
+    without deciding it."""
+    with pytest.raises(IsinChangeCircularFormatError) as exc:
+        parse_isin_change_circular(
+            "Sub: Change in ISIN - Some Issuer Limited 9.25% NCD Series I\n"
+            "The ISIN shall be changed w.e.f. July 29, 2026\n"
+        )
+
+    message = str(exc.value)
+    assert "non-equity" in message
+    assert "skips by design" in message
+    # The escape hatch for the case this is NOT: a real equity circular whose format moved.
+    assert "format has changed" in message
 
 
 # --------------------------------------------------------------------------------------
@@ -353,66 +373,3 @@ def test_non_transient_failure_on_the_list_call_itself_is_not_retried() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Jev classification -- same failure posture as corporate_action_feed's caller.
-# --------------------------------------------------------------------------------------
-
-
-class _FakeChoiceAnswer:
-    def __init__(self, choice: str, confidence: Decimal) -> None:
-        self.choice = choice
-        self.confidence = confidence
-
-
-class _FakeJevClient:
-    def __init__(self, choice: str, confidence: str) -> None:
-        self._choice = choice
-        self._confidence = Decimal(confidence)
-
-    def choose(self, state, instructions, criteria):
-        return _FakeChoiceAnswer(self._choice, self._confidence)
-
-
-def test_jev_classification_is_used_when_confident() -> None:
-    client = _FakeJevClient("SUB_DIVISION", "0.9")
-    reason, confidence = classify_isin_change_reason(
-        client, "Sub-Division from Rs. 10/- to Rs. 2/-", "ORIANA", "INE0OUT01027"
-    )
-    assert reason == "SUB_DIVISION"
-    assert confidence == Decimal("0.9")
-
-
-def test_jev_classification_below_floor_returns_none() -> None:
-    client = _FakeJevClient("SUB_DIVISION", "0.2")
-    reason, confidence = classify_isin_change_reason(
-        client, "ambiguous text", "FOO", "INE0000000001"
-    )
-    assert reason is None
-    assert confidence is None
-
-
-def test_jev_classification_with_no_client_returns_none() -> None:
-    reason, confidence = classify_isin_change_reason(
-        None, "Sub-Division from Rs. 10/- to Rs. 2/-", "ORIANA", "INE0OUT01027"
-    )
-    assert reason is None
-    assert confidence is None
-
-
-class _RaisingJevClient:
-    def choose(self, state, instructions, criteria):
-        raise RuntimeError("should never propagate past classify_isin_change_reason")
-
-
-def test_jev_classification_never_raises() -> None:
-    """A transport failure degrades to (None, None), never an exception -- the alias
-    write and the circular record must not depend on Jev succeeding."""
-    from app.ai.jev import JevResponseError
-
-    class _FailingClient:
-        def choose(self, state, instructions, criteria):
-            raise JevResponseError("boom")
-
-    reason, confidence = classify_isin_change_reason(
-        _FailingClient(), "text", "FOO", "INE0000000001"
-    )
-    assert (reason, confidence) == (None, None)
