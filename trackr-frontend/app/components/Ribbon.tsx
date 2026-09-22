@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTheme } from "@/lib/theme-context";
 import { useAuth } from "@/lib/auth-context";
 import { useAIChat } from "@/lib/ai-chat-context";
 import { Icon, IconButton } from "./ds";
@@ -24,7 +23,6 @@ export function Ribbon({ pathname }: { pathname: string }) {
   const [mapOpen, setMapOpen] = useState(false);
   const [gmailOpen, setGmailOpen] = useState(false);
   const router = useRouter();
-  const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { openChat } = useAIChat();
   const here = locate(pathname);
@@ -148,11 +146,6 @@ export function Ribbon({ pathname }: { pathname: string }) {
           <IconButton name="mail" label="Set up Gmail auto-forwarding" onClick={() => setGmailOpen(true)} />
           <IconButton name="reconcile" label="Reconcile against a statement" onClick={() => router.push("/reconcile")} />
           <IconButton name="sparkles" label="Ask AI" onClick={() => openChat()} />
-          <IconButton
-            name={theme === "dark" ? "moon" : "sun"}
-            label="Switch theme"
-            onClick={toggleTheme}
-          />
           <AccountMenu initial={initial} />
         </span>
       </nav>

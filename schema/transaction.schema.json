@@ -74,8 +74,8 @@
     },
     "source": {
       "type": "string",
-      "enum": ["MANUAL", "CSV", "TRADEBOOK", "CONTRACT_NOTE", "EMAIL", "CORP_ACTION", "CAS"],
-      "description": "Which adapter produced this row. The engine must never branch on it."
+      "enum": ["MANUAL", "CSV", "TRADEBOOK", "CONTRACT_NOTE", "EMAIL", "CORP_ACTION", "CAS", "FUNDS_STATEMENT"],
+      "description": "Which adapter produced this row. The engine must never branch on it. FUNDS_STATEMENT is a broker's own funds/ledger statement -- the only routinely available document that is evidence of PAYMENT rather than of declaration, and so the only automated path to a RECEIVED dividend (docs/ARCHITECTURE_INVARIANTS.md invariant 18). Kept distinct from CORP_ACTION, which is the declaration side, and from MANUAL, a human's assertion."
     },
     "source_ref": {
       "type": "string",

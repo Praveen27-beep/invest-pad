@@ -20,6 +20,12 @@ interface DataTableProps<R extends { id?: string | number }> {
   sortDir?: "asc" | "desc";
   onSort?: (key: string) => void;
   emptyMessage?: ReactNode;
+  /** Per-row overrides — a pinned reference row that has to read as a different KIND of
+   *  row than the ones it is there to be compared against. */
+  rowStyle?: (row: R, index: number) => CSSProperties | undefined;
+  /** Per-cell overrides, keyed by column. Written for heat-tinted figures: the tint has
+   *  to fill the cell, so it cannot be applied by the `render` that returns its content. */
+  cellStyle?: (row: R, column: DataColumn<R>) => CSSProperties | undefined;
   style?: CSSProperties;
 }
 
@@ -36,6 +42,8 @@ export function DataTable<R extends { id?: string | number; [key: string]: unkno
   sortDir = "desc",
   onSort,
   emptyMessage = "Nothing to show yet.",
+  rowStyle,
+  cellStyle,
   style,
 }: DataTableProps<R>) {
   const pad = dense ? "8px" : "12px";
@@ -105,7 +113,10 @@ export function DataTable<R extends { id?: string | number; [key: string]: unkno
             rows.map((r, i) => (
               <tr
                 key={r.id ?? i}
-                style={{ borderBottom: i === rows.length - 1 ? "none" : "1px solid var(--ink-50)" }}
+                style={{
+                  borderBottom: i === rows.length - 1 ? "none" : "1px solid var(--ink-50)",
+                  ...rowStyle?.(r, i),
+                }}
               >
                 {columns.map((c) => (
                   <td
@@ -116,6 +127,7 @@ export function DataTable<R extends { id?: string | number; [key: string]: unkno
                       textAlign: c.align === "right" ? "right" : "left",
                       color: "var(--text-secondary)",
                       verticalAlign: "top",
+                      ...cellStyle?.(r, c),
                     }}
                   >
                     {c.render ? c.render(r) : (r[c.key] as ReactNode)}

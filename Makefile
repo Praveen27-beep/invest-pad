@@ -3,7 +3,7 @@ PYTHON ?= $(shell if [ -f $(VENV)/bin/python3.12 ]; then echo $(VENV)/bin/python
 PYTEST ?= $(shell if [ -f $(VENV)/bin/pytest ]; then echo $(VENV)/bin/pytest; else command -v pytest 2>/dev/null; fi)
 RUFF ?= $(shell if [ -f $(VENV)/bin/ruff ]; then echo $(VENV)/bin/ruff; else command -v ruff 2>/dev/null; fi)
 
-.PHONY: test test-engine test-contribution test-tax test-golden test-demo-fixture lint fmt install dev seed-demo install-hooks
+.PHONY: test test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint fmt install dev seed-demo install-hooks
 
 # Runtime code lives under trackr-backend/app/ (see docs/structure_revamp_plan.md).
 # trackr-backend is installed editable into the same venv as this root package's dev
@@ -13,7 +13,7 @@ install:
 	pip install -e ".[dev]"
 	pip install -e "trackr-backend[dev]"
 
-test: test-engine test-contribution test-tax test-golden test-demo-fixture lint
+test: test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint
 
 test-engine:          ## hand-computed cases from ENGINE_SPEC.md
 	$(PYTEST) tests/test_engine_cases.py -v
@@ -34,11 +34,42 @@ test-golden:          ## the real 324-trade portfolio
 test-demo-fixture:    ## fixtures/demo_portfolio.json replayed through the real engine
 	$(PYTEST) tests/test_demo_fixture.py -v
 
+# app/analytics/ had NO tests at all until these -- including verdict.py, the module its
+# own docstring calls "THE HIGHEST-RISK COMPONENT", and whose line 37 claimed the weights
+# summing to 1.0 was "asserted by the tests". Wired into `test` rather than left to
+# `pytest tests/` because CLAUDE.md is explicit that those are different signals, and a
+# published letter grade belongs behind the acceptance gate.
+test-analytics:       ## the health grade, the insight rules, the derived block, behaviour
+	$(PYTEST) tests/test_analytics_verdict.py tests/test_analytics_derived.py \
+	       tests/test_analytics_behaviour.py -v
+
+# The fact pack is what a generated sentence is allowed to know. Its acceptance test is
+# that it can still supply every number the hand-written prose used to quote -- if it
+# cannot, a generated sentence would have to omit the figure or invent it, and the
+# second is the failure the whole package exists to prevent. That belongs behind the
+# gate, not in the wider suite.
+test-narrative:       ## the fact pack, the relation vocabulary, the verifier, the cache key
+	$(PYTEST) tests/test_narrative_factpack.py tests/test_narrative_select_egress.py \
+	       tests/test_narrative_verify.py tests/test_narrative_digest_client_chat.py -v
+
 lint:                 ## the architecture rules, enforced
 	@echo "checking: no float in app/engine/"
 	@! grep -rn "float(" trackr-backend/app/engine/ --include="*.py" || (echo "FAIL: float in engine" && exit 1)
 	@echo "checking: engine does not import ingest, auth, routers, schemas or db"
 	@! grep -rnE "^[[:space:]]*(from|import) app\.(ingest|db|storage|prices|auth|routers|schemas)\b" trackr-backend/app/engine/ --include="*.py" || (echo "FAIL: layer violation" && exit 1)
+	@echo "checking: analytics layer does not import db, routers, ingest or a framework"
+	@! grep -rnE "^[[:space:]]*(from|import) (app\.(db|routers|ingest|schemas|auth|storage)|fastapi|pydantic)\b" trackr-backend/app/analytics/ --include="*.py" || (echo "FAIL: analytics layer violation" && exit 1)
+	@echo "checking: narrative layer does not import db, routers, ingest or a framework"
+	@! grep -rnE "^[[:space:]]*(from|import) (app\.(db|routers|ingest|schemas|auth|storage)|fastapi|pydantic)\b" trackr-backend/app/narrative/ --include="*.py" || (echo "FAIL: narrative layer violation" && exit 1)
+# THE HALF THAT DECIDES WHAT IS TRUE MUST NOT BE ABLE TO CALL A NETWORK. Same split as
+# app/ingest/llm_extract.py (prompts, talks to a model) versus app/ingest/llm_verify.py
+# (proves, no network, no model) -- and the reason that split is what makes an LLM
+# feature trustworthy here at all. app/narrative/client.py is the one named exception,
+# exactly as gmail_oauth.py is for the credential rule above: it is the only file
+# permitted to reach a provider, so every verifier and renderer beside it is physically
+# incapable of doing so rather than merely not doing so today.
+	@echo "checking: only app/narrative/client.py may reach a model"
+	@! grep -rnE "^[[:space:]]*(from|import) app\.ai\b" trackr-backend/app/narrative/ --include="*.py" --exclude=client.py || (echo "FAIL: narrative must not import app.ai outside client.py" && exit 1)
 	@echo "checking: no credential storage"
 # NARROW, NAMED EXCEPTION: app/ingest/gmail_oauth.py only. That module handles a
 # revocable, Google-mediated OAuth grant over the DEVELOPER'S OWN mailbox - read-only, no
@@ -84,7 +115,13 @@ lint:                 ## the architecture rules, enforced
 # posture as the Postgres-backed test suite skipping when initdb/pg_ctl are absent -- and
 # fails loudly when a real, reachable database is missing a migration that exists on disk.
 	@echo "checking: schema migrations match the configured database"
-	@export $$(grep -v '^\s*#' trackr-backend/.env 2>/dev/null | grep -v '^\s*$$' | xargs) >/dev/null 2>&1; 		$(PYTHON) scripts/check_migration_drift.py
+# Only DATABASE_URL is read across, and it is extracted rather than exported wholesale.
+# `export $$(... | xargs)` died on the FIRST .env value containing a space or a '#' --
+# it splits mid-value and hands sh a syntax error, which killed the entire gate with no
+# output at all. One mistyped key in a local, gitignored file must not be able to
+# silently disable an architecture check for everyone.
+	@DATABASE_URL="$$(sed -n 's/^DATABASE_URL=//p' trackr-backend/.env 2>/dev/null | head -1)" \
+		$(PYTHON) scripts/check_migration_drift.py
 	$(RUFF) check .
 
 fmt:

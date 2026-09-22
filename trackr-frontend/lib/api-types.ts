@@ -779,3 +779,287 @@ export interface AskAIRequest {
 export interface AskAIResponse {
   reply: string;
 }
+
+// ---------------------------------------------------------------------------
+// Analytics — app/schemas/analytics.py
+//
+// Money is `string`, statistics are `number`. That split is the whole convention:
+// a rupee figure crossing as a JSON number is an IEEE double by the time the browser
+// parses it and the paise are gone, while a correlation coefficient is not money and
+// never becomes money.
+//
+// EVERY ratio is `| null` and a null means UNKNOWN, never zero. Rendering a missing
+// ROE as 0 would put a real company at the bottom of a quality ranking for a data gap.
+// ---------------------------------------------------------------------------
+
+export interface AnalyticsCoverage {
+  priced_pct: number;
+  pe_pct: number;
+  pb_pct: number;
+  roe_pct: number;
+  debt_to_equity_pct: number;
+  interest_cover_pct: number;
+  sector_pct: number;
+  /** Share of weight whose ROE exists only because we derived it from the annual
+   *  statements — the feed returns null for most Indian scrips. */
+  roe_derived_weight_pct: number;
+  price_history_pct: number;
+}
+
+export interface AnalyticsKpi {
+  invested: string;
+  market_value: string;
+  unrealised: string;
+  unrealised_pct: number | null;
+  realised_to_date?: string | null;
+  xirr_all?: number | null;
+  xirr_holdings?: number | null;
+  day_change?: string | null;
+  day_change_pct?: number | null;
+  bench_day_change_pct?: number | null;
+}
+
+export interface HealthComponent {
+  key: string;
+  label: string;
+  weight: number;
+  score: number | null;
+  points: number;
+  /**
+   * The numbers this score was computed from, keyed by name. Replaces a `detail`
+   * sentence: a sentence cannot be compared, ranked or thresholded, so every consumer
+   * that wanted the figure inside it had to parse English back out.
+   *
+   * A `null` VALUE means the input could not be measured. It must render as "no reading",
+   * never as zero.
+   */
+  evidence: Record<string, number | null>;
+}
+
+export interface AnalyticsHealth {
+  score: number;
+  grade: string;
+  components: HealthComponent[];
+  drivers: string[];
+  bands: [string, number][];
+  rule_version: string;
+}
+
+export interface FactorScore {
+  score: number | null;
+  universe: string;
+  universe_size: number;
+  coverage_pct: number;
+}
+
+export interface RiskWindow {
+  observations: number;
+  cum_return: number | null;
+  cagr: number | null;
+  volatility: number | null;
+  sharpe: number | null;
+  sortino: number | null;
+  beta: number | null;
+  var_1d_95: number | null;
+  var_1d_99: number | null;
+  cvar_1d_95: number | null;
+  max_drawdown: number | null;
+  bench_cum_return: number | null;
+  bench_cagr: number | null;
+  bench_volatility: number | null;
+  bench_sharpe: number | null;
+  risk_free_rate: number;
+  var_method: string;
+  sortino_target: string;
+  var_1d_95_value: string | null;
+}
+
+export interface AllocationRow {
+  label: string;
+  value: string;
+  pct: number;
+}
+
+export interface AnalyticsCorrelation {
+  symbols: string[];
+  matrix: (number | null)[][];
+  average: number | null;
+  tightest: [string, string, number] | null;
+  loosest: [string, string, number] | null;
+}
+
+export interface AnalyticsPosition {
+  isin: string;
+  symbol: string | null;
+  name: string | null;
+  quantity: string;
+  invested: string;
+  avg_cost: string | null;
+  last_price: string | null;
+  market_value: string | null;
+  unrealised: string | null;
+  unrealised_pct: number | null;
+  weight: number | null;
+  sector: string | null;
+  market_cap_bucket: string | null;
+  capital_state: string | null;
+  trend: string | null;
+  pe: number | null;
+  pb: number | null;
+  roe: number | null;
+  net_margin: number | null;
+  debt_to_equity: number | null;
+  interest_cover: number | null;
+  dividend_yield: number | null;
+  sales_growth_1y: number | null;
+  profit_growth_1y: number | null;
+  roe_basis: string | null;
+  fundamentals_as_of: string | null;
+  factors: Record<string, number | null>;
+  returns: Record<string, number | null>;
+}
+
+export interface AnalyticsInsight {
+  key: string;
+  title: string;
+  severity: string;
+  /** Every number the rule weighed, including thresholds that did NOT fire. */
+  evidence: Record<string, number | null>;
+  /** The securities the chip is about, in the order the rule ranked them. */
+  subjects: string[];
+  value: number | null;
+  threshold: number | null;
+  rule_version: string;
+}
+
+export interface FundamentalAggregate {
+  value: number | null;
+  excluded_weight_pct: number;
+}
+
+export interface AnalyticsFundamentals {
+  pe: FundamentalAggregate;
+  pb: FundamentalAggregate;
+  dividend_yield: FundamentalAggregate;
+  benchmark: Record<string, number | null>;
+  benchmark_source: string | null;
+}
+
+export interface GrowthSeries {
+  dates: string[];
+  portfolio: string[];
+  benchmark: string[] | null;
+  /** "fixed_weight_backtest" — today's weights applied backwards. NOT realised history. */
+  basis: string;
+}
+
+export interface UnresolvedHolding {
+  isin: string;
+  symbol: string | null;
+  name: string | null;
+  quantity: string;
+  invested: string;
+  reason: string;
+}
+
+/**
+ * One piece of a generated sentence.
+ *
+ * A `text` token is prose the model wrote and a verifier confirmed contains no digit and
+ * no quantity word. A `fact` token is a figure the model never saw: it carries the
+ * computed value, its unit and the precision to render at, and the BROWSER formats it
+ * through app/analytics/format.ts. The server never sends a finished sentence — one
+ * formatter, and <Figure> cannot mask a baked string.
+ */
+export interface NarrativeToken {
+  t: "text" | "fact";
+  v?: string;
+  id?: string;
+  value?: string | number | null;
+  unit?: "money" | "fraction" | "percent" | "ratio" | "count" | "enum" | "label";
+  digits?: number;
+}
+
+export interface NarrativeCardDef {
+  id: string;
+  title: string;
+  body: string;
+}
+
+export interface NarrativeStatement {
+  relation: string;
+  tokens: NarrativeToken[];
+  /** Every fact the statement rests on, as the claim itself declared. */
+  cites: string[];
+  card?: NarrativeCardDef | null;
+}
+
+export interface NarrativeResponse {
+  as_of: string;
+  surface: string;
+  /**
+   * `ready` — statements below. `disabled` — off on this deployment. `not_generated` —
+   * nothing written for this exact set of figures yet, the normal state between a price
+   * move and the next run. Three states, because "nothing to say" and "not looked" are
+   * different claims.
+   */
+  state: "ready" | "disabled" | "not_generated";
+  generated_at: string | null;
+  statements: NarrativeStatement[];
+  /** Verifier rule → claims it refused on this render. */
+  rejected: Record<string, number>;
+  compared_with: string | null;
+}
+
+export interface ValuationLensDerived {
+  label: string;
+  x_field: string;
+  y_field: string;
+  x_average: number | null;
+  y_average: number | null;
+  /** Keyed by the lens's OWN status names — "Attractive" and "Efficient" differ. */
+  status_counts: Record<string, number>;
+  /** Holdings with BOTH axes known, and that as a share of all positions. */
+  plotted: number;
+  plottable_pct: number;
+}
+
+/**
+ * Scalars this screen used to compute for itself.
+ *
+ * Read these; do not re-derive them. The browser's own effective-holdings formula agreed
+ * with the server's only while the weights summed to 100, a precondition neither side
+ * stated — see DerivedOut in trackr-backend/app/schemas/analytics.py.
+ */
+export interface AnalyticsDerived {
+  effective_holdings: number | null;
+  concentration_target: number;
+  position_count: number;
+  vol_ratio_1y: number | null;
+  /** Signed money. Switch wording on the sign; never describe a negative as "more". */
+  growth_delta_vs_benchmark: string | null;
+  capital_state_pct: Record<string, number>;
+  capital_state_total: string;
+  lenses: Record<string, ValuationLensDerived>;
+}
+
+export interface AnalyticsResponse {
+  as_of: string;
+  generated_at: string;
+  benchmark: string;
+  coverage: AnalyticsCoverage;
+  sources: Record<string, string>;
+  kpi: AnalyticsKpi;
+  health: AnalyticsHealth;
+  factors: Record<string, FactorScore>;
+  risk: Record<string, RiskWindow>;
+  allocation: { sector: AllocationRow[]; market_cap: AllocationRow[] };
+  correlation: AnalyticsCorrelation;
+  fundamentals: AnalyticsFundamentals;
+  capital_state: Record<string, string>;
+  derived: AnalyticsDerived;
+  growth_of_100k: GrowthSeries | null;
+  positions: AnalyticsPosition[];
+  insights: AnalyticsInsight[];
+  unresolved: UnresolvedHolding[];
+}

@@ -14,7 +14,7 @@ class ChatMessageIn(BaseModel):
 
 class AskAIRequest(BaseModel):
     #: Full turn history, oldest first -- this endpoint is stateless, so the caller
-    #: resends it every time (see app/ai/gemini.py's docstring). Capped in the router,
+    #: resends it every time -- the server holds no conversation. Capped in the router,
     #: not here, so the 422 for "too many turns" can say exactly how many came in.
     messages: list[ChatMessageIn]
     #: Optional structured context the frontend already has on screen -- e.g. the ISIN,

@@ -18,6 +18,21 @@ const AXIS_PADDING = 0.1;
 /** How many gridlines the axis aims for. The nice-number step lands near this, not on it. */
 const TARGET_TICKS = 5;
 
+/**
+ * Ceiling on the number of x-axis labels DRAWN, whatever the series length.
+ *
+ * THINNING. Every data point used to get its own tick and its own label. On the monthly
+ * snapshot series that reads fine — nine points, nine labels. On the analytics growth
+ * series it is a year of daily closes: ~250 ticks under the axis and ~250 copies of
+ * "2026-09-22" overprinting each other into a grey smear, which is the whole reason that
+ * chart looked broken next to the same chart in the demo.
+ *
+ * Only the LABELS are thinned. Every point is still plotted, so the line keeps its shape
+ * and a gap is still a gap — downsampling the data to fit the axis would change the
+ * picture, which is a different and much worse fix.
+ */
+const MAX_X_LABELS = 9;
+
 /** A series that never moves has no span to scale to, so the axis is given one: this
  *  fraction of the value itself, which puts a flat line through the middle of a
  *  plausible-looking axis instead of dividing by zero. */
@@ -102,6 +117,9 @@ export function VintageLinePlot({
   series,
   height = 300,
   formatTick = (v: string) => v,
+  formatLabel = (v: string) => v,
+  maxXLabels = MAX_X_LABELS,
+  baseline,
   gapNote,
   band: wantsBand = false,
 }: {
@@ -112,6 +130,15 @@ export function VintageLinePlot({
    *  caller only ever appends a unit -- it never has to guess how many decimals a step
    *  of 0.25 needs, nor defend against 6.500000000000001. */
   formatTick?: (v: string) => ReactNode;
+  /** Applied to each x-axis label that survives thinning. Separate from `formatTick`,
+   *  which is the Y axis: a daily series wants "2026-09" on x and "₹1,12,400" on y, and
+   *  one formatter cannot be both. */
+  formatLabel?: (v: string) => string;
+  /** Ceiling on drawn x-axis labels — see THINNING above. */
+  maxXLabels?: number;
+  /** A dashed horizontal reference line, e.g. the ₹1,00,000 a growth series starts from.
+   *  Drawn under the series and labelled at the right margin. */
+  baseline?: { value: number; label?: string };
   gapNote?: string;
   /** Hatch the area between the first two series. OFF by default, and opt-in rather
    *  than positional on purpose: the band asserts a specific relationship between those
@@ -130,11 +157,28 @@ export function VintageLinePlot({
   const flat = series.flatMap((s) => s.points).filter((v): v is number => v != null);
   if (flat.length === 0 || labels.length < 2) return null;
 
-  const { lo, hi, ticks, decimals } = scaleFor(Math.min(...flat), Math.max(...flat));
+  // The baseline joins the extent it is drawn against. Left out, a ₹1,00,000 reference
+  // under a series that never dips below ₹1,10,000 would be clipped off the bottom of
+  // the plot -- present in the code, invisible on the screen.
+  const extent = baseline ? [...flat, baseline.value] : flat;
+  const { lo, hi, ticks, decimals } = scaleFor(Math.min(...extent), Math.max(...extent));
   const span = hi - lo;
 
   const x = (i: number) => PL + (i * (W - PL - PR)) / (labels.length - 1);
   const y = (v: number) => PT + ((hi - v) / span) * (height - PT - PB);
+
+  // Evenly spaced through the series and ALWAYS including both ends, because the first
+  // and last dates are the two a reader looks for. Rounding the stride means the gaps
+  // can differ by one index, which is invisible; dropping the last label is not.
+  const labelStride = Math.max(1, Math.ceil((labels.length - 1) / Math.max(1, maxXLabels - 1)));
+  const xTicks = (
+    labels.length <= maxXLabels
+      ? labels.map((_, i) => i)
+      : [
+          ...Array.from({ length: Math.floor((labels.length - 1) / labelStride) }, (_, k) => k * labelStride),
+          labels.length - 1,
+        ]
+  ).map((i) => ({ i, text: labels[i] ?? "" }));
 
   /** Contiguous runs of non-null indices — one path segment each. */
   const runs = (pts: (number | null)[]): number[][] => {
@@ -221,9 +265,37 @@ export function VintageLinePlot({
         <path key={i} d={dPath} fill="url(#ledger-hatch)" />
       ))}
 
+      {baseline && baseline.value >= lo && baseline.value <= hi && (
+        <g>
+          <line
+            x1={PL}
+            y1={y(baseline.value)}
+            x2={W - PR}
+            y2={y(baseline.value)}
+            stroke="var(--text-tertiary)"
+            strokeWidth="1"
+            strokeDasharray="3 3"
+          />
+          {baseline.label && (
+            <text
+              x={W - PR + 6}
+              y={y(baseline.value) + 3.5}
+              style={{
+                fontFamily: "var(--font-label)",
+                fontSize: 9.5,
+                letterSpacing: ".06em",
+                fill: "var(--text-tertiary)",
+              }}
+            >
+              {baseline.label}
+            </text>
+          )}
+        </g>
+      )}
+
       <line x1={PL} y1={height - PB} x2={W - PR} y2={height - PB} stroke="var(--ledger-ink)" strokeWidth="1" />
-      {labels.map((l, i) => (
-        <g key={l + i}>
+      {xTicks.map(({ i, text }) => (
+        <g key={text + i}>
           <line
             x1={x(i)}
             y1={height - PB}
@@ -245,7 +317,7 @@ export function VintageLinePlot({
               fill: "var(--ledger-ink-faint)",
             }}
           >
-            {l}
+            {formatLabel(text)}
           </text>
         </g>
       ))}

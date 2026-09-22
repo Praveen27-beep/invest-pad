@@ -10,7 +10,7 @@ import type { CSSProperties } from "react";
  * rather than "close on a 4px grid".
  */
 
-/** Ink-to-brass allocation ramp. Seven steps; weight reads as depth of colour. */
+/** Ink-to-brass allocation ramp. Nine steps; weight reads as depth of colour. */
 export const ALLOC_RAMP = [
   "var(--alloc-1)",
   "var(--alloc-2)",
@@ -19,6 +19,8 @@ export const ALLOC_RAMP = [
   "var(--alloc-5)",
   "var(--alloc-6)",
   "var(--alloc-7)",
+  "var(--alloc-8)",
+  "var(--alloc-9)",
 ] as const;
 
 /** Nine categorical steps, ordered so the first four read apart at donut-slice size. */

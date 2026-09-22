@@ -71,6 +71,53 @@ def latest_prices(
         return {row[0]: row[1] for row in cur.fetchall()}
 
 
+def price_series(
+    conn: Any,
+    isins: Sequence[str],
+    start: date,
+    end: date,
+) -> dict[str, list[tuple[date, Decimal]]]:
+    """Every stored close per ISIN in ``[start, end]``, ascending by date.
+
+    The analytics layer needs a SERIES, not a point: volatility, beta, correlation and
+    12-1 momentum are all functions of a return path. Every other reader in this module
+    answers "what is it worth now", which is a different question with a different
+    staleness rule -- hence a separate function rather than a parameter on ``latest_prices``.
+
+    ONE bulk range scan, resolved in Python, following the pattern
+    ``app.db.index_levels.get_index_levels`` documents: it avoids the round-trip-per-date
+    loop that ``app.routers.analytical._run_snapshots`` is forced into, which would be
+    ~1,250 queries for a five-year window. The existing ``price_isin_date_desc_idx``
+    ``(isin, price_date DESC)`` serves this directly; no new index is needed.
+
+    NO STALENESS WINDOW AND NO CARRY-FORWARD, deliberately. A gap here is information:
+    ``price_absent`` says a scrip genuinely did not trade that day, while a date missing
+    from both tables was simply never fetched. Filling either one would manufacture a
+    zero-return day and quietly understate volatility. The caller aligns the series it
+    got and reports coverage on what it did not.
+
+    An ISIN with no rows in the window is absent from the result rather than mapped to an
+    empty list -- "we have nothing for this security" and "this security has an empty
+    history" are the same fact here, and one representation is enough.
+    """
+    if not isins or start > end:
+        return {}
+    out: dict[str, list[tuple[date, Decimal]]] = {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT isin, price_date, close
+            FROM price
+            WHERE isin = ANY(%s) AND price_date BETWEEN %s AND %s
+            ORDER BY isin, price_date
+            """,
+            (list(isins), start, end),
+        )
+        for isin, price_date, close in cur.fetchall():
+            out.setdefault(isin, []).append((price_date, close))
+    return out
+
+
 def prices_on_date(conn: Any, isins: list[str], price_date: date) -> dict[str, Decimal]:
     """Closes stored for EXACTLY ``price_date`` -- no carry-forward, no staleness window.
 

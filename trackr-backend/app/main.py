@@ -56,6 +56,7 @@ from app.ingest.webhook_providers import (
 from app.rate_limit import limiter
 from app.routers import (
     analytical,
+    analytics,
     assistant,
     auth,
     brokers,
@@ -67,6 +68,7 @@ from app.routers import (
     holdings,
     ingest,
     investors,
+    narrative,
     privacy,
     reconcile,
     security_alias,
@@ -536,6 +538,7 @@ app.include_router(holdings.router)
 app.include_router(transactions.router)
 app.include_router(ingest.router)
 app.include_router(analytical.router)
+app.include_router(analytics.router)
 app.include_router(privacy.router)
 app.include_router(reconcile.router)
 app.include_router(corporate_actions.router)
@@ -546,6 +549,8 @@ app.include_router(demerger_watch.ops_router)
 app.include_router(grievance.router)
 app.include_router(consent.router)
 app.include_router(assistant.router)
+app.include_router(narrative.router)
+app.include_router(narrative.ops_router)
 
 
 @app.get("/health")

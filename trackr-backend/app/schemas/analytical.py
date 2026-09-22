@@ -76,6 +76,19 @@ class ContributionResponse(BaseModel):
     contributions: list[ContributionOut]
 
 
+class SymbolChangeOut(BaseModel):
+    """A trading symbol that moved under an UNCHANGED ISIN.
+
+    Reported rather than left in the logs because it is a corporate-action signal: NSE
+    renaming a scrip usually means something happened to the company. Distinct from an
+    ISIN change (``security_alias``) -- here the key did not move, only the label.
+    """
+
+    isin: str
+    old_symbol: str | None
+    new_symbol: str
+
+
 class PriceRefreshResponse(BaseModel):
     prices_stored: int
     missing_isins: list[str]
@@ -89,6 +102,10 @@ class PriceRefreshResponse(BaseModel):
     #: bhavcopy, and failing the whole price refresh over it would be the tail wagging
     #: the dog. Present and non-empty is the signal to go and look.
     index_failures: dict[str, str] = {}
+    #: Empty on almost every run, which is the point. A non-empty list means a scrip was
+    #: renamed today and every ticker-keyed lookup built from the old symbol -- Yahoo
+    #: quotes, fundamentals -- was about to break silently.
+    symbol_changes: list[SymbolChangeOut] = []
 
 
 class SnapshotOut(BaseModel):

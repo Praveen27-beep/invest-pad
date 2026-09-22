@@ -26,6 +26,10 @@ export const NAV_GROUPS: NavGroup[] = [
     group: "Portfolio",
     items: [
       { href: "/", label: "Dashboard", icon: "dashboard" },
+      // Analytics sits immediately after the Dashboard because it answers the next
+      // question the Dashboard raises: the Dashboard says what the portfolio is
+      // worth, this says what it is made of and how it behaves.
+      { href: "/analytics", label: "Analytics", icon: "performance" },
       { href: "/holdings", label: "Holdings", icon: "holdings" },
       // Performance is NOT listed, deliberately (2026-09-08). Every figure it showed —
       // XIRR, benchmark comparison, absolute return — is already on the Dashboard, and

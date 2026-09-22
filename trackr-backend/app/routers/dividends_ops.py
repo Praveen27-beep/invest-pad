@@ -104,3 +104,28 @@ def discover_dividends_yfinance(
     window structurally cannot reach."""
     result = de.discover_dividends_from_yfinance(conn, isins=isin)
     return {**_normalise(result), "errors": result.get("errors", {})}
+
+
+@ops_router.get(
+    "/discover-yfinance-cron",
+    response_model=DiscoverDividendsYfinanceOut,
+    dependencies=[Depends(require_cron_secret)],
+)
+def discover_dividends_yfinance_cron(conn: Any = Depends(get_conn)) -> dict[str, Any]:
+    """Same sweep, reachable by Vercel Cron: GET, gated by ``CRON_SECRET``.
+
+    WEEKLY, never daily, and the distinction is the whole reason this is a separate
+    route rather than another entry pointed at ``/refresh-cron``. A ticker's dividend
+    HISTORY does not change day to day, so a daily sweep would spend 46 Yahoo calls to
+    re-read the same answer; the daily job that does need to run is ``/refresh-cron``,
+    which reads NSE's notices for new declarations. What this catches that a daily feed
+    structurally cannot is a NEWLY HELD security -- the moment an import adds an ISIN,
+    its entire dividend history is missing from ``dividend_event`` and no rolling NSE
+    window reaches back far enough to supply it. ``held_isins`` is re-read on every run,
+    so a security bought this week is swept next week without anyone remembering to.
+
+    Sharing ``security-alias``'s weekly slot (Sunday) rather than a weekday one: this is
+    reference-data maintenance, not a trading-day job, and nothing downstream of it is
+    waiting on a same-day answer."""
+    result = de.discover_dividends_from_yfinance(conn, isins=None)
+    return {**_normalise(result), "errors": result.get("errors", {})}

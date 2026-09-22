@@ -82,6 +82,12 @@ class Source(StrEnum):
     EMAIL = "EMAIL"
     CORP_ACTION = "CORP_ACTION"
     CAS = "CAS"
+    # A broker's own funds/ledger statement -- the only routinely available document that
+    # is EVIDENCE OF PAYMENT rather than of declaration, and therefore the only automated
+    # path from a declared dividend to a REALISED one. Kept distinct from CORP_ACTION
+    # (which is the declaration side) and from MANUAL (a human's assertion) because
+    # invariant 18 turns on exactly that distinction. See migration 033.
+    FUNDS_STATEMENT = "FUNDS_STATEMENT"
 
 
 class Term(StrEnum):

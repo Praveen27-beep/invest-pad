@@ -79,7 +79,7 @@ export function AIChatDrawer() {
       const message =
         err instanceof ApiError
           ? err.status === 503
-            ? "The AI assistant isn't set up yet. Ask whoever runs this Trackr+ instance to add a Gemini API key."
+            ? "The AI assistant isn't set up yet. Ask whoever runs this Trackr+ instance to enable INSIGHT_GENERATION_ENABLED."
             : err.message
           : "Something went wrong reaching the assistant.";
       setMessages((cur) => [...cur, { role: "assistant", content: message, error: true }]);

@@ -120,6 +120,11 @@
   --alloc-5: #a67c31;
   --alloc-6: #cf9d42;
   --alloc-7: #b98a6b;
+  /* 8 and 9 continue the ramp past brass into bleached brass. A sector donut routinely
+     carries ten groups; stopping at seven made the eighth sector the same colour as the
+     first, which reads as one slice split in two. */
+  --alloc-8: #d8c193;
+  --alloc-9: #e9dcc0;
 
   --alloc-accent: #a67c31;
   --alloc-accent-tint: rgb(207 157 66 / 0.16);
@@ -335,6 +340,8 @@
   --alloc-5: #ad8235;
   --alloc-6: #8a6829;
   --alloc-7: #8d7a5f;
+  --alloc-8: #5f5340;
+  --alloc-9: #403a30;
 
   --alloc-accent: #cf9d42;
   --alloc-accent-tint: rgb(207 157 66 / 0.2);

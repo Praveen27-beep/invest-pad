@@ -29,6 +29,17 @@ export { VintageKpi, VintageXirr, type XirrWindow } from "./VintageKpi";
 export { AllocationArcs, type ArcSlice } from "./AllocationArcs";
 export { VintageLinePlot, type PlotSeries } from "./VintageLinePlot";
 export {
+  BarSeries,
+  CORRELATION_BANDS,
+  DistributionBar,
+  Gauge,
+  HeatMap,
+  MeterRow,
+  ScatterPlot,
+  type BubblePoint,
+  type HeatBand,
+} from "./analytics-charts";
+export {
   AllocationArcsSkeleton,
   LedgerGridSkeleton,
   LinePlotSkeleton,

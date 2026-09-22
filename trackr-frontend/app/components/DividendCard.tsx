@@ -177,8 +177,13 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
 
   const label = (isin: string) => names?.[isin] ?? isin;
 
+  /** Never claims a receipt the ledger cannot show. With declarations on file but no
+   *  DIVIDEND row yet, the card is genuinely reporting the announced side only, and
+   *  saying "Received since ..." there would name a date that does not exist. */
   const subtitle = !earliest
-    ? "Dividend income from the ledger"
+    ? announced === null
+      ? "Dividend income from the ledger"
+      : "Announced, not yet received"
     : effectiveRange === "Max"
       ? `Received since ${formatDate(earliest)}`
       : `Received in ${RANGE_SPAN_LABEL[effectiveRange]}`;
@@ -191,7 +196,11 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
         <SegmentedControl size="sm" options={options} value={range} onChange={setRange} />
       }
     >
-      {ledger.loading ? (
+      {ledger.loading || expected.loading ? (
+        // Waits for BOTH requests, because "no dividends recorded yet" is a claim about
+        // the ledger AND the declarations. Showing it the moment the ledger alone
+        // resolves flashes that message on screen and then replaces it with a populated
+        // card, which reads as the figure having been wrong.
         // The same two figures and the same plot band the loaded card draws.
         <>
           <div style={{ display: "flex", gap: 40 }}>
@@ -223,7 +232,14 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
         </>
       ) : ledger.error ? (
         <p style={{ margin: 0, font: "var(--type-body)", color: "var(--negative)" }}>{ledger.error}</p>
-      ) : !earliest ? (
+      ) : !earliest && announced === null ? (
+        // BOTH halves empty -- nothing received AND nothing declared. Gating this on
+        // `earliest` alone (the first DIVIDEND *ledger* row) was a bug: it hid a fully
+        // computed Announced figure behind "no dividends recorded yet" whenever the
+        // ledger had no receipts, which is the normal state of this product. Declared
+        // dividends are automated; receipt is not (CLAUDE.md's four states), so "no
+        // DIVIDEND rows" and "no dividends" are different claims and only the first is
+        // what an empty ledger proves.
         <EmptyState
           title="No dividends recorded yet"
           hint="DIVIDEND rows in your ledger are aggregated here. Import a contract note or add one manually to see them."
@@ -254,7 +270,14 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
                 title={`No dividends received in ${
                   effectiveRange === "Max" ? "your ledger" : RANGE_SPAN_LABEL[effectiveRange]
                 }`}
-                hint={`The first one on record was ${formatDate(earliest)}. Widen the range to see it.`}
+                hint={
+                  earliest
+                    ? `The first one on record was ${formatDate(earliest)}. Widen the range to see it.`
+                    : // Declarations exist, no receipt does. Says why rather than
+                      // suggesting a wider range, which would find nothing either --
+                      // and never implies the announced figure was paid.
+                      "The Announced figure is what companies declared on shares you held. Receipt is not automated: add the credit or import a funds statement to record it."
+                }
               />
             </div>
           ) : (

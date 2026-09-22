@@ -1,16 +1,20 @@
 """Thin client for Groq's chat-completions API -- the document structuring step
 (app/ingest/llm_extract.py).
 
-Plain ``urllib.request``, no SDK, for the same reason ``app/ai/gemini.py`` gives: one
-POST, no streaming, no auth flow beyond a bearer token. Adding the ``groq`` package (or
-``openai``, which would also work -- the endpoint is OpenAI-compatible) buys nothing here
-and costs a dependency tree against a Vercel bundle ceiling that ``pyproject.toml``
-already flags as load-bearing.
+Plain ``urllib.request``, no SDK: one POST, no streaming, no auth flow beyond a bearer
+token. Adding the ``groq`` package (or ``openai``, which would also work -- the endpoint
+is OpenAI-compatible) buys nothing here and costs a dependency tree against a Vercel
+bundle ceiling that ``pyproject.toml`` already flags as load-bearing.
 
-Like ``gemini.py`` this is a dumb HTTP client: it does not know what a contract note is,
-what a Decimal is, or that a ledger exists. It takes a system prompt and a user string and
-returns whatever JSON came back. Every judgement about whether that JSON is *true* happens
-in ``app/ingest/llm_verify.py``, deterministically, with no network and no model.
+This is a dumb HTTP client: it does not know what a contract note is, what a Decimal is,
+or that a ledger exists. It takes a system prompt and a user string and returns whatever
+JSON came back. Every judgement about whether that JSON is *true* happens elsewhere,
+deterministically, with no network and no model -- ``app/ingest/llm_verify.py`` for
+documents, ``app/narrative/verify.py`` for analytics prose.
+
+NOW SERVING THREE CALLERS with three different payloads and three different permissions:
+document extraction (``LLM_PARSING_ENABLED``), analytics narration and the in-app
+assistant (both ``INSIGHT_GENERATION_ENABLED``).
 
 The boundary this crosses, stated plainly
 -----------------------------------------
@@ -24,6 +28,16 @@ the ledger only after it has been found in the source document verbatim and reco
 arithmetically. The model proposes; ``llm_verify`` disposes. If a future change makes any
 value from this module trusted on its own, that reason is gone and this boundary should
 move back.
+
+**THAT CASE ARRIVED, AND THE REASON HELD.** ``app/narrative/`` and
+``app/routers/assistant.py`` now send an investor's derived positions outbound -- a
+change of kind from redacted document text. Nothing they receive is believed either: the
+model cannot emit a number on the analytics path at all (every figure is rendered
+server-side from a computed fact pack), every comparison it declares is recomputed by
+``app/narrative/verify.py``, and on the conversational path every numeral in a reply
+must appear in the facts the model was given or the reply is discarded. The permission
+is a separate setting, ``insight_generation_enabled``, because the processing purpose is
+different from document extraction.
 
 What is sent is only ever what ``app/ingest/redaction.py`` produced -- never a raw
 document, never a PDF.
@@ -41,7 +55,7 @@ from typing import Any
 
 _ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
-#: Longer than gemini.py's 20: a page of text in, a whole trade table out. Still bounded,
+#: A page of text in, a whole trade table out. Still bounded,
 #: because a person is waiting on the upload request this sits inside.
 _TIMEOUT_SECONDS = 30
 
@@ -64,7 +78,7 @@ _USER_AGENT = "trackr-plus/1.0 (+https://github.com/trackr-plus)"
 
 @lru_cache(maxsize=1)
 def _ssl_context() -> ssl.SSLContext:
-    """Same fix, same reason, as app/prices/sources.py and app/ai/gemini.py: Python does
+    """Same fix, same reason, as app/prices/sources.py: Python does
     not use the OS trust store, so a fresh install or a minimal container fails
     CERTIFICATE_VERIFY_FAILED against a host curl reaches fine. Verification is never
     disabled -- only the CA bundle is made explicit, via certifi."""
@@ -133,7 +147,7 @@ class GroqClient:
             _ENDPOINT,
             data=json.dumps(body).encode("utf-8"),
             headers={
-                # A header, not a query string -- unlike Gemini. A key in a URL ends up in
+                # A header, not a query string. A key in a URL ends up in
                 # proxy logs and in any exception that quotes the request line.
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
@@ -150,7 +164,7 @@ class GroqClient:
         except urllib.error.HTTPError as exc:
             # The response body is deliberately NOT read into this message. A 401 or a
             # quota error can echo request context, and this exception is going to be
-            # logged. gemini.py includes the body; here that would be a disclosure.
+            # logged, and a body can echo request context -- that would be a disclosure.
             raise GroqUnavailable(f"Groq returned HTTP {exc.code}") from exc
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
             raise GroqUnavailable(f"could not reach Groq: {type(exc).__name__}") from exc

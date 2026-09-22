@@ -129,12 +129,6 @@ class Settings(BaseSettings):
     # Mailgun's own combined-attachment cap.
     ingest_max_attachment_bytes: int = 26_214_400
 
-    # --- in-app AI assistant (app/ai/gemini.py, app/routers/assistant.py) -----------
-    # Degrades gracefully to "assistant unavailable" when unset, same convention as
-    # storage_backend/SMTP above -- a hobby feature going dark must never take the rest
-    # of the app down with it.
-    gemini_api_key: str | None = None
-
     # --- LLM-assisted document extraction (app/ai/groq.py, app/ingest/llm_*.py) -----
     # TWO FACTS, DELIBERATELY SEPARATE. ``groq_api_key`` is "we hold credentials";
     # ``llm_parsing_enabled`` is "we are permitted to transmit the contents of client
@@ -151,6 +145,21 @@ class Settings(BaseSettings):
     # response_format={"type": "json_object"}.
     groq_model: str = "openai/gpt-oss-20b"
     llm_parsing_enabled: bool = False
+
+    # --- grounded analytics narration (app/narrative/, app/routers/narrative.py) -----
+    # A THIRD, SEPARATE PERMISSION, and it must not be folded into either flag above.
+    # ``llm_parsing_enabled`` grants transmitting the contents of client DOCUMENTS for
+    # extraction. This grants transmitting an investor's DERIVED POSITIONS -- names,
+    # ISINs, quantities and rupee amounts -- so a model can write the analytics page's
+    # explanations. Same vendor, same key, different processing purpose, and DPDP
+    # consent is per purpose rather than per vendor.
+    #
+    # It is also the case app/ai/groq.py's docstring reserved: "If a future change makes
+    # any value from this module trusted on its own, that reason is gone." Nothing here
+    # is trusted on its own either -- app/narrative/verify.py re-decides every claim and
+    # the model cannot emit a number at all -- which is why the boundary moved rather
+    # than broke. See docs/COMPLIANCE.md for the processor gate this waits on.
+    insight_generation_enabled: bool = False
 
     # --- demerger/amalgamation notification watch (app/ingest/demerger_watch.py) ----
     # ON BY DEFAULT since 2026-09-22 AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE
@@ -260,6 +269,30 @@ class Settings(BaseSettings):
                 "LLM_PARSING_ENABLED=true requires " + ", ".join(n.upper() for n in missing)
             )
         return self
+
+    @model_validator(mode="after")
+    def _validate_insight_generation(self) -> Settings:
+        """Same shape and same reasoning as ``_validate_llm_parsing`` above, for the
+        separate permission to narrate an investor's own positions.
+
+        Kept as its own validator rather than a branch inside that one so the error
+        message names the flag the operator actually set, and so removing either
+        feature cannot silently weaken the other's check.
+        """
+        if not self.insight_generation_enabled:
+            return self
+        missing = [
+            name
+            for name in ("groq_api_key", "groq_model")
+            if not (getattr(self, name) or "").strip()
+        ]
+        if missing:
+            raise ValueError(
+                "INSIGHT_GENERATION_ENABLED=true requires "
+                + ", ".join(n.upper() for n in missing)
+            )
+        return self
+
 @lru_cache
 def get_settings() -> Settings:
     """Cached: ``Settings()`` re-reads the environment on every call otherwise, and a

@@ -43,6 +43,7 @@ from app.ingest.llm_adapter import LlmDocumentAdapter
 from app.ingest.webhook_providers import WebhookNotConfiguredError
 from app.ingest.zerodha_contract_note import ZerodhaContractNoteAdapter
 from app.ingest.zerodha_contract_note_xlsx import ZerodhaContractNoteXlsxAdapter
+from app.ingest.zerodha_funds_statement import ZerodhaFundsStatementAdapter
 from app.ingest.zerodha_tradebook import ZerodhaTradebookAdapter
 from app.schemas.ingest import (
     BatchSummaryOut,
@@ -69,7 +70,15 @@ _CSV_ADAPTERS = {"zerodha_tradebook": ZerodhaTradebookAdapter}
 #: from Console as a spreadsheet -- see app.ingest.zerodha_contract_note_xlsx's module
 #: docstring for the two real shapes this parses and why "custom date range" is
 #: something Console does when the file is downloaded, not a control in this app.
-_XLSX_ADAPTERS = {"zerodha_contract_note_xlsx": ZerodhaContractNoteXlsxAdapter}
+_XLSX_ADAPTERS = {
+    "zerodha_contract_note_xlsx": ZerodhaContractNoteXlsxAdapter,
+    # The Console P&L export's "Other Debits and Credits" tab -- the only
+    # routinely available document carrying EVIDENCE OF PAYMENT for a dividend
+    # rather than a declaration. Both NSE and yfinance stop at "declared per
+    # share"; this is what lets a dividend reach the ledger at all. See that
+    # module's docstring and docs/INGESTION.md Adapter 6c.
+    "zerodha_funds_statement": ZerodhaFundsStatementAdapter,
+}
 
 
 #: adapter name -> factory for the PDF path. Unlike the two above this one takes the

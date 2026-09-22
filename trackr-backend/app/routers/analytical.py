@@ -49,6 +49,7 @@ from app.db.repository import (
     list_investor_ids,
     load_transactions,
 )
+from app.db.universe import current_universe_isins
 from app.engine.benchmark import (
     benchmark_series,
     compute_benchmark,
@@ -82,6 +83,7 @@ from app.prices.index_sources import (
     fetch_and_store,
 )
 from app.prices.pipe import NSE_BHAVCOPY_EARLIEST, backfill_days, fetch_day, trading_days
+from app.prices.store import store_day
 from app.schemas.analytical import (
     BenchmarkSeriesResponse,
     ContributionResponse,
@@ -812,17 +814,23 @@ def _refresh_prices(connection: Any, settings: Settings) -> dict[str, Any]:
     """
     price_date = date.today()
     result = fetch_day(price_date, notifier=get_notifier(settings))
-    wanted = set(held_isins(connection))
-    stored = upsert_prices(connection, [p for p in result.prices if p.isin in wanted])
-    missing = missing_prices(connection, sorted(wanted), price_date)
+    stored = store_day(connection, result)
+    # Scoped to HELD ISINs, never the ranking universe. This list is read by a human as
+    # "your portfolio is unpriced"; padding it with reference securities nobody owns would
+    # turn a real alarm into noise.
+    missing = missing_prices(connection, sorted(held_isins(connection)), price_date)
     index_stored, index_failures = _refresh_index_levels(connection, price_date)
 
     return {
-        "prices_stored": stored,
+        "prices_stored": stored.prices_stored,
         "missing_isins": missing,
         "price_date": price_date,
         "index_levels_stored": index_stored,
         "index_failures": index_failures,
+        "symbol_changes": [
+            {"isin": c.isin, "old_symbol": c.old_symbol, "new_symbol": c.new_symbol}
+            for c in stored.symbol_changes
+        ],
     }
 
 
@@ -883,7 +891,13 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
     """
     settled = price_dates_settled(connection, start, end)
     price_results = backfill_days(start, end, already_present=settled, notifier=notifier)
-    wanted = set(held_isins(connection))
+    held = set(held_isins(connection))
+    # Stored for held AND universe ISINs, so the ranking universe accumulates the history
+    # factor scores need. ABSENCE RECORDING AND SETTLEMENT BELOW STAY SCOPED TO `held`,
+    # deliberately: a universe member is reference data, and letting one decide whether a
+    # date is "settled" would let a security nobody owns govern whether a real holding's
+    # price is ever fetched again.
+    wanted = held | set(current_universe_isins(connection))
     price_dates_fetched = 0
     for result in price_results:
         stored = upsert_prices(connection, [p for p in result.prices if p.isin in wanted])
@@ -910,7 +924,7 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
         # Being wrong in the other direction just costs one more fetch next run.
         if result.fetched and result.succeeded:
             record_absent_prices(
-                connection, result.price_date, sorted(wanted - {p.isin for p in result.prices})
+                connection, result.price_date, sorted(held - {p.isin for p in result.prices})
             )
 
     snapshots_written = 0

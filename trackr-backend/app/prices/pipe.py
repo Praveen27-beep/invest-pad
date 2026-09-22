@@ -41,6 +41,10 @@ class MergedPrice:
     close: Decimal
     source: str
     also_quoted_by: tuple[str, ...] = ()
+    #: The winning feed's trading symbol. Carried so a security row can be created for a
+    #: universe member the ledger has never seen -- NOT the input to symbol refresh, which
+    #: takes NSE only (see PipeResult.nse_symbols).
+    symbol: str | None = None
 
 
 @dataclass
@@ -50,6 +54,13 @@ class PipeResult:
     fetched: dict[str, int] = field(default_factory=dict)
     failures: dict[str, str] = field(default_factory=dict)
     not_published: list[str] = field(default_factory=list)
+    #: ISIN -> NSE trading symbol. NSE ONLY, deliberately: BSE's legacy layout maps its
+    #: symbol column to SC_NAME, which is the company NAME, and app.prices.sources
+    #: re-shapes that into the UDiFF symbol field before it reaches the parser. Feeding
+    #: that to a symbol refresh would write "GREAT EASTERN SHIPPING CO.LTD." into a column
+    #: whose only consumer builds a Yahoo ticker out of it. NSE's SYMBOL is a real ticker
+    #: in both the current and legacy layouts, so it is the one safe source.
+    nse_symbols: dict[str, str] = field(default_factory=dict)
 
     @property
     def succeeded(self) -> bool:
@@ -83,6 +94,7 @@ def merge(rows_by_exchange: dict[str, list[BhavcopyRow]]) -> list[MergedPrice]:
                     price_date=row.price_date,
                     close=row.close,
                     source=SOURCE_LABEL.get(exchange, exchange),
+                    symbol=row.symbol or None,
                 )
             else:
                 # Kept so "which feed did this number come from?" stays answerable.
@@ -92,6 +104,7 @@ def merge(rows_by_exchange: dict[str, list[BhavcopyRow]]) -> list[MergedPrice]:
                     close=existing.close,
                     source=existing.source,
                     also_quoted_by=(*existing.also_quoted_by, exchange),
+                    symbol=existing.symbol,
                 )
     return sorted(merged.values(), key=lambda p: p.isin)
 
@@ -130,6 +143,11 @@ def fetch_day(
         result.fetched[source.exchange] = len(rows)
 
     result.prices = merge(rows_by_exchange)
+    result.nse_symbols = {
+        row.isin: row.symbol.strip()
+        for row in rows_by_exchange.get("NSE", [])
+        if row.symbol and row.symbol.strip()
+    }
 
     if result.only_one_exchange:
         notifier.notify(
@@ -183,9 +201,11 @@ def backfill_days(
 def main(on: date | None = None) -> int:
     """The daily run, as docs/INGESTION.md documents it: ``python -m prices.pipe``.
 
-    Stores only ISINs already in the ledger. ``price.isin`` is a foreign key to
-    ``security``, so upserting a whole 5,000-row bhavcopy would fail on the first scrip
-    nobody holds -- and storing prices for securities no one owns is work with no reader.
+    Stores ISINs in the ledger plus the ranking universe. ``price.isin`` is a foreign key
+    to ``security``, so upserting a whole 5,000-row bhavcopy would fail on the first scrip
+    with no security row -- and storing prices nothing reads is work with no reader. What
+    to keep, and the symbol refresh that rides along with it, is ``app.prices.store``: one
+    implementation, shared with the cron path, so the two cannot drift.
 
     Exit code is the cron contract: non-zero when an exchange that should have answered
     did not. A weekend or holiday is NotPublished, which is not a failure and must not
@@ -193,16 +213,19 @@ def main(on: date | None = None) -> int:
     """
     from app.config import get_settings
     from app.db.connection import connect
-    from app.db.prices import held_isins, upsert_prices
     from app.prices.alerts import get_notifier
+    from app.prices.store import store_day
 
     result = fetch_day(on or date.today(), notifier=get_notifier(get_settings()))
     with connect() as conn:
-        wanted = set(held_isins(conn))
-        stored = upsert_prices(conn, [p for p in result.prices if p.isin in wanted])
+        stored = store_day(conn, result)
 
+    renamed = (
+        f"  renamed={len(stored.symbol_changes)}" if stored.symbol_changes else ""
+    )
     print(
-        f"{result.price_date}  fetched={result.fetched or '-'}  stored={stored}"
+        f"{result.price_date}  fetched={result.fetched or '-'}"
+        f"  stored={stored.prices_stored}{renamed}"
         f"  not_published={result.not_published or '-'}  failed={list(result.failures) or '-'}"
     )
     return 0 if result.succeeded else 1

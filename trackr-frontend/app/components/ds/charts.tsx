@@ -7,15 +7,27 @@ export interface Slice {
   color?: string;
   /** Overrides the computed "x%" on the legend — use for absolute figures. */
   display?: ReactNode;
+  /** A SECOND figure for the legend row, set in quieter type beside `display`.
+   *  The percentage answers "how much of the book", the rupee figure answers "how
+   *  much money" — a weights donut that can only answer the first is half a chart. */
+  sub?: ReactNode;
 }
 
 export function ChartLegend({
   items,
   layout = "list",
+  ruled = false,
+  maxHeight,
   style,
 }: {
-  items: { label: string; value?: ReactNode; color?: string }[];
+  items: { label: string; value?: ReactNode; sub?: ReactNode; color?: string }[];
   layout?: "list" | "inline";
+  /** Hairline between rows. A ten-row sector legend without them reads as a paragraph
+   *  of labels rather than a table the eye can scan down. */
+  ruled?: boolean;
+  /** Scroll past this height instead of stretching the card. A donut is 200px tall; a
+   *  legend that runs to 600 leaves the chart stranded at the top of a column of text. */
+  maxHeight?: number;
   style?: CSSProperties;
 }) {
   const isList = layout === "list";
@@ -30,7 +42,9 @@ export function ChartLegend({
         display: "flex",
         flexDirection: isList ? "column" : "row",
         flexWrap: isList ? "nowrap" : "wrap",
-        gap: isList ? 8 : 12,
+        gap: isList && !ruled ? 8 : isList ? 0 : 12,
+        maxHeight,
+        overflowY: maxHeight ? "auto" : undefined,
         ...style,
       }}
     >
@@ -43,6 +57,8 @@ export function ChartLegend({
             justifyContent: isList ? "space-between" : "flex-start",
             gap: 8,
             font: "var(--type-body)",
+            padding: ruled ? "6px 0" : undefined,
+            borderBottom: ruled && i < items.length - 1 ? "1px solid var(--border)" : undefined,
           }}
         >
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--text-secondary)", minWidth: 0 }}>
@@ -57,9 +73,17 @@ export function ChartLegend({
             />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.label}</span>
           </span>
-          {it.value != null && (
-            <span className="tabular-nums" style={{ color: "var(--text-primary)", flexShrink: 0 }}>
-              {it.value}
+          {(it.value != null || it.sub != null) && (
+            <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
+              {it.value != null && (
+                <span className="tabular-nums" style={{ color: "var(--text-primary)" }}>{it.value}</span>
+              )}
+              {it.sub != null && (
+                <span className="tabular-nums"
+                      style={{ color: "var(--text-tertiary)", font: "var(--type-body-sm)" }}>
+                  {it.sub}
+                </span>
+              )}
             </span>
           )}
         </li>
@@ -69,8 +93,19 @@ export function ChartLegend({
 }
 
 /**
- * Conic-gradient donut. A CSS mask punches the hole rather than an SVG stroke, which
- * keeps the slice edges crisp at any size and costs one element instead of N arcs.
+ * Stroked-arc donut.
+ *
+ * This was a conic-gradient behind a CSS radial mask, which drew the right picture and
+ * nothing else. Two things an SVG ring gives that the gradient could not:
+ *
+ *  - **Every slice is an element, so every slice can carry a `<title>`.** On a ten-group
+ *    sector donut the thin slices are exactly the ones whose label the legend truncates,
+ *    and hovering the arc is how you read them. A single gradient div has one tooltip.
+ *  - **The mask edge is antialiased against the page, not the slice.** At the inner
+ *    radius that shows as a pale halo which the ring's own `stroke` does not have.
+ *
+ * Arcs are drawn as one circle per slice with a `stroke-dasharray` run and a cumulative
+ * `stroke-dashoffset`, rotated so the first slice starts at twelve o'clock.
  */
 export function DonutChart({
   slices,
@@ -80,6 +115,8 @@ export function DonutChart({
   centerLabel,
   palette = "color",
   showLegend = true,
+  legendRuled = false,
+  legendMaxHeight,
   style,
 }: {
   slices: Slice[];
@@ -89,32 +126,56 @@ export function DonutChart({
   centerLabel?: ReactNode;
   palette?: "color" | "mono";
   showLegend?: boolean;
+  /** Hairline-separated legend rows — see ChartLegend. */
+  legendRuled?: boolean;
+  legendMaxHeight?: number;
   style?: CSSProperties;
 }) {
   const colors = palette === "mono" ? CHART_MONO : CHART_COLORS;
   const total = slices.reduce((s, g) => s + (g.value || 0), 0) || 1;
+
+  // Geometry in a fixed 200-unit viewBox, scaled by `size` on the way out, so callers
+  // keep passing pixel sizes and thicknesses and nothing here depends on either.
+  const VB = 200;
+  const stroke = (thickness / size) * VB;
+  const radius = (VB - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
   let cursor = 0;
-  const stops = slices.map((g, i) => {
-    const pct = ((g.value || 0) / total) * 100;
-    const start = cursor;
-    cursor += pct;
-    return `${g.color ?? colors[i % colors.length]} ${start}% ${cursor}%`;
+  const arcs = slices.map((g, i) => {
+    const fraction = (g.value || 0) / total;
+    const run = circumference * fraction;
+    const offset = -cursor;
+    cursor += run;
+    return {
+      key: g.label + i,
+      color: g.color ?? colors[i % colors.length],
+      dash: `${run.toFixed(2)} ${(circumference - run).toFixed(2)}`,
+      offset: offset.toFixed(2),
+      title: `${g.label} — ${(fraction * 100).toFixed(2)}%`,
+    };
   });
-  const inner = ((size - thickness * 2) / size) * 50;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 24, ...style }}>
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 24, minWidth: 0, ...style }}>
       <div style={{ position: "relative", height: size, width: size, flexShrink: 0 }}>
-        <div
-          style={{
-            height: size,
-            width: size,
-            borderRadius: "50%",
-            background: `conic-gradient(${stops.join(", ")})`,
-            maskImage: `radial-gradient(transparent ${inner}%, black ${inner + 1}%)`,
-            WebkitMaskImage: `radial-gradient(transparent ${inner}%, black ${inner + 1}%)`,
-          }}
-        />
+        <svg viewBox={`0 0 ${VB} ${VB}`} width={size} height={size} style={{ display: "block" }}>
+          {arcs.map((a) => (
+            <circle
+              key={a.key}
+              cx={VB / 2}
+              cy={VB / 2}
+              r={radius}
+              fill="none"
+              stroke={a.color}
+              strokeWidth={stroke}
+              strokeDasharray={a.dash}
+              strokeDashoffset={a.offset}
+              transform={`rotate(-90 ${VB / 2} ${VB / 2})`}
+            >
+              <title>{a.title}</title>
+            </circle>
+          ))}
+        </svg>
         {centerValue && (
           <div
             style={{
@@ -152,9 +213,12 @@ export function DonutChart({
       </div>
       {showLegend && (
         <ChartLegend
+          ruled={legendRuled}
+          maxHeight={legendMaxHeight}
           items={slices.map((g, i) => ({
             label: g.label,
             value: g.display ?? `${(((g.value || 0) / total) * 100).toFixed(1)}%`,
+            sub: g.sub,
             color: g.color ?? colors[i % colors.length],
           }))}
         />
