@@ -1,0 +1,51 @@
+# What Vercel must NOT upload, for either of the two projects built from this repo
+# (trackr-backend and trackr-frontend, each with its own Root Directory -- see
+# docs/DEPLOYMENT.md steps 2 and 4).
+#
+# READ THIS BEFORE ADDING A LINE. Vercel deploys from git, so an UNTRACKED file is
+# already never deployed -- demo.html, landing.html, analytics-demo.html and the
+# root-level BLUEPRINT/TARGET_FLOW/OPEN_QUESTIONS notes are all untracked today and were
+# never in a deployment. They are listed anyway so that committing one later does not
+# silently start shipping it.
+#
+# WHETHER THIS FILE DOES ANYTHING depends on one Vercel project setting: "Include source
+# files outside of the Root Directory in the Build Step". With it OFF, only
+# trackr-backend/ (or trackr-frontend/) is uploaded and everything below is already
+# excluded by construction -- this file is then a harmless no-op. With it ON, which is
+# the monorepo default, the whole repo is uploaded and this file is what prunes it.
+# There are no .md files and no tests INSIDE either project directory (checked), so
+# per-project .vercelignore files would be empty; this one at the repo root is the only
+# one that can do any work.
+#
+# WHAT IS DELIBERATELY NOT HERE, because something reads it:
+#   fixtures/   96K, and app/db/seed_demo.py resolves fixtures/demo_portfolio.json from
+#               the repo root at runtime, so `python -m app.db.seed_demo` against a
+#               deployed database keeps working. The rest of the directory is test data
+#               and could be pruned, but 96K does not justify a per-file negation rule.
+#               Note app/db/load_golden.py's fixtures/golden_portfolio.json is gitignored
+#               and has therefore never been in a deployment at all.
+#   schema/, contracts/   no code reads them (every reference in app/ is a docstring),
+#               but CLAUDE.md treats them as the language-agnostic definition of the
+#               system, and they cost almost nothing to carry.
+
+# ---- documentation: never executed, never served ----------------------------------
+*.md
+docs/
+
+# ---- the test suite: nothing in a deployment imports it ---------------------------
+tests/
+
+# ---- planning and prompt material, not part of the product ------------------------
+plan/
+prompts/
+
+# ---- standalone mockup pages, superseded by the real frontend ---------------------
+demo.html
+analytics-demo.html
+landing.html
+
+# ---- local-only tooling and scratch space -----------------------------------------
+local/
+Makefile
+start.sh
+stop.sh
