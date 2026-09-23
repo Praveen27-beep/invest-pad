@@ -157,15 +157,25 @@ def analytics(
     # `observations` reports how many sessions it really covers.
     shared_dates, aligned = series.align(history, [p["isin"] for p in positions])
     bench_by_date = _benchmark_levels(connection, benchmark, shared_dates)
-    if bench_by_date:
-        comparable = [d for d in shared_dates if d in bench_by_date]
-        if len(comparable) >= 30:
-            shared_dates = comparable
-            _, aligned = series.align(
-                {i: [(d, c) for d, c in rows if d in bench_by_date] for i, rows in history.items()},
-                [p["isin"] for p in positions],
-            )
-    bench_levels = [float(bench_by_date[d]) for d in shared_dates] if bench_by_date else None
+    # Too little overlap to compare against leaves this None: the comparison is dropped,
+    # exactly as when the feed is empty, rather than the request failing. Below thirty
+    # shared sessions is the NORMAL state of a freshly-populated database -- the daily job
+    # refreshes only a trailing INDEX_REFRESH_LOOKBACK_DAYS of TRI levels while prices
+    # carry years of archive -- so this branch is the common one on a new deployment, not
+    # an edge case.
+    bench_levels: list[float] | None = None
+    comparable = [d for d in shared_dates if d in bench_by_date] if bench_by_date else []
+    if len(comparable) >= 30:
+        # Narrowing `shared_dates` to the intersection is what makes the lookup below
+        # total. It has to happen whenever the benchmark is read at all: indexing
+        # bench_by_date over the UN-narrowed dates raises KeyError the moment the TRI feed
+        # lags the bhavcopy by even one session.
+        shared_dates = comparable
+        _, aligned = series.align(
+            {i: [(d, c) for d, c in rows if d in bench_by_date] for i, rows in history.items()},
+            [p["isin"] for p in positions],
+        )
+        bench_levels = [float(bench_by_date[d]) for d in shared_dates]
 
     portfolio_levels = series.portfolio_series(aligned, weights) if aligned else []
     risk_windows = (
