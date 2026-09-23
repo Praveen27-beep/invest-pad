@@ -114,6 +114,7 @@ export function ContributionTab() {
           <MissingPriceNotice
             isins={contribution.errorDetail.isins}
             names={contribution.errorDetail.securityNames}
+            asOf={contribution.errorDetail.asOf}
           />
         ) : contribution.errorDetail?.isin ? (
           <NegativeHoldingNotice

@@ -14,11 +14,37 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from app.ai.jev import ChoiceAnswer, JevUnavailable
 from app.ingest.corporate_action_feed import (
     CorporateActionFeedFormatError,
     parse_corporate_action_feed,
     parse_dividend_feed,
 )
+
+
+class _JevClient:
+    """Returns a canned ``ChoiceAnswer`` and remembers exactly what it was asked --
+    same posture as tests/test_llm_adapter.py's ``_Client``."""
+
+    def __init__(self, choice: str, confidence: str = "0.9", raises: Exception | None = None):
+        self._choice = choice
+        self._confidence = Decimal(confidence)
+        self._raises = raises
+        self.asked: list[dict] = []
+
+    def choose(self, state, instructions, criteria):
+        self.asked.append({"state": state, "instructions": instructions, "criteria": criteria})
+        if self._raises:
+            raise self._raises
+        return ChoiceAnswer(choice=self._choice, confidence=self._confidence, probabilities={})
+
+
+class _ExplodingJevClient:
+    """Fails the test if Jev is ever asked -- for shapes that must resolve, or refuse,
+    without spending a call."""
+
+    def choose(self, state, instructions, criteria):
+        raise AssertionError("Jev must not be asked when there is nothing ambiguous to pair")
 
 
 def _record(**overrides: object) -> dict[str, object]:
@@ -40,6 +66,12 @@ def _payload(*records: dict[str, object]) -> bytes:
 def _one(subject: str, **overrides: object):
     rows = parse_dividend_feed(_payload(_record(subject=subject, **overrides)))
     return rows[0] if rows else None
+
+
+def _rows(subject: str, jev_client=None, **overrides: object):
+    return parse_dividend_feed(
+        _payload(_record(subject=subject, **overrides)), jev_client=jev_client
+    )
 
 
 # ------------------------------------------------------------------ the common shapes
@@ -108,6 +140,87 @@ def test_two_amounts_in_one_subject_are_refused() -> None:
 def test_two_kinds_named_without_two_amounts_are_also_refused() -> None:
     """The amount could be read but not attributed to a kind."""
     assert _one("Interim And Final Dividend - Rs 3 Per Share") is None
+
+
+# ------------------------------------------------- Jev-assisted attribution
+
+
+def test_a_confident_jev_pairing_yields_one_row_per_pair() -> None:
+    """Both amounts are usually real declarations bundled in one notice -- a confident
+    pairing recovers BOTH, not a single winner picked over the other."""
+    client = _JevClient(choice="0")  # identity pairing: kinds order == amounts order
+    rows = _rows(
+        "Interim Dividend Rs 1.50 Per Share And Special Dividend Rs 2 Per Share",
+        jev_client=client,
+    )
+
+    assert {(r.kind, r.amount_per_share) for r in rows} == {
+        ("INTERIM", Decimal("1.50")),
+        ("SPECIAL", Decimal("2")),
+    }
+    # criteria is a small enumerable set of pairings, not a free-text guess
+    assert set(client.asked[0]["criteria"]) == {"0", "1"}
+
+
+def test_a_confident_jev_kind_attribution_yields_one_row() -> None:
+    client = _JevClient(choice="FINAL")
+    rows = _rows("Interim And Final Dividend - Rs 3 Per Share", jev_client=client)
+
+    assert len(rows) == 1
+    assert rows[0].kind == "FINAL"
+    assert rows[0].amount_per_share == Decimal("3")
+    assert set(client.asked[0]["criteria"]) == {"INTERIM", "FINAL"}
+
+
+def test_low_confidence_still_refuses_the_notice() -> None:
+    """Below Jev's own stated floor the model is genuinely unsure -- the API's guidance
+    is "don't guess", and a rejected notice is exactly as recoverable as before."""
+    client = _JevClient(choice="0", confidence="0.4")
+    assert _rows(
+        "Interim Dividend Rs 1.50 Per Share And Special Dividend Rs 2 Per Share",
+        jev_client=client,
+    ) == []
+
+
+def test_jev_unavailable_degrades_to_the_ordinary_refusal() -> None:
+    """A transport failure here must not take down a feed refresh over a network
+    hiccup -- it degrades to exactly the refusal this notice always had."""
+    client = _JevClient(choice="0", raises=JevUnavailable("boom"))
+    assert _rows(
+        "Interim Dividend Rs 1.50 Per Share And Special Dividend Rs 2 Per Share",
+        jev_client=client,
+    ) == []
+
+
+def test_jev_is_not_asked_about_an_unambiguous_notice() -> None:
+    """One amount, at most one kind -- nothing to pair. Spending a call here would be
+    pure cost with no judgment to make."""
+    assert _rows("Dividend - Rs 1.50 Per Share", jev_client=_ExplodingJevClient())[
+        0
+    ].amount_per_share == Decimal("1.50")
+
+
+def test_jev_is_not_asked_when_amount_and_kind_counts_do_not_match() -> None:
+    """Two amounts but only one (or zero) named kinds has no textual anchor for a
+    pairing question -- refused the same way it always was, without spending a call."""
+    assert _rows(
+        "Interim Dividend Rs 1.50 Per Share And Rs 2 Per Share",
+        jev_client=_ExplodingJevClient(),
+    ) == []
+    assert _rows(
+        "Dividend Rs 1.50 Per Share And Rs 2 Per Share",
+        jev_client=_ExplodingJevClient(),
+    ) == []
+
+
+def test_a_response_error_from_jev_also_degrades_to_refusal() -> None:
+    from app.ai.jev import JevResponseError
+
+    client = _JevClient(choice="0", raises=JevResponseError("shape drift"))
+    assert _rows(
+        "Interim Dividend Rs 1.50 Per Share And Special Dividend Rs 2 Per Share",
+        jev_client=client,
+    ) == []
 
 
 @pytest.mark.parametrize(

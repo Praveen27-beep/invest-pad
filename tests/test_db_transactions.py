@@ -21,10 +21,15 @@ from app.schemas.transactions import TransactionIn
 
 pytestmark = pytest.mark.db
 
-#: Per docs/DATA_MODEL.md's txn_type table: quantity/price for everything except
-#: DIVIDEND (0/0, amount carried separately); DIVIDEND itself carries no quantity/price.
+#: Per docs/DATA_MODEL.md's txn_type table: quantity/price for everything except the
+#: three types whose documented quantity/price effect is 0 -- DIVIDEND (amount carried
+#: in dividend_amount) and the DEMERGER_COST_OUT/IN pair (amount carried in
+#: cost_transfer instead). app.schemas.transactions.TransactionIn now enforces this
+#: exactly, so a sample row for any of the three needs the same shape a real one would.
 _SAMPLE_FIELDS = {
     TxnType.DIVIDEND: {"quantity": "0", "price": "0", "dividend_amount": "500"},
+    TxnType.DEMERGER_COST_OUT: {"quantity": "0", "price": "0", "cost_transfer": "500"},
+    TxnType.DEMERGER_COST_IN: {"quantity": "0", "price": "0", "cost_transfer": "500"},
 }
 
 

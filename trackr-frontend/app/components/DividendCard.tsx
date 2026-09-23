@@ -8,6 +8,7 @@ import type { ExpectedDividendsOut, TransactionOut } from "@/lib/api-types";
 import { EMPTY_VALUE, formatDate } from "@/lib/format";
 import { RANGES, RANGE_SPAN_LABEL, startFor, type RangeKey } from "@/lib/ranges";
 import { Card, EmptyState, SegmentedControl, Skeleton } from "./ds";
+import { DividendDrawer } from "./DividendDrawer";
 
 const fmtINR = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 
@@ -68,6 +69,7 @@ const MAX_BARS = 12;
 export function DividendCard({ names }: { names?: Record<string, string> }) {
   const { investorId, token, asOf } = useAuth();
   const [range, setRange] = useState<RangeKey>("1Y");
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // No `from`: the earliest dividend has to be known to say which ranges have anything of
   // their own to show, and switching range must not cost a round trip. `to` is the
@@ -189,6 +191,7 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
       : `Received in ${RANGE_SPAN_LABEL[effectiveRange]}`;
 
   return (
+    <>
     <Card
       title="Dividends"
       subtitle={subtitle}
@@ -253,12 +256,24 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
                 {fmtINR(received)}
               </span>
             </div>
-            <div>
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(true)}
+              disabled={!expected.data}
+              title="See every declared dividend behind this figure"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                textAlign: "left",
+                cursor: expected.data ? "pointer" : "default",
+              }}
+            >
               <span style={figureLabel}>Announced</span>
               <span className="tabular-nums" style={figureValue(true)}>
                 {announced === null ? EMPTY_VALUE : fmtINR(announced)}
               </span>
-            </div>
+            </button>
           </div>
 
           {bars.length === 0 ? (
@@ -382,5 +397,16 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
         </>
       )}
     </Card>
+      <DividendDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        loading={expected.loading}
+        error={expected.error}
+        expected={expected.data?.expected ?? []}
+        unprojectable={expected.data?.unprojectable ?? []}
+        names={names}
+        asOf={asOf}
+      />
+    </>
   );
 }

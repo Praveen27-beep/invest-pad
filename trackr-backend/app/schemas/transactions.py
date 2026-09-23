@@ -7,9 +7,23 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.engine.types import Source, TxnType
+
+#: docs/DATA_MODEL.md's txn_type table: the only three types whose documented quantity
+#: effect is 0 -- DIVIDEND ("qty = 0, price = 0, amount in dividend_amount") and the
+#: DEMERGER_COST_OUT/IN pair ("a row whose quantity and price are both zero", the amount
+#: living in cost_transfer instead). Every other type has a real + or - quantity effect
+#: and must carry a genuine, positive quantity.
+_ZERO_QUANTITY_TYPES = frozenset(
+    {TxnType.DIVIDEND, TxnType.DEMERGER_COST_OUT, TxnType.DEMERGER_COST_IN}
+)
+
+#: Comfortably above any real single manual entry (the golden portfolio's largest line
+#: is 2,250 shares) and far below the range where the UI's numeric columns start
+#: overlapping -- a guard against a fat-fingered extra digit, not a real trading limit.
+_MAX_SANE_QUANTITY = Decimal("100000000")
 
 
 class TransactionIn(BaseModel):
@@ -33,8 +47,8 @@ class TransactionIn(BaseModel):
     isin: str = Field(pattern=r"^IN[A-Z0-9]{10}$")
     txn_date: date
     txn_type: TxnType
-    quantity: Decimal = Field(ge=0)
-    price: Decimal
+    quantity: Decimal = Field(ge=0, le=_MAX_SANE_QUANTITY)
+    price: Decimal = Field(ge=0)
     charges: Decimal = Decimal("0")
     stt: Decimal = Decimal("0")
     dividend_amount: Decimal = Decimal("0")
@@ -45,6 +59,30 @@ class TransactionIn(BaseModel):
     source: Source | None = None
     source_ref: str | None = None
     raw_payload: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _quantity_and_price_match_txn_type(self) -> TransactionIn:
+        """The two bugs a fresh field test actually found: a BUY with quantity 0 and a
+        negative price both landed silently in the append-only ledger, where nothing can
+        ever edit or delete them. ``ge=0`` on the fields above only keeps DIVIDEND and the
+        DEMERGER_COST pair's legitimate zero rows working; it does not stop a real trade
+        from being zero. This enforces the other half of docs/DATA_MODEL.md's txn_type
+        table: those three types carry no quantity or price at all, and every other type
+        must carry a genuine, positive one."""
+        if self.txn_type in _ZERO_QUANTITY_TYPES:
+            if self.quantity != 0:
+                raise ValueError(
+                    f"{self.txn_type} rows carry no quantity -- see docs/DATA_MODEL.md's "
+                    "txn_type table"
+                )
+            if self.price != 0:
+                raise ValueError(
+                    f"{self.txn_type} rows carry no price -- the amount belongs in "
+                    "dividend_amount or cost_transfer instead"
+                )
+        elif self.quantity <= 0:
+            raise ValueError(f"{self.txn_type} requires a positive quantity")
+        return self
 
 
 class ImportSummaryOut(BaseModel):

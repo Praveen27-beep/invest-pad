@@ -258,6 +258,13 @@ export function OnboardingWizard() {
     []
   );
 
+  // Also declared here rather than inline: an inline arrow would get a new identity every
+  // render, which GrantAccessStep's `grant` callback depends on, which re-fires the effect
+  // that calls handleAccessState above, which sets state and forces this render again --
+  // an infinite loop. `goTo` only changes when the step list or `finish` actually changes,
+  // not every render, so memoizing against it breaks the cycle.
+  const handleAccessGranted = useCallback(() => goTo("brokers"), [goTo]);
+
   const handleBrokerState = useCallback(
     (s: { busy: boolean; canContinue: boolean; save: () => void }) => {
       setBusy(s.busy);
@@ -352,7 +359,7 @@ export function OnboardingWizard() {
       footer={<PrimaryAction {...primary} />}
     >
       {step.key === "access" && (
-        <GrantAccessStep onGranted={() => goTo("brokers")} onReadyChange={handleAccessState} />
+        <GrantAccessStep onGranted={handleAccessGranted} onReadyChange={handleAccessState} />
       )}
       {step.key === "brokers" && (
         <BrokerPickerStep

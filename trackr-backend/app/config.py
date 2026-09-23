@@ -161,6 +161,16 @@ class Settings(BaseSettings):
     # than broke. See docs/COMPLIANCE.md for the processor gate this waits on.
     insight_generation_enabled: bool = False
 
+    # --- fast semantic classification (app/ai/jev.py, app/ingest/corporate_action_feed.py) --
+    # PUBLIC-DATA-ONLY, unlike groq_api_key above. The one caller sends an NSE
+    # corporate-action subject line, ISIN and symbol to disambiguate a dividend notice --
+    # a company-wide announcement, never an investor's own data -- so this does not carry
+    # groq_api_key/llm_parsing_enabled's DPA gate. Degrades gracefully to "attribution
+    # unresolved, notice refused" when unset, same convention as gemini_api_key above: a
+    # classification feature going dark must never take the rest of the app down with it.
+    jev_api_key: str | None = None
+    jev_model: str = "jev-latest"
+
     # --- demerger/amalgamation notification watch (app/ingest/demerger_watch.py) ----
     # ON BY DEFAULT since 2026-09-22 AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE
     # circulars source app.ingest.isin_change_feed already relies on (interim,

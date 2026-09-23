@@ -35,6 +35,12 @@ export function TransactionForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const validationError = validate();
+    if (validationError) {
+      setError(validationError);
+      setSuccess(false);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setSuccess(false);
@@ -49,7 +55,25 @@ export function TransactionForm({
     }
   }
 
+  // DIVIDEND is the only txn_type this form offers whose documented quantity/price
+  // effect is 0 (docs/DATA_MODEL.md's txn_type table) -- the backend's other zero-qty
+  // types, DEMERGER_COST_OUT/IN, aren't in TXN_TYPES above; that pair is produced by the
+  // automated corporate-action engine, not manual entry. Everything else here needs a
+  // genuine, positive quantity, mirroring app/schemas/transactions.py's validator.
   const isDividend = form.txn_type === "DIVIDEND";
+
+  function validate(): string | null {
+    const qty = Number(form.quantity);
+    const price = Number(form.price);
+    if (isDividend) {
+      if (qty !== 0) return "DIVIDEND rows carry no quantity -- leave Quantity at 0.";
+      if (price !== 0) return "DIVIDEND rows carry no price -- leave Price at 0.";
+    } else {
+      if (!(qty > 0)) return "Quantity must be greater than 0.";
+      if (price < 0) return "Price cannot be negative.";
+    }
+    return null;
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -105,7 +129,18 @@ export function TransactionForm({
           <label className="block text-xs font-medium text-navy-600 mb-1">Type</label>
           <select
             value={form.txn_type}
-            onChange={(e) => set("txn_type", e.target.value as TxnType)}
+            onChange={(e) => {
+              const nextType = e.target.value as TxnType;
+              setForm((f) => ({
+                ...f,
+                txn_type: nextType,
+                // DIVIDEND carries no quantity/price -- see docs/DATA_MODEL.md's
+                // txn_type table -- so switching into it resets both to the only value
+                // the backend will accept, rather than leaving stale input the user would
+                // otherwise have to clear by hand.
+                ...(nextType === "DIVIDEND" ? { quantity: "0", price: "0" } : {}),
+              }));
+            }}
             className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm focus:border-brass-500 focus:outline-none"
           >
             {TXN_TYPES.map((t) => (
@@ -116,27 +151,37 @@ export function TransactionForm({
           </select>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-navy-600 mb-1">Quantity</label>
-          <input
-            required
-            inputMode="decimal"
-            value={form.quantity}
-            onChange={(e) => set("quantity", e.target.value)}
-            className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm tabular-nums focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        {!isDividend && (
+          <div>
+            <label className="block text-xs font-medium text-navy-600 mb-1">Quantity</label>
+            <input
+              required
+              inputMode="decimal"
+              value={form.quantity}
+              onChange={(e) => set("quantity", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm tabular-nums focus:border-brass-500 focus:outline-none"
+            />
+          </div>
+        )}
 
-        <div>
-          <label className="block text-xs font-medium text-navy-600 mb-1">Price / unit</label>
-          <input
-            required
-            inputMode="decimal"
-            value={form.price}
-            onChange={(e) => set("price", e.target.value)}
-            className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm tabular-nums focus:border-brass-500 focus:outline-none"
-          />
-        </div>
+        {!isDividend && (
+          <div>
+            <label className="block text-xs font-medium text-navy-600 mb-1">Price / unit</label>
+            <input
+              required
+              inputMode="decimal"
+              value={form.price}
+              onChange={(e) => set("price", e.target.value)}
+              className="w-full rounded-lg border border-navy-100 bg-surface px-3 py-2 text-sm tabular-nums focus:border-brass-500 focus:outline-none"
+            />
+          </div>
+        )}
+        {isDividend && (
+          <p className="col-span-2 text-[11px] text-navy-400">
+            DIVIDEND rows carry no quantity or price -- the amount belongs in Dividend
+            amount below.
+          </p>
+        )}
 
         <div>
           <label className="block text-xs font-medium text-navy-600 mb-1">Charges</label>

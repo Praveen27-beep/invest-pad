@@ -57,8 +57,28 @@ const LEDGER_COLUMNS: LedgerColumn[] = [
       </span>
     ),
   },
-  { key: "quantity", label: "Qty", align: "right", render: (r) => formatQuantity(r.quantity as string) },
-  { key: "price", label: "Price", align: "right", render: (r) => formatMoney(r.price as string, true) },
+  {
+    key: "quantity",
+    label: "Qty",
+    align: "right",
+    // DIVIDEND rows carry no quantity by design (docs/DATA_MODEL.md's txn_type table --
+    // 0 is the correct value, not a missing one), but rendering that 0 verbatim next to
+    // real trade rows reads as "nothing happened" rather than "not applicable here."
+    render: (r) => ((r.txn_type as string) === "DIVIDEND" ? EMPTY_VALUE : formatQuantity(r.quantity as string)),
+  },
+  {
+    key: "price",
+    label: "Price",
+    align: "right",
+    // Same reasoning, and the bigger problem: a DIVIDEND row's actual amount lives in
+    // dividend_amount, not price (which is genuinely 0 for these rows) -- showing raw
+    // `price` here made real money that arrived look like ₹0.00 on the one screen
+    // literally called the ledger. Show the amount that actually moved instead.
+    render: (r) =>
+      (r.txn_type as string) === "DIVIDEND"
+        ? formatMoney(r.dividend_amount as string, true)
+        : formatMoney(r.price as string, true),
+  },
   {
     key: "charges",
     label: "Charges",

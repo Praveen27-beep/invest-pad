@@ -1,19 +1,106 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useState } from "react";
-import { EmptyState, IconButton } from "./ds";
+import { useEffect, useMemo, useState } from "react";
+import type { ExpectedDividendOut, UnprojectableDividendOut } from "@/lib/api-types";
+import { formatDate } from "@/lib/format";
+import { EmptyState, IconButton, Skeleton } from "./ds";
+
+const fmtINR = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
+const fmtPerShare = (s: string) => "₹" + Number(s).toFixed(2);
+
+const UNPROJECTABLE_REASON: Record<string, string> = {
+  UNCORROBORATED:
+    "Only one source has reported this declaration so far — the normal resting state while it awaits independent corroboration.",
+  SHARE_COUNT_CHANGED:
+    "A bonus or split landed close enough before the ex-date that the declared amount per share and the held quantity may be on different bases.",
+};
+
+const sectionTitle = {
+  margin: "0 0 10px",
+  font: "var(--type-label)",
+  textTransform: "uppercase" as const,
+  letterSpacing: ".08em",
+  color: "var(--text-tertiary)",
+};
+
+const row = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 12,
+  padding: "12px 0",
+  borderBottom: "1px solid var(--border)",
+};
+
+function EventRow({ event, label }: { event: ExpectedDividendOut; label: (isin: string) => string }) {
+  return (
+    <div style={row}>
+      <div>
+        <p style={{ margin: 0, font: "var(--type-body)", color: "var(--text-primary)" }}>{label(event.isin)}</p>
+        <p style={{ margin: "3px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          {event.kind} · ex-date {formatDate(event.ex_date)}
+          {event.payment_date ? ` · pays ${formatDate(event.payment_date)}` : ""}
+        </p>
+        <p style={{ margin: "2px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          {fmtPerShare(event.amount_per_share)}/share × {Number(event.eligible_quantity).toLocaleString("en-IN")} held
+        </p>
+      </div>
+      <span
+        className="tabular-nums"
+        style={{ font: "var(--type-body)", fontWeight: 600, color: "var(--text-primary)", whiteSpace: "nowrap" }}
+      >
+        {fmtINR(Number(event.gross_expected))}
+      </span>
+    </div>
+  );
+}
+
+function UnprojectableRow({ item, label }: { item: UnprojectableDividendOut; label: (isin: string) => string }) {
+  return (
+    <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+      <p style={{ margin: 0, font: "var(--type-body)", color: "var(--text-primary)" }}>
+        {label(item.isin)} <span style={{ color: "var(--text-tertiary)" }}>· ex-date {formatDate(item.ex_date)}</span>
+      </p>
+      <p style={{ margin: "3px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+        {UNPROJECTABLE_REASON[item.code] ?? item.detail}
+      </p>
+    </div>
+  );
+}
 
 /**
- * Future dividend announcements.
+ * Declared dividends, sized to this investor's holdings — the full list behind the
+ * dashboard's "Announced" figure.
  *
- * The chrome is built; the feed is not. Declared and estimated payouts need a
- * corporate-actions source, and until one is wired up this drawer says so plainly
- * rather than showing last year's figures dressed as forecasts — a plausible number
- * in a portfolio tool is worse than an absent one, because there is no way for the
- * reader to tell it apart from a real one.
+ * Reads the same `/dividends/expected` response `DividendCard` already fetched, passed in
+ * as props: nothing here issues its own request, so opening the drawer never doubles the
+ * round trip DividendCard already made. `asOf` splits the list at the same boundary the
+ * card's figure respects — upcoming vs. already gone ex-dividend — so the two never
+ * disagree about what "announced" includes.
+ *
+ * Every figure shown is `gross_expected`: a projection, never income. See
+ * `docs/ARCHITECTURE_INVARIANTS.md` #18 — nothing here may be summed into Received.
  */
-export function DividendDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function DividendDrawer({
+  open,
+  onClose,
+  loading,
+  error,
+  expected,
+  unprojectable,
+  names,
+  asOf,
+}: {
+  open: boolean;
+  onClose: () => void;
+  loading: boolean;
+  error?: string | null;
+  expected: ExpectedDividendOut[];
+  unprojectable: UnprojectableDividendOut[];
+  names?: Record<string, string>;
+  asOf?: string;
+}) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -26,7 +113,24 @@ export function DividendDrawer({ open, onClose }: { open: boolean; onClose: () =
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  const label = (isin: string) => names?.[isin] ?? isin;
+
+  const sorted = useMemo(
+    () => expected.slice().sort((a, b) => a.ex_date.localeCompare(b.ex_date)),
+    [expected]
+  );
+  const upcoming = useMemo(
+    () => (asOf ? sorted.filter((e) => e.ex_date > asOf) : sorted),
+    [sorted, asOf]
+  );
+  const pastExDate = useMemo(
+    () => (asOf ? sorted.filter((e) => e.ex_date <= asOf).reverse() : []),
+    [sorted, asOf]
+  );
+
   if (!mounted || !open) return null;
+
+  const nothing = !loading && !error && expected.length === 0 && unprojectable.length === 0;
 
   return createPortal(
     <div
@@ -73,23 +177,63 @@ export function DividendDrawer({ open, onClose }: { open: boolean; onClose: () =
                 color: "var(--text-primary)",
               }}
             >
-              Future dividend announcements
+              Declared dividends
             </p>
             <p style={{ margin: "2px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-              Declared and estimated payouts on your current holdings.
+              Announced payouts on your current holdings, sized to what you held at each ex-date.
             </p>
           </div>
           <IconButton name="close" label="Close" variant="plain" size={32} onClick={onClose} />
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-          <EmptyState
-            title="The announcements feed isn't live yet"
-            hint="Declared and estimated payouts will appear here once a corporate-actions source is connected. Dividends already in your ledger are shown on the dashboard's Dividends card."
-          />
-          <p style={{ margin: "14px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-            Nothing is estimated in the meantime, because a forecast you cannot tell apart from a settled figure is worse than
-            no forecast at all.
+          {loading ? (
+            <>
+              <Skeleton width="100%" height={56} style={{ marginBottom: 10 }} />
+              <Skeleton width="100%" height={56} style={{ marginBottom: 10 }} />
+              <Skeleton width="100%" height={56} />
+            </>
+          ) : error ? (
+            <p style={{ margin: 0, font: "var(--type-body)", color: "var(--negative)" }}>{error}</p>
+          ) : nothing ? (
+            <EmptyState
+              title="Nothing declared"
+              hint="No verified declaration currently covers a security you held at its ex-date. This list fills in as companies announce dividends on your holdings."
+            />
+          ) : (
+            <>
+              {upcoming.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={sectionTitle}>Upcoming</p>
+                  {upcoming.map((e) => (
+                    <EventRow key={e.event_id ?? `${e.isin}-${e.ex_date}`} event={e} label={label} />
+                  ))}
+                </div>
+              )}
+              {pastExDate.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <p style={sectionTitle}>Already gone ex-dividend</p>
+                  {pastExDate.map((e) => (
+                    <EventRow key={e.event_id ?? `${e.isin}-${e.ex_date}`} event={e} label={label} />
+                  ))}
+                </div>
+              )}
+              {unprojectable.length > 0 && (
+                <div>
+                  <p style={sectionTitle}>Declared, not yet sized</p>
+                  {unprojectable.map((u) => (
+                    <UnprojectableRow key={`${u.isin}-${u.ex_date}`} item={u} label={label} />
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)" }}>
+          <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+            Projections, not income — none of this is counted in Received, XIRR, TWRR or
+            contribution until it actually arrives and is recorded as a dividend transaction.
           </p>
         </div>
       </div>

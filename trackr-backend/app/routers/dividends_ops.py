@@ -26,11 +26,26 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 
 from app.auth.ops import require_cron_secret, require_ops_key
+from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db import dividend_events as de
 from app.schemas.transactions import DiscoverDividendsYfinanceOut, RefreshDividendFeedOut
 
 ops_router = APIRouter(prefix="/ops/dividends", tags=["ops"])
+
+
+def _jev_client(settings: Settings) -> Any:
+    """A Jev client, or ``None`` when no key is configured -- the ordinary state today.
+
+    Unlike ``app.routers.ingest._llm_client`` this has no separate enabled flag: the one
+    thing it sends (an NSE corporate-action subject line, ISIN and symbol) is public
+    market data, not an investor's own -- see ``app/config.py``'s ``jev_api_key``.
+    """
+    if not settings.jev_api_key:
+        return None
+    from app.ai.jev import JevClient
+
+    return JevClient(settings.jev_api_key, settings.jev_model)
 
 #: The full set of outcome keys `refresh_dividend_feed`/`discover_dividends_from_yfinance`
 #: can produce -- see app.db.dividend_events.OUTCOME_*. Used to normalise their dynamic
@@ -47,8 +62,10 @@ def _normalise(counts: dict[str, Any]) -> dict[str, Any]:
     return {key: counts.get(key, 0) for key in _OUTCOME_KEYS}
 
 
-def _refresh_dividends(conn: Any, start: date, end: date) -> dict[str, Any]:
-    result = de.refresh_dividend_feed(conn, start, end, actor_uid=None)
+def _refresh_dividends(conn: Any, start: date, end: date, settings: Settings) -> dict[str, Any]:
+    result = de.refresh_dividend_feed(
+        conn, start, end, actor_uid=None, jev_client=_jev_client(settings)
+    )
     return {
         "fetched": result.get("fetched", 0),
         "error": result.get("error"),
@@ -65,12 +82,13 @@ def refresh_dividends(
     start: date | None = Query(default=None),
     end: date | None = Query(default=None),
     conn: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
     """``X-Ops-Key``-gated -- a human or a non-Vercel scheduler triggering a fetch
     directly, same posture as ``refresh_corporate_actions``. Defaults to a 2-day window
     ending today, overridable for a backfill."""
     today = date.today()
-    return _refresh_dividends(conn, start or today - timedelta(days=1), end or today)
+    return _refresh_dividends(conn, start or today - timedelta(days=1), end or today, settings)
 
 
 @ops_router.get(
@@ -78,12 +96,14 @@ def refresh_dividends(
     response_model=RefreshDividendFeedOut,
     dependencies=[Depends(require_cron_secret)],
 )
-def refresh_dividends_cron(conn: Any = Depends(get_conn)) -> dict[str, Any]:
+def refresh_dividends_cron(
+    conn: Any = Depends(get_conn), settings: Settings = Depends(get_settings)
+) -> dict[str, Any]:
     """Same job, reachable by Vercel Cron: GET, gated by ``CRON_SECRET`` rather than
     ``X-Ops-Key``, since that is the only credential Vercel's scheduler sends. See
     docs/DEPLOYMENT.md."""
     today = date.today()
-    return _refresh_dividends(conn, today - timedelta(days=1), today)
+    return _refresh_dividends(conn, today - timedelta(days=1), today, settings)
 
 
 @ops_router.post(
