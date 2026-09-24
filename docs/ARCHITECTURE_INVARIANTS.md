@@ -265,6 +265,18 @@ that is what the drift check is for, and it must pass before trusting anything b
   current architecture and is **not yet authorised**; it is a new ingestion source, not an
   extension of an existing one.
 
+  **The schema seam exists on disk, deliberately unapplied.**
+  `trackr-backend/app/db/migrations/033_funds_statement_source.sql` adds
+  `'FUNDS_STATEMENT'` to the `txn_source` enum — nothing else; no column, no constraint,
+  no backfill, and nothing currently writes a row using it. Held out of the dev database
+  on 2026-09-24 rather than applied speculatively: `ALTER TYPE ... ADD VALUE` cannot be
+  undone (`DROP VALUE` does not exist in PostgreSQL), so it is a one-way door with no
+  runtime benefit until a funds-statement adapter is actually being built. **The trigger
+  to apply it is that work starting, not a calendar date or "while we're in here."** When
+  it does start: back up the database first, same as any change to a database holding
+  real client data, verify the backup restores before running the migration, then apply
+  033 on its own.
+
   **What this means for every dividend figure the product shows, stated once:** a figure
   labelled *received* comes from `DIVIDEND` ledger rows and is money that moved. A figure
   labelled *announced* or *expected* is a projection from a declaration and is **never**
