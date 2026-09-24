@@ -189,6 +189,7 @@ docs/ARCHITECTURE.md     layers, boundaries, and what may import what
 docs/TAX_ENGINE.md       grandfathering, indexation, CII, Schedule 112A
 docs/COMPLIANCE.md       DPDP + SEBI obligations and go-live gates
 docs/DEPLOYMENT.md       deploy steps, env vars, cron wiring
+docs/BACKUPS.md          local Postgres dumps: log, how to take/verify one, when to
 docs/KEY_ROTATION.md     encryption key rotation procedure
 docs/BACKFILL_STRATEGY.md   how missing history is recovered, and what cannot be
 docs/EMAIL_BACKFILL.md      the mailbox-history path specifically
