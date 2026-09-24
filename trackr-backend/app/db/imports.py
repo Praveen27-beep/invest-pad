@@ -25,15 +25,25 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from app import isin as isin_rules
+from app import securities as securities_master
 from app.db import audit, documents, holdings, precedence, repository
 from app.db import identity as db_identity
 from app.engine.dedupe import make_dedupe_key
 from app.engine.types import ImportSummary, Source, Transaction, TxnType
-from app.ingest.base import CONFIDENCE_UNCERTAIN, REVIEW_THRESHOLD, ParseResult
+from app.ingest.base import (
+    CONFIDENCE_DERIVED,
+    CONFIDENCE_UNCERTAIN,
+    REVIEW_THRESHOLD,
+    ParseResult,
+    Rejection,
+    StagedRow,
+)
 from app.storage.keys import content_hash
 
 logger = logging.getLogger("imports")
@@ -127,6 +137,89 @@ def _payload_to_txn(payload: dict[str, Any]) -> Transaction:
     )
 
 
+#: What a reviewer is told when a row's identifier does not survive ``app.isin``. Keyed by
+#: the reason so the message names the actual damage rather than "invalid ISIN", which is
+#: the one thing a person fixing the file already knows.
+_ISIN_REJECTION = {
+    isin_rules.Reason.NOT_A_STRING: "ISIN is not text",
+    isin_rules.Reason.TOO_LONG: "ISIN field is too long to be an identifier",
+    isin_rules.Reason.MISSING_IDENTIFIER: "row carries no ISIN",
+    isin_rules.Reason.SHAPE: "not an ISO 6166 identifier",
+    isin_rules.Reason.CHECKSUM: (
+        "ISO 6166 check digit failed and no already-known security carries this ISIN"
+    ),
+}
+
+
+def _screen_isins(conn: Any, result: ParseResult) -> ParseResult:
+    """Refuse a staged row whose ISIN is damaged, before it can key anything.
+
+    CLAUDE.md rule 2 makes the ISIN the identity of a security, so a dropped character does
+    not produce an error -- it produces a *second*, phantom security that nothing will ever
+    price. ``app.isin.classify`` has existed to catch that since the lineage work landed and
+    was wired to nothing; this is the one place every adapter's output passes through, so it
+    is the one place the check belongs.
+
+    RUNS BEFORE THE BATCH ROW IS WRITTEN, deliberately: ``import_batch.row_count`` and
+    ``rejected_count`` are taken from the ``ParseResult`` this returns, so screening
+    afterwards would record counts that contradict the rows actually stored.
+
+    THE CHECKSUM CASE IS NOT A REJECTION ON ITS OWN, per ``app.isin``'s own note: real
+    reference data is occasionally dirty, and a checksum failure on a string that exactly
+    matches a security this system has already accepted is evidence about the stored row,
+    not grounds to discard a holding. Those rows stage at ``CONFIDENCE_DERIVED`` so
+    ``review_batch`` surfaces them, and promote without further ceremony. Every other
+    failure -- and a checksum failure on an identifier never seen before -- is rejected: no
+    lookup can rescue a string that is not shaped like an identifier at all.
+
+    Confidence is only ever lowered, never raised. A row an adapter could not vouch for
+    (0.5, below ``PROMOTE_FLOOR``) must not be promoted to 0.8 by passing this screen.
+    """
+    verdicts = [(staged, isin_rules.classify(staged.transaction.isin)) for staged in result.rows]
+
+    # One lookup for every checksum-failing identifier in the batch, not one per row.
+    suspect = sorted(
+        {
+            verdict.normalized
+            for _, verdict in verdicts
+            if verdict.reason is isin_rules.Reason.CHECKSUM
+        }
+    )
+    known = securities_master.lookup(conn, suspect) if suspect else {}
+
+    rows: list[StagedRow] = []
+    rejections = list(result.rejections)
+    for staged, verdict in verdicts:
+        if verdict.outcome is isin_rules.Outcome.VALID:
+            # The normalized form, not the raw one: classify() strips the zero-width
+            # characters and interior spaces that survive PDF extraction, and storing the
+            # damaged spelling would key a phantom security on exactly the damage this
+            # screen just forgave.
+            rows.append(_restated(staged, verdict.normalized, staged.confidence))
+        elif verdict.reason is isin_rules.Reason.CHECKSUM and verdict.normalized in known:
+            rows.append(
+                _restated(staged, verdict.normalized, min(staged.confidence, CONFIDENCE_DERIVED))
+            )
+        else:
+            reason = _ISIN_REJECTION.get(verdict.reason, "unusable ISIN")
+            rejections.append(
+                Rejection(staged.row_number, f"{reason}: {verdict.raw!r}", staged.raw)
+            )
+
+    return ParseResult(rows=rows, rejections=rejections, notes=result.notes)
+
+
+def _restated(staged: StagedRow, normalized: str, confidence: Decimal) -> StagedRow:
+    """The same staged row, carrying the normalized ISIN. ``Transaction`` is frozen."""
+    if staged.transaction.isin == normalized and staged.confidence == confidence:
+        return staged
+    return replace(
+        staged,
+        transaction=replace(staged.transaction, isin=normalized),
+        confidence=confidence,
+    )
+
+
 def stage_batch(
     conn: Any,
     adapter: Any,
@@ -185,6 +278,11 @@ def stage_batch(
         raise DuplicateUploadError(digest, str(existing[0]))
 
     result: ParseResult = adapter.parse(content, account_id=account_id, filename=filename)
+
+    # Every adapter's output converges here, so this is where a damaged identifier is
+    # caught -- once, rather than in each parser with a different idea of what an ISIN is.
+    # Must precede the import_batch insert below, which reads its counts off this result.
+    result = _screen_isins(conn, result)
 
     # Identity check BEFORE store_document: a note belonging to somebody else must not be
     # written into this investor's document store on its way to being refused. Optional
@@ -353,6 +451,11 @@ def reparse_batch(
     result: ParseResult = adapter.parse(
         content, account_id=str(account_id), filename=filename or ""
     )
+
+    # Screened here too, for the same reason stage_batch screens: this REPLACES the
+    # batch's rows, so an unscreened reparse would be a way to land a damaged identifier
+    # that the original staging had already refused.
+    result = _screen_isins(conn, result)
 
     with conn.cursor() as cur:
         # REPLACED, not appended: a reparse answers "what would this document produce

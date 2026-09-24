@@ -108,7 +108,11 @@ def test_rejections_carry_the_row_number(adapter) -> None:
 @pytest.mark.parametrize(
     ("mutation", "expected"),
     [
-        (lambda r: r.replace("INE153T01027", "NOTANISIN"), "ISIN"),
+        # A damaged ISIN is deliberately NOT here any more. This adapter used to screen it
+        # on ``^IN[A-Z0-9]{10}$``, which never checked the ISO 6166 check digit and so
+        # accepted values like INE153T0102X. That check now lives once, centrally, in
+        # app.db.imports._screen_isins -- see tests/test_imports_isin_screening.py, which
+        # covers this case and the ones the old pattern let through.
         (lambda r: r.replace("2024-01-10", "10/01/2024"), "trade_date"),
         (lambda r: r.replace(",100.000000,", ",abc,"), "quantity/price"),
         (lambda r: r.replace(",100.000000,", ",-5,"), "positive"),
