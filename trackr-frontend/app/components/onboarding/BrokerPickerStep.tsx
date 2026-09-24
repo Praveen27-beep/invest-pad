@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
 import type { AccountOut, BrokerOut } from "@/lib/api-types";
-import { Badge, Banner, Checkbox, Icon, Input } from "../ds";
+import { Banner, Checkbox, Input } from "../ds";
 
 /**
  * Step 2 — where do you trade? A screen that did not exist.
@@ -20,12 +20,10 @@ import { Badge, Banner, Checkbox, Icon, Input } from "../ds";
  * addresses have always been derived from the adapter registry. What was missing was a
  * question, and honesty about the answers.
  *
- * THE BADGES ARE LOAD-BEARING AND MUST NOT FLATTER. Every capability shown comes from
- * `GET /brokers`, which derives each one from a registry a real parser is already in.
- * This component computes none of them and hardcodes no broker. A picker that lists thirty
- * brokers and fails silently on twenty-nine is not a multi-broker product — so a broker
- * with no adapter says "files ✅ · email —", which is the true and useful answer: the
- * account works, files are accepted and classified, and nothing pretends otherwise.
+ * KEPT TO NAMES ONLY. Per-broker capability badges (notes/book/files/email) used to sit
+ * beside each row; this list is just "which brokers do you use", so it now shows only the
+ * broker name and its checkbox. What each broker can parse still comes from `GET /brokers`
+ * and still drives the ingestion behaviour elsewhere — it just isn't restated here.
  *
  * ADDING, NEVER REMOVING. Unticking a broker you already have an account with does not
  * delete it. Accounts own transactions, and a checkbox is not a safe place to put "erase
@@ -192,7 +190,6 @@ export function BrokerPickerStep({
                 }
                 style={{ flex: 1, minWidth: 140 }}
               />
-              <CapabilityBadges broker={broker} />
               {already && (
                 <span style={{ font: "var(--type-label)", color: "var(--text-tertiary)" }}>
                   already added
@@ -233,95 +230,7 @@ export function BrokerPickerStep({
           />
         </li>
       </ul>
-
-      <WhatTheseMean />
     </div>
-  );
-}
-
-/**
- * What we can actually do with this broker's files, in four words or fewer.
- *
- * `files ✅` is unconditional and true for everyone: every account accepts uploads, the
- * classifier names what it can, and what it cannot name is refused with a sentence rather
- * than swallowed. The other three are only shown when the response says so, and `email —`
- * is drawn deliberately — a row that says "no address is offered" is the difference
- * between multi-broker and pretending to be multi-broker.
- */
-function CapabilityBadges({ broker }: { broker: BrokerOut }) {
-  return (
-    <span style={{ display: "inline-flex", gap: 5, flexWrap: "wrap" }}>
-      {broker.parses_contract_notes && (
-        <Badge tone="positive" title="Contract-note PDFs and spreadsheets parse automatically">
-          notes
-        </Badge>
-      )}
-      {broker.parses_tradebooks && (
-        <Badge tone="positive" title="Tradebook CSVs parse automatically">
-          book
-        </Badge>
-      )}
-      <Badge tone="neutral" title="Files are accepted and classified">
-        files
-      </Badge>
-      {broker.forwarding ? (
-        <Badge tone="positive" title="A forwarding address exists for this broker">
-          email
-        </Badge>
-      ) : (
-        <Badge tone="outline" title="No forwarding address is offered for this broker yet">
-          email —
-        </Badge>
-      )}
-    </span>
-  );
-}
-
-function WhatTheseMean() {
-  return (
-    <details style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-      <summary
-        style={{ cursor: "pointer", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}
-      >
-        What do these tags mean?
-      </summary>
-      <dl
-        style={{
-          margin: "10px 0 0",
-          display: "grid",
-          gridTemplateColumns: "auto 1fr",
-          gap: "6px 12px",
-          font: "var(--type-body-sm)",
-          color: "var(--text-secondary)",
-          alignItems: "baseline",
-        }}
-      >
-        <dt>
-          <Badge tone="positive">notes</Badge>
-        </dt>
-        <dd style={{ margin: 0 }}>
-          We read this broker&apos;s contract notes exactly, including brokerage and taxes.
-        </dd>
-        <dt>
-          <Badge tone="positive">book</Badge>
-        </dt>
-        <dd style={{ margin: 0 }}>We read this broker&apos;s tradebook exports exactly.</dd>
-        <dt>
-          <Badge tone="neutral">files</Badge>
-        </dt>
-        <dd style={{ margin: 0 }}>
-          Every broker. Upload anything and we&apos;ll tell you what we found — and say so
-          plainly when we can&apos;t read something, rather than importing it wrong.
-        </dd>
-        <dt>
-          <Badge tone="outline">email —</Badge>
-        </dt>
-        <dd style={{ margin: 0 }}>
-          No forwarding address for this broker yet. You&apos;d upload files by hand, which
-          works perfectly well.
-        </dd>
-      </dl>
-    </details>
   );
 }
 

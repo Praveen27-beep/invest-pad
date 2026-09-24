@@ -37,13 +37,12 @@ export function LandingHero() {
     <section id="top" className="l-hero">
       <div className="l-container l-center">
         <h1 className="l-h1 l-rise" style={{ animationDelay: "60ms", maxWidth: 920 }}>
-          Every number, traced back to the trade that made it.
+          Manage your investments, better.
         </h1>
 
         <p className="l-lede l-rise" style={{ animationDelay: "220ms", maxWidth: 660 }}>
-          Trackr+ replays your entire transaction ledger to compute holdings, XIRR and
-          capital gains — on every read. Nothing is cached, so nothing can quietly drift
-          out of sync.
+          Track every portfolio in one place, with actionable insights and your XIRR
+          benchmarked against the Nifty 50.
         </p>
 
         <div className="l-cta-row l-rise" style={{ animationDelay: "300ms" }}>

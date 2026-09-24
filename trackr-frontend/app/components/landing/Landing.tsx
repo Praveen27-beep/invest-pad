@@ -53,26 +53,6 @@ export function Landing() {
 
       <LandingFaq />
 
-      <section className="l-section" style={{ background: "var(--l-sunken)", borderTop: "1px solid var(--l-border)" }}>
-        <div className="l-container l-center">
-          <Reveal>
-            <h2 className="l-h2" style={{ marginTop: 0, maxWidth: 760 }}>Start with one CSV. See the whole history.</h2>
-            <p className="l-lede" style={{ margin: "18px auto 0", maxWidth: 560 }}>
-              Import a tradebook and Trackr+ replays it into holdings, XIRR and capital gains
-              in a single pass.
-            </p>
-            <div className="l-cta-row">
-              <Link href="/register" className="l-btn l-btn-solid" style={{ height: 54 }}>
-                Create your account <ArrowRight />
-              </Link>
-              <Link href="/login" className="l-btn l-btn-ghost" style={{ height: 54 }}>
-                Sign in
-              </Link>
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
       <LandingFooter />
     </div>
   );
