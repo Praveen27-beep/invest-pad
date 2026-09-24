@@ -13,7 +13,7 @@ install:
 	pip install -e ".[dev]"
 	pip install -e "trackr-backend[dev]"
 
-test: test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint
+test: test-engine test-contribution test-tax test-golden test-demo-fixture lint
 
 test-engine:          ## hand-computed cases from ENGINE_SPEC.md
 	$(PYTEST) tests/test_engine_cases.py -v
@@ -34,23 +34,19 @@ test-golden:          ## the real 324-trade portfolio
 test-demo-fixture:    ## fixtures/demo_portfolio.json replayed through the real engine
 	$(PYTEST) tests/test_demo_fixture.py -v
 
-# app/analytics/ had NO tests at all until these -- including verdict.py, the module its
-# own docstring calls "THE HIGHEST-RISK COMPONENT", and whose line 37 claimed the weights
-# summing to 1.0 was "asserted by the tests". Wired into `test` rather than left to
-# `pytest tests/` because CLAUDE.md is explicit that those are different signals, and a
-# published letter grade belongs behind the acceptance gate.
-test-analytics:       ## the health grade, the insight rules, the derived block, behaviour
-	$(PYTEST) tests/test_analytics_verdict.py tests/test_analytics_derived.py \
-	       tests/test_analytics_behaviour.py -v
-
-# The fact pack is what a generated sentence is allowed to know. Its acceptance test is
-# that it can still supply every number the hand-written prose used to quote -- if it
-# cannot, a generated sentence would have to omit the figure or invent it, and the
-# second is the failure the whole package exists to prevent. That belongs behind the
-# gate, not in the wider suite.
-test-narrative:       ## the fact pack, the relation vocabulary, the verifier, the cache key
-	$(PYTEST) tests/test_narrative_factpack.py tests/test_narrative_select_egress.py \
-	       tests/test_narrative_verify.py tests/test_narrative_digest_client_chat.py -v
+# REMOVED 2026-09-24: `test-analytics` and `test-narrative` named seven test files that
+# were never written. `git log --all -- 'tests/test_analytics*' 'tests/test_narrative*'`
+# is empty on every branch, and none are on disk. Both targets were added by 8066d8c --
+# the targets landed, the tests did not -- so `make test` has aborted at test-analytics
+# ever since, which means the acceptance gate this Makefile documents has not run since
+# that commit.
+#
+# THE GAP THEY WERE MEANT TO CLOSE IS REAL AND STILL OPEN. Nothing under tests/ imports
+# app.analytics (7 modules, including verdict.py, whose own docstring calls it "THE
+# HIGHEST-RISK COMPONENT") or app.narrative (13 modules, including verify.py, the check
+# that stops a generated sentence inventing a figure). Removing these targets is what
+# makes the gate runnable again; it is NOT what makes those modules tested. Restore a
+# target here when the tests behind it actually exist -- not before.
 
 lint:                 ## the architecture rules, enforced
 	@echo "checking: no float in app/engine/"
