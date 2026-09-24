@@ -247,6 +247,14 @@ that is what the drift check is for, and it must pass before trusting anything b
   shares were applied for and allotted is not, and no feed can supply it.
 - **SULA** — missing historical trades, no corporate action involved in any source. The
   usual cause is a tradebook export capped at 365 days.
+- **`app/analytics/` and `app/narrative/` have no tests at all.** Nothing under `tests/`
+  imports either package — 7 modules and 13 modules respectively, including
+  `analytics/verdict.py`, whose own docstring calls it "THE HIGHEST-RISK COMPONENT" and
+  which publishes a letter grade, and `narrative/verify.py`, the check that stops a
+  generated sentence quoting a figure the fact pack cannot support. The `make test` targets
+  that claimed to cover them named seven test files that were never written on any branch;
+  they were removed on 2026-09-24 so the acceptance gate runs again. That fixed the gate,
+  not the coverage. Recorded unscoped: no plan, estimate or owner is attached to this entry.
 
 ### Future work
 - **Dividend RECEIPT.** Declared dividends are now ingested and projected (see invariant 19
