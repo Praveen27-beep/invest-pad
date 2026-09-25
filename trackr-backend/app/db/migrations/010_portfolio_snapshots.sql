@@ -1,7 +1,8 @@
 -- 010_portfolio_snapshots.sql -- persisted compute_snapshot() output (docs/ENGINE_SPEC.md
--- section 8). app/routers/analytical.py's _fy_xirr and _period_xirr currently call
--- compute_snapshot() live, on every /performance request, against historical prices, just
--- to get an honest opening_value for 1-April / onboarding_date. This table is that result,
+-- section 8). app/routers/analytical.py's fy-XIRR path (app.engine.xirr.compute_fy_xirr)
+-- and its trailing-window path (_window_xirr) currently call compute_snapshot() live, on
+-- every /performance request, against historical prices, just to get an honest
+-- opening_value for 1-April / onboarding_date. This table is that result,
 -- cached. It is a CACHE OF A DERIVATION, never a source of truth: every row must always be
 -- reproducible by calling compute_snapshot() again against the same ledger and prices.
 --

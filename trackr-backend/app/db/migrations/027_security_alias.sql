@@ -36,7 +36,7 @@ CREATE TABLE security_alias (
     old_isin       text PRIMARY KEY REFERENCES security(isin),
     -- The identifier that replaced it. Chains are resolved to their terminal ISIN
     -- (A -> B -> C resolves to C) and cycles are rejected at write -- see
-    -- app.db.security_alias.resolve/_assert_acyclic.
+    -- app.db.security_alias.verified_map/_assert_acyclic.
     current_isin   text NOT NULL REFERENCES security(isin),
     effective_date date NOT NULL,
 

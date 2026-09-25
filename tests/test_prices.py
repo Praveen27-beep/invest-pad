@@ -155,7 +155,7 @@ def test_a_real_udiff_response_is_never_mistaken_for_html() -> None:
 def legacy_payload() -> str:
     """A real, trimmed 17-Oct-2023 legacy bhavcopy excerpt -- GENSOL (EQ), a BE-series
     row, and a non-equity (TB, a T-Bill) row, captured from the actual archive while
-    building this fallback. See app.prices.sources.LegacyNseBhavcopySource."""
+    building this fallback. See app.prices.sources.legacy_nse_source."""
     return (FIXTURES / "nse_legacy_20231017.csv").read_text()
 
 

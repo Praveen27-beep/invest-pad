@@ -13,7 +13,7 @@ ALTER TABLE investor ADD COLUMN onboarding_date date;
 
 COMMENT ON COLUMN investor.onboarding_date IS
     'When the advisory relationship began. NULL for most investors today -- the metric '
-    'is simply omitted (app.routers.analytical._period_xirr), the same honest-omission '
+    'is simply omitted (app.routers.analytical._window_xirr), the same honest-omission '
     'pattern fy_xirr uses for a missing 1-April price. Never defaulted to created_at or '
     'any other stand-in.';
 

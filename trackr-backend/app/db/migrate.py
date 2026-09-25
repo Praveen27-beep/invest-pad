@@ -95,8 +95,8 @@ def check_drift(conn: Any, directory: Path = MIGRATIONS_DIR) -> list[str]:
     state rather than at source text -- every other check in that target is static
     analysis (grep for a banned token, grep for a layer violation) and needs no service
     running. This one needs ``DATABASE_URL`` to point at something reachable, and the
-    caller (``scripts/check_migrations.py``) is expected to skip cleanly, not fail, when
-    it does not -- the same posture ``tests/conftest_db.py`` takes when ``initdb``/
+    caller (``scripts/check_migration_drift.py``) is expected to skip cleanly, not fail,
+    when it does not -- the same posture ``tests/conftest_db.py`` takes when ``initdb``/
     ``pg_ctl`` are absent. A skip here is a weaker signal than a check that ran and
     passed, exactly as CLAUDE.md already says about the Postgres-backed test suite; it is
     not a reason to make an unconfigured environment fail a gate it cannot evaluate.

@@ -274,7 +274,7 @@ def create_investor(
     leaving a half-onboarded investor behind.
 
     ``onboarding_date`` feeds ``compute_period_xirr``'s ``start_date`` (see
-    ``app.routers.analytical._period_xirr``) -- optional, nullable, never defaulted.
+    ``app.routers.analytical._window_xirr``) -- optional, nullable, never defaulted.
 
     Raises:
         app.db.crypto.InvalidPANError: ``pan`` does not match the mandated PAN format.
@@ -448,7 +448,7 @@ def first_investor_id_for_user(conn: Any, user_id: str) -> str | None:
 
 def get_investor_onboarding_date(conn: Any, investor_id: str) -> date | None:
     """The investor's adviser-onboarding date -- ``compute_period_xirr``'s
-    ``start_date``, via ``app.routers.analytical._period_xirr``. ``None`` both when the
+    ``start_date``, via ``app.routers.analytical._window_xirr``. ``None`` both when the
     column is unset (most investors today) and when ``investor_id`` doesn't exist --
     this endpoint has never enforced investor existence (``load_transactions`` just
     returns an empty ledger for an unknown id), and this feature doesn't newly start.

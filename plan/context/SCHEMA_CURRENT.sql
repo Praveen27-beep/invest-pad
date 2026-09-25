@@ -1,5 +1,5 @@
 -- Trackr+ — CURRENT SCHEMA, all migrations in order.
--- Generated 17-09-2026 from trackr-backend/app/db/migrations/ at commit ebcfe7d.
+-- Generated 25-09-2026 from trackr-backend/app/db/migrations/ at commit 7ae7824.
 -- This is the real schema. Any new table must fit alongside it.
 
 -- ======================================================================
@@ -583,7 +583,7 @@ ALTER TABLE investor ADD COLUMN onboarding_date date;
 
 COMMENT ON COLUMN investor.onboarding_date IS
     'When the advisory relationship began. NULL for most investors today -- the metric '
-    'is simply omitted (app.routers.analytical._period_xirr), the same honest-omission '
+    'is simply omitted (app.routers.analytical._window_xirr), the same honest-omission '
     'pattern fy_xirr uses for a missing 1-April price. Never defaulted to created_at or '
     'any other stand-in.';
 
@@ -594,9 +594,10 @@ ALTER TABLE investor ADD CONSTRAINT investor_onboarding_date_not_in_the_future
 -- 010_portfolio_snapshots.sql
 -- ======================================================================
 -- 010_portfolio_snapshots.sql -- persisted compute_snapshot() output (docs/ENGINE_SPEC.md
--- section 8). app/routers/analytical.py's _fy_xirr and _period_xirr currently call
--- compute_snapshot() live, on every /performance request, against historical prices, just
--- to get an honest opening_value for 1-April / onboarding_date. This table is that result,
+-- section 8). app/routers/analytical.py's fy-XIRR path (app.engine.xirr.compute_fy_xirr)
+-- and its trailing-window path (_window_xirr) currently call compute_snapshot() live, on
+-- every /performance request, against historical prices, just to get an honest
+-- opening_value for 1-April / onboarding_date. This table is that result,
 -- cached. It is a CACHE OF A DERIVATION, never a source of truth: every row must always be
 -- reproducible by calling compute_snapshot() again against the same ledger and prices.
 --
@@ -1025,10 +1026,10 @@ COMMENT ON COLUMN app_user.tos_accepted_at IS
 -- 022_price_absent.sql -- "we looked, and it wasn't there" is an answer worth keeping.
 --
 -- THE BUG THIS FIXES. A backfill skipped any date that already had price rows
--- (app.db.prices.price_dates_present, as was). That treats one question -- "have we
--- fetched this day's bhavcopy?" -- as answered by a different one: "does SOME security
--- have a price on this day?". The two agree only while the set of securities we care
--- about never changes.
+-- (app.db.prices.price_dates_settled, then named price_dates_present). That treats one
+-- question -- "have we fetched this day's bhavcopy?" -- as answered by a different one:
+-- "does SOME security have a price on this day?". The two agree only while the set of
+-- securities we care about never changes.
 --
 -- It changes every time somebody buys something. Buy a new stock today and every
 -- historical date already has prices for the OTHER holdings, so every date is "present",
@@ -1281,7 +1282,7 @@ CREATE TABLE security_alias (
     old_isin       text PRIMARY KEY REFERENCES security(isin),
     -- The identifier that replaced it. Chains are resolved to their terminal ISIN
     -- (A -> B -> C resolves to C) and cycles are rejected at write -- see
-    -- app.db.security_alias.resolve/_assert_acyclic.
+    -- app.db.security_alias.verified_map/_assert_acyclic.
     current_isin   text NOT NULL REFERENCES security(isin),
     effective_date date NOT NULL,
 
@@ -1611,3 +1612,409 @@ COMMENT ON COLUMN transaction.tds_amount IS
     'checkable claim. No DEFAULT, deliberately -- neither corporate-action feed carries '
     'tax, so a default of 0 would have made a false assertion about every existing row.';
 
+-- ======================================================================
+-- 031_isin_change_circulars.sql
+-- ======================================================================
+-- 031_isin_change_circulars.sql -- an automated SOURCE of security_alias evidence.
+--
+-- WHY THIS EXISTS. security_alias (027) already holds the trust model: an alias is an
+-- assertion, structural checks reject but never create, and DRAFT is inert until a human
+-- (or app.db.security_alias.reconcile_after_alias) promotes it. What has been missing is
+-- an automated writer of DRAFT rows. NSE publishes a "Change in ISIN" circular whenever
+-- one is retired -- measured: 58 in 2022, 56 in 2023, 73 in 2024, 59 in 2025, via
+-- www.nseindia.com/api/circulars. app.ingest.isin_change_feed turns those into rows here,
+-- and this migration adds NO COLUMNS to security_alias itself -- see that module's
+-- docstring for why its existing shape already anticipates this writer.
+--
+-- WHY A SEPARATE TABLE AND NOT security_alias DIRECTLY. A circular is not an identity
+-- assertion by itself: it names a symbol and a NEW isin, never the old one, so "which
+-- ISIN does this retire" is an inference this codebase makes (by joining the symbol
+-- against `security`), not something NSE stated. Every circular this feed sees is worth
+-- recording -- including the ones for a company nobody holds, or whose symbol join is
+-- ambiguous -- and that record must never be confused with an identity claim. Precedent:
+-- dividend_event (029) exists for exactly this reason, to avoid forcing a different kind
+-- of fact into an existing trust table.
+--
+-- WHAT THIS TABLE IS NOT. It is not itself evidence of anything about a security's
+-- identity -- old_isin/alias_created only report what app.ingest.isin_change_feed did
+-- with the circular, not a fact this table asserts on its own. The identity assertion,
+-- if one was made, lives in security_alias as its own DRAFT row, sourced back to
+-- source_url here.
+CREATE TABLE isin_change_circular (
+    -- NSE's own circular id (e.g. '76380' from 'NSE/CML/76380'). The dedupe key: a
+    -- re-run of the poll against an overlapping date range must be a no-op, same rule as
+    -- dedupe_key everywhere else in ingestion.
+    circular_number   text PRIMARY KEY,
+    circular_ref      text NOT NULL,               -- 'NSE/CML/76380', kept for the audit trail
+    circular_date     date NOT NULL,
+
+    -- The circulars-LIST endpoint's own subject line, e.g. "Change in ISIN -- Oriana
+    -- Power Limited (ORIANA)". The one field always known, because it comes from the
+    -- list response itself -- unlike every column below, which depends on successfully
+    -- fetching and parsing that circular's PDF and so is NULLABLE.
+    subject_raw       text NOT NULL,
+
+    symbol            text,
+    new_isin          text CHECK (new_isin IS NULL OR new_isin ~ '^IN[A-Z0-9]{10}$'),
+
+    -- The circular's free-text reason, e.g. "Sub-Division from Rs. 10/- to Rs. 2/-".
+    -- Kept verbatim -- see app.engine.corporate_actions's "No ratio strings" note on why
+    -- this codebase never trusts notation like this at face value for a NUMBER. It is
+    -- read here only to classify the kind of event, never to derive a ratio.
+    remarks_raw       text,
+
+    -- A closed-set classification of remarks_raw (SUB_DIVISION, CONSOLIDATION,
+    -- MERGER_OR_SCHEME, DEMERGER, RENAME, OTHER). ALWAYS NULL TODAY: the classifier
+    -- that populated it was removed on 2026-09-22 and nothing replaced it, so
+    -- app.ingest.isin_change_feed.ParsedCircular hard-codes reason_class=None. The
+    -- columns are kept because they were only ever a review-queue enrichment --
+    -- nothing downstream branches on them, so an always-NULL column changes no
+    -- number and a future classifier needs no migration.
+    reason_class      text,
+    reason_confidence numeric(4,3),
+
+    -- Two dates, because the circulars state two and they can disagree (confirmed: Tata
+    -- Steel's ISIN changed "w.e.f. July 29, 2022" but was effective for trades "on and
+    -- from the Ex-date i.e., July 28, 2022"). wef_date is kept for the audit trail only;
+    -- ex_date is what security_alias.effective_date is set to, because that is the date
+    -- app.db.repository.load_transactions must start applying the alias from.
+    wef_date          date,
+    ex_date           date,
+
+    source_url        text NOT NULL,
+    fetched_at        timestamptz NOT NULL DEFAULT now(),
+
+    -- The symbol-join result. NULL means unresolved -- see skip_reason. A REFERENCE
+    -- rather than a free column so this table cannot silently drift from `security`.
+    old_isin          text REFERENCES security(isin),
+    alias_created     boolean NOT NULL DEFAULT false,
+
+    -- Set exactly when alias_created is false and old_isin resolution or add_alias
+    -- itself refused the row: 'symbol_unknown', 'multiple_isins_for_symbol', or the
+    -- message from a caught SecurityAliasError (self-alias, cross-issuer, cycle). NOT an
+    -- enum -- SecurityAliasError's text is open-ended and this column exists for a human
+    -- reading the review queue, not for code to branch on.
+    skip_reason       text,
+
+    CONSTRAINT isin_change_circular_outcome CHECK (
+        (alias_created AND skip_reason IS NULL) OR (NOT alias_created)
+    ),
+    -- An alias can only have been created from a circular this module actually parsed.
+    CONSTRAINT isin_change_circular_alias_needs_parse CHECK (
+        NOT alias_created OR (new_isin IS NOT NULL AND ex_date IS NOT NULL)
+    )
+);
+
+CREATE INDEX idx_isin_change_circular_symbol ON isin_change_circular (symbol);
+-- The review queue's own ordering: unresolved rows, most recent first.
+CREATE INDEX idx_isin_change_circular_unresolved ON isin_change_circular (circular_date DESC)
+    WHERE NOT alias_created;
+
+COMMENT ON TABLE isin_change_circular IS
+    'One row per NSE "Change in ISIN" circular seen by app.ingest.isin_change_feed. '
+    'Records the circular whether or not it produced a security_alias row -- old_isin '
+    'and alias_created report the outcome of the symbol join and add_alias call, not an '
+    'identity claim this table makes on its own. See app.db.security_alias for the '
+    'actual identity assertion, DRAFT and sourced back to source_url here.';
+
+-- Generic per-feed poll state: consecutive-failure count and circuit-breaker window.
+-- Not specific to this feed -- app.ingest.corporate_action_feed and
+-- app.db.dividend_events.refresh_dividend_feed poll on the same "never raise on a
+-- routine failure" posture
+-- today with no persisted failure count at all; this table is reusable by them without a
+-- further migration once they want a breaker of their own.
+CREATE TABLE feed_poll_state (
+    feed                  text PRIMARY KEY,        -- e.g. 'nse_isin_change_circulars'
+    consecutive_failures  integer NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+    last_attempt_at       timestamptz,
+    last_success_at       timestamptz,
+    -- NULL = breaker closed, poll normally. Set = skip every poll until this timestamp,
+    -- with zero HTTP calls attempted -- checked before the feed's own opener runs at all.
+    breaker_open_until    timestamptz
+);
+
+COMMENT ON TABLE feed_poll_state IS
+    'One row per polled feed: consecutive failures and an optional circuit-breaker '
+    'window. A poll that finds breaker_open_until in the future must skip entirely -- '
+    'not attempt a request and catch the failure -- see app.ingest.isin_change_feed.';
+
+-- ======================================================================
+-- 032_analytics_and_universe.sql
+-- ======================================================================
+-- 032_analytics_and_universe.sql -- the reference data the analytics module reads.
+--
+-- Three tables, none of which holds a derived portfolio number. Holdings stay computed on
+-- read; nothing here caches a valuation. What these store is REFERENCE data about
+-- securities -- the same category as `security.sector` and `security.market_cap_bucket`,
+-- which are already loaded from NSE and AMFI respectively.
+
+-- ---------------------------------------------------------------------------------------
+-- 1. security_symbol_change
+--
+-- A trading symbol moving is a corporate-action signal, and until now this system had
+-- nowhere to record it. `security.symbol` is written once at import (app/db/imports.py)
+-- and never refreshed, which is a live bug: INE155A01022 was Tata Motors Ltd / TATAMOTORS
+-- and is now Tata Motors Passenger Vehicles Ltd / TMPV after the Oct-2026 CV demerger.
+-- A yfinance lookup on the stale symbol 404s today, and once NSE reassigns TATAMOTORS to
+-- the demerged CV entity the same lookup returns THE WRONG COMPANY, silently.
+--
+-- This is NOT security_alias (027). That table maps ISIN -> ISIN when an identifier is
+-- superseded. This is a symbol change on an UNCHANGED ISIN -- a different fact, which is
+-- why it gets its own table rather than being forced into that one. The ISIN never moves;
+-- that is the whole point of keying on it.
+CREATE TABLE security_symbol_change (
+    isin        text NOT NULL REFERENCES security (isin),
+    -- NULL when the security had no symbol recorded before (an ISIN created by the
+    -- ledger-side INSERT ... ON CONFLICT DO NOTHING paths, which set isin only).
+    old_symbol  text,
+    new_symbol  text NOT NULL,
+    -- The bhavcopy date the change was OBSERVED on, not the date the exchange made it.
+    -- We learn about it when a file disagrees with what we hold; claiming to know the
+    -- effective date would be inventing a fact the feed does not carry.
+    observed_on date NOT NULL,
+    PRIMARY KEY (isin, observed_on)
+);
+COMMENT ON TABLE security_symbol_change IS
+    'Audit trail of trading-symbol changes observed in the bhavcopy. A symbol move is a '
+    'corporate-action signal; the ISIN is unchanged (see security_alias for ISIN changes).';
+
+-- ---------------------------------------------------------------------------------------
+-- 2. universe_member
+--
+-- The cross-sectional ranking universe for factor percentiles. A factor score is a
+-- PERCENTILE, and a percentile without a stated population is meaningless -- "momentum
+-- 66/100" says nothing until you know 66th out of what. Ranking a portfolio against only
+-- its own holdings is the failure mode this exists to prevent.
+--
+-- Members are priced from the bhavcopy we already download every day (it carries every
+-- listed scrip; the pipe currently discards all but held ISINs), so widening the universe
+-- costs no extra fetch -- only rows.
+CREATE TABLE universe_member (
+    isin       text PRIMARY KEY REFERENCES security (isin),
+    -- Named, because there will be more than one: a micro-cap book ranked against NIFTY100
+    -- is as misleading as no universe at all. The name travels with every score to the UI.
+    universe   text NOT NULL,
+    added_on   date NOT NULL,
+    -- NULL = current member. Kept rather than deleted so a historical score stays
+    -- explicable: index constituents change, and a rank computed last quarter was computed
+    -- against last quarter's population.
+    removed_on date
+);
+CREATE INDEX universe_member_current_idx ON universe_member (universe) WHERE removed_on IS NULL;
+
+-- ---------------------------------------------------------------------------------------
+-- 3. security_fundamentals
+--
+-- Vendor fundamentals, as-of dated. Keyed (isin, as_of) rather than one-row-per-ISIN
+-- because a vendor RESTATES: a ratio that changes is either a new filing or a correction,
+-- and collapsing the two loses the ability to tell them apart. Same shape as `price`,
+-- for the same reason.
+--
+-- EVERY ratio column is nullable and a NULL means UNKNOWN, never zero -- the same
+-- convention transaction.tds_amount documents. This matters more here than anywhere else
+-- in the schema: the upstream feed returns null for returnOnEquity on most Indian scrips
+-- (81% of a 24-holding test book by weight), and a zero-filled ROE would silently drag
+-- every quality score and portfolio aggregate toward the floor.
+CREATE TABLE security_fundamentals (
+    isin             text NOT NULL REFERENCES security (isin),
+    -- The date WE observed these values, not the fiscal period they describe. See
+    -- fiscal_period below for that.
+    as_of            date NOT NULL,
+
+    pe               numeric(20,6),
+    pb               numeric(20,6),
+    roe              numeric(20,6),
+    net_margin       numeric(20,6),
+    debt_to_equity   numeric(20,6),
+    interest_cover   numeric(20,6),
+    dividend_yield   numeric(20,6),
+    sales_growth_1y  numeric(20,6),
+    profit_growth_1y numeric(20,6),
+    market_cap       numeric(20,6),
+
+    -- Provenance, per field, for the two fields that need it. "The vendor says ROE is 30%"
+    -- and "we computed 30% from the FY26 annual statements because the vendor returned
+    -- null" are DIFFERENT CLAIMS with different failure modes, and the UI must be able to
+    -- say which one it is showing. 'vendor' | 'derived_statements'.
+    roe_basis        text CHECK (roe_basis IN ('vendor', 'derived_statements')),
+    -- The statement period any derived figure came from. NULL when nothing was derived.
+    fiscal_period    date,
+
+    source           text NOT NULL,
+    fetched_at       timestamptz NOT NULL,
+    PRIMARY KEY (isin, as_of)
+);
+CREATE INDEX security_fundamentals_isin_asof_desc_idx
+    ON security_fundamentals (isin, as_of DESC);
+COMMENT ON COLUMN security_fundamentals.roe_basis IS
+    'vendor | derived_statements. A NULL ratio means UNKNOWN, never zero.';
+
+-- ======================================================================
+-- 033_funds_statement_source.sql
+-- ======================================================================
+-- 033_funds_statement_source.sql -- a txn_source for broker funds statements.
+--
+-- WHY A NEW SOURCE RATHER THAN REUSING ONE. `source` exists for forensics: it answers
+-- "what kind of evidence put this row in the ledger", and for a DIVIDEND row that
+-- question is the whole ballgame. docs/ARCHITECTURE_INVARIANTS.md invariant 18 splits
+-- dividends into DECLARED / EXPECTED / RECEIVED / REALISED, and the ONLY thing that
+-- distinguishes the last two from the first two is evidence that money actually moved.
+-- A funds statement is that evidence. None of the seven existing values says so:
+--
+--   * CONTRACT_NOTE and TRADEBOOK are trade documents. Neither carries a dividend credit.
+--   * CAS is explicitly "declared quantities, used to CHECK the engine", not cash.
+--   * CORP_ACTION is the declaration side -- exactly the thing a receipt is NOT.
+--   * MANUAL means a human asserted it, which is a materially weaker claim than a
+--     broker's own books and must stay distinguishable from one.
+--   * CSV / EMAIL describe a transport, not a document, and would lose the distinction
+--     the moment a second kind of CSV arrives.
+--
+-- Folding funds statements into any of those would make "where did this dividend come
+-- from" unanswerable after the fact, which is the one question an auditor asks first.
+--
+-- ADD VALUE IS SAFE IN A TRANSACTION HERE, and the qualifier matters. PostgreSQL permits
+-- `ALTER TYPE ... ADD VALUE` inside a transaction block from PG12 on, but forbids USING
+-- the new label in that same transaction. This migration only adds it; the first row
+-- written with it comes from the application, in a later transaction. app.db.migrate
+-- runs every migration inside the caller's transaction, so a migration that also
+-- inserted a FUNDS_STATEMENT row would fail here -- deliberately not done.
+--
+-- IF NOT EXISTS makes re-running a no-op rather than an error, matching the idempotency
+-- app.db.migrate.migrate already promises.
+--
+-- NOTHING ELSE CHANGES. No column, no constraint, no backfill. Every existing row keeps
+-- its source; no number this system computes moves, because the engine is forbidden from
+-- branching on `source` at all (app.engine.types.Source's own docstring) -- which is
+-- precisely what makes adding a value here a layer-1 change and not an engine one.
+
+ALTER TYPE txn_source ADD VALUE IF NOT EXISTS 'FUNDS_STATEMENT';
+
+-- ======================================================================
+-- 034_narrative_cache.sql
+-- ======================================================================
+-- 034_narrative_cache.sql -- the generated analytics narrative, and the fact packs it was
+-- generated from (app/narrative/, GET /investors/{id}/narrative).
+--
+-- BOTH TABLES ARE CACHES OF A DERIVATION, in exactly the sense 010_portfolio_snapshots.sql
+-- means it, and both are safe to TRUNCATE: the page renders every figure without them.
+-- There is one honest difference from portfolio_snapshot, and it is stated here rather
+-- than glossed. A snapshot is reproducible: run compute_snapshot() again and you get the
+-- same number. narrative_factpack has that property -- it is a projection of one ledger
+-- replay. narrative_artifact does NOT: it holds prose from a language model, and no
+-- temperature setting makes a batched serving stack bitwise deterministic.
+--
+-- That is why the two are separate tables rather than one. The reproducible half is what
+-- every claim was checked against and what "what changed since yesterday" is computed
+-- from; the unreproducible half is keyed to it by hash, so a narrative can always be
+-- traced to the exact figures that were true when it was written, even though rerunning
+-- the model would word it differently.
+--
+-- NOTHING DOWNSTREAM READS EITHER TABLE FOR A NUMBER. Every figure a reader sees comes
+-- from a live /analytics call; the artifact carries fact IDS and prose, never values.
+
+CREATE TABLE narrative_factpack (
+    investor_id     uuid NOT NULL REFERENCES investor(id) ON DELETE CASCADE,
+    as_of           date NOT NULL,
+    -- Part of the grain for the same reason portfolio_snapshot.advised_only is: these
+    -- three produce genuinely different ledgers or different figures, not a display
+    -- filter over one answer.
+    advised_only    boolean NOT NULL DEFAULT false,
+    benchmark       text    NOT NULL,
+    universe        text    NOT NULL,
+
+    -- The QUANTISED pack: every numeric fact rounded to the digits it will actually be
+    -- rendered at. The contract this enforces, stated once: IF TWO PACKS WOULD RENDER
+    -- IDENTICALLY, THE PROSE ABOUT THEM MUST BE IDENTICAL. Storing full precision would
+    -- make the hash change on a move no reader can see, and every such change buys a
+    -- paraphrase of a sentence that was already correct.
+    facts           jsonb   NOT NULL,
+    -- sha256 over the quantised pack. The join key to narrative_artifact, and the thing
+    -- that makes a stale narrative detectable rather than merely old.
+    factpack_sha256 text    NOT NULL,
+    computed_at     timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (investor_id, as_of, advised_only, benchmark, universe)
+);
+COMMENT ON TABLE narrative_factpack IS
+    'Quantised fact packs, one per investor per as_of. A cache of a derivation and always '
+    'reproducible from the ledger and prices as they stood on as_of. Also the source of '
+    'day-over-day deltas: portfolio_snapshot holds totals only, so this is the only place '
+    'a component score or a factor tilt has a stored yesterday.';
+
+-- Day-over-day lookups ("the most recent pack strictly before this one") walk backwards
+-- per investor, which is the one access pattern the primary key does not already serve.
+CREATE INDEX narrative_factpack_history
+    ON narrative_factpack (investor_id, advised_only, benchmark, universe, as_of DESC);
+
+CREATE TABLE narrative_artifact (
+    investor_id         uuid NOT NULL REFERENCES investor(id) ON DELETE CASCADE,
+    surface             text NOT NULL,
+    as_of               date NOT NULL,
+    advised_only        boolean NOT NULL DEFAULT false,
+    benchmark           text NOT NULL,
+    universe            text NOT NULL,
+
+    -- EVERY INPUT THAT COULD CHANGE THE ANSWER IS IN THE KEY. Omitting any one of these
+    -- means editing it silently serves output produced under the old one -- change a
+    -- definition card and every cached row is wrong with no way to tell.
+    factpack_sha256     text NOT NULL,   -- the figures
+    rule_version        text NOT NULL,   -- app.analytics.verdict.RULE_VERSION
+    template_version    text NOT NULL,   -- app.narrative.prompt.TEMPLATE_VERSION
+    definition_pack_sha text NOT NULL,   -- the cards + phrase lexicon
+    model               text NOT NULL,   -- the served model id
+
+    -- THE CLAIMS, NOT THE RENDERED PROSE. Relation, args, segments, cites, card -- with
+    -- fact IDS where figures go and no values anywhere.
+    --
+    -- Storing rendered output would be smaller and would be wrong. A cached artifact is
+    -- served against a LIVE fact pack, so the claims are re-verified and re-rendered on
+    -- every read: the figures a reader sees are always today's, and a comparison that
+    -- stopped holding is dropped rather than served. The cache therefore saves the model
+    -- call and nothing else, which is the only part that is expensive or nondeterministic.
+    claims              jsonb NOT NULL,
+    -- Which claims were refused and by which rule (V1-V7). Invariant 5 in spirit: a
+    -- failed verification is a recorded exception, not a silently missing sentence.
+    -- Without this nobody can tell a prompt regression from an unremarkable portfolio.
+    rejections          jsonb NOT NULL DEFAULT '[]'::jsonb,
+    generated_at        timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (investor_id, surface, as_of, advised_only, benchmark, universe,
+                 factpack_sha256, rule_version, template_version,
+                 definition_pack_sha, model)
+);
+COMMENT ON TABLE narrative_artifact IS
+    'Generated analytics CLAIMS, keyed to the exact facts and prompt that produced them. '
+    'Safe to truncate: the page renders every number without it. Re-verified and '
+    're-rendered against a live pack on every read, so a stale comparison is dropped '
+    'rather than shown. NOT reproducible bitwise -- see the migration header.';
+COMMENT ON COLUMN narrative_artifact.rejections IS
+    'Claims the verifier refused, with the rule that refused each. Kept so a rising '
+    'rejection rate is visible; a verifier whose failures are invisible is a verifier '
+    'nobody maintains.';
+
+-- Serving a page asks "is there a current artifact for this surface", newest first.
+CREATE INDEX narrative_artifact_lookup
+    ON narrative_artifact (investor_id, surface, as_of DESC);
+
+-- ======================================================================
+-- 035_correct_stale_comment_references.sql
+-- ======================================================================
+-- 035_correct_stale_comment_references.sql -- re-issue one column comment whose text
+-- names a function that no longer exists.
+--
+-- WHY A MIGRATION AND NOT JUST AN EDIT. 009_investor_onboarding.sql's COMMENT ON names a
+-- router helper `_period_xirr`. It was renamed to `_window_xirr` and the old name now
+-- exists nowhere in the tree -- a reader who greps for the name the
+-- database itself gave them finds nothing. Correcting 009 on disk fixes a database built
+-- from scratch tomorrow and does nothing for one migrated months ago, because
+-- app.db.migrate records applied VERSIONS and never re-runs a file it has already seen
+-- (app.db.migrate.applied_versions/migrate). Leaving those two to disagree is the same
+-- file-versus-database divergence check_drift was written to catch, so the comment is
+-- re-issued here instead.
+--
+-- Comments only. No DDL, no data, and the resulting schema is byte-identical.
+COMMENT ON COLUMN investor.onboarding_date IS
+    'When the advisory relationship began. NULL for most investors today -- the metric '
+    'is simply omitted (app.routers.analytical._window_xirr), the same honest-omission '
+    'pattern compute_fy_xirr uses for a missing 1-April price. Never defaulted to '
+    'created_at or any other stand-in.';

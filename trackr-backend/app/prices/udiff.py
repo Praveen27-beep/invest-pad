@@ -1,5 +1,5 @@
 """UDiFF bhavcopy parsing -- one parser, both exchanges (and, via
-``app.prices.sources.LegacyNseBhavcopySource``, the pre-2024 NSE archive too).
+``app.prices.sources.legacy_nse_source``, the pre-2024 NSE archive too).
 
 NSE and BSE now publish the same UDiFF layout with identical column headers, including an
 ISIN column. That column is what makes this pipe trustworthy at all -- keying on SYMBOL

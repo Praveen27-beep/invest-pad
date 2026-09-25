@@ -40,8 +40,9 @@ interactive site the same way ``corporate_action_feed``'s docstring already note
 
 The circuit breaker itself (skip an entire poll after N consecutive failed runs) needs
 state that survives between weekly cron invocations, so it lives in ``feed_poll_state``
-and is checked/updated by ``refresh_isin_change_feed`` -- this module's ``fetch_circulars``
-has no memory of past runs and always attempts the request it's asked to make.
+and is checked/updated by ``refresh_isin_change_feed`` -- this module's fetchers
+(``CircularListSource.list_circulars``/``fetch_pdf``) have no memory of past runs and
+always attempt the request they're asked to make.
 """
 
 from __future__ import annotations

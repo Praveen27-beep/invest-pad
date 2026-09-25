@@ -99,7 +99,7 @@ def _assert_acyclic(conn: Any, old_isin: str, current_isin: str) -> None:
     """Reject any edge that would close a cycle or fork the chain.
 
     Two separate hazards, both of which make "what is this security now?" unanswerable:
-      - a CYCLE (A -> B -> A) would make ``resolve`` loop forever;
+      - a CYCLE (A -> B -> A) would make ``verified_map`` loop forever;
       - re-pointing an ISIN that is already some other row's ``current_isin`` while it
         also has its own outgoing edge would fork resolution.
 
