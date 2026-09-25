@@ -289,7 +289,8 @@ def test_normalize_never_raises_on_any_string() -> None:
 
 @pytest.mark.skipif(
     not (FIXTURES / "golden_portfolio.json").exists(),
-    reason="golden_portfolio.json is local-only (real client data); see tests/test_golden_portfolio.py",
+    reason="golden_portfolio.json is local-only (real client data); "
+           "see tests/test_golden_portfolio.py",
 )
 def test_golden_portfolio_isins_are_all_well_formed() -> None:
     """Every ISIN in the acceptance fixture passes ISO 6166.
