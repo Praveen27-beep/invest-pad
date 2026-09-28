@@ -76,4 +76,4 @@ export (17/20 positions matching exactly) and against two consecutive CDSL CAS
 statements (17/17 positions, zero mismatches, correctly handling T+1 settlement).
 
 The numbers in `fixtures/` are not invented test data. They came from a system that
-already works.
+already works. 
