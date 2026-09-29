@@ -2,16 +2,20 @@
   "name": "trackr-monorepo",
   "version": "0.1.0",
   "private": true,
-  "description": "Trackr+: a Next.js application over the FastAPI backend, with shared packages.",
+  "description": "Trackr+ and Trackr Workspace: two Next.js applications over the FastAPI backend, with shared packages.",
   "workspaces": [
     "packages/*",
-    "trackr-frontend"
+    "trackr-frontend",
+    "trackr-workspace-frontend"
   ],
   "scripts": {
     "dev:plus": "npm run dev --workspace trackr-frontend",
     "build:plus": "npm run build --workspace trackr-frontend",
     "typecheck:plus": "npm run typecheck --workspace trackr-frontend",
-    "typecheck": "npm run typecheck:plus"
+    "typecheck": "npm run typecheck:plus && npm run typecheck:workspace",
+    "dev:workspace": "npm run dev --workspace trackr-workspace-frontend",
+    "build:workspace": "npm run build --workspace trackr-workspace-frontend",
+    "typecheck:workspace": "npm run typecheck --workspace trackr-workspace-frontend"
   },
   "engines": {
     "node": ">=18.18"
