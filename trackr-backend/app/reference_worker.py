@@ -269,7 +269,10 @@ def _rebuild_snapshot(conn, payload):
     upsert_snapshot(conn, investor_id, advised, snapshot)
 
 
-def run_once(conn, settings: Settings, limit: int | None = None) -> dict:
+def run_once(
+    conn, settings: Settings, limit: int | None = None,
+    time_budget_seconds: float | None = None,
+) -> dict:
     if not settings.reference_sync_enabled:
         return {"enabled": False, "processed": 0, "failed": 0}
     with conn.cursor() as cur:
@@ -286,7 +289,14 @@ def run_once(conn, settings: Settings, limit: int | None = None) -> dict:
         identity.schedule_identity(conn)
         _schedule_actions(conn)
         conn.commit()
+        began = time.monotonic()
         for _ in range(limit or settings.reference_worker_batch_size):
+            # A serverless cron has a hard timeout; stop claiming new tasks once the
+            # budget is spent. Unclaimed work stays pending for the next run.
+            if time_budget_seconds is not None and (
+                time.monotonic() - began > time_budget_seconds
+            ):
+                break
             with conn.cursor() as cur:
                 cur.execute(
                     """SELECT kind,task_key,payload,attempts FROM reference_sync_task

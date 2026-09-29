@@ -239,4 +239,5 @@ class ReconcileDividendsOut(BaseModel):
     ambiguous: int = 0
     no_bhavcopy: int = 0
     identity_unproven: int = 0
+    nse_sourced: int = 0
     failed: int = 0

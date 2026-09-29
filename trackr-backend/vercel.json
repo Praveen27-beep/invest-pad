@@ -6,6 +6,10 @@
       "schedule": "30 10 * * *"
     },
     {
+      "path": "/ops/cron/prices-backfill",
+      "schedule": "40 10 * * *"
+    },
+    {
       "path": "/ops/corporate-actions/refresh-cron",
       "schedule": "45 10 * * *"
     },
@@ -44,6 +48,10 @@
     {
       "path": "/ops/cron/jobs-drain",
       "schedule": "20 11 * * *"
+    },
+    {
+      "path": "/ops/reference-sync/run-cron",
+      "schedule": "35 11 * * *"
     }
   ]
 }

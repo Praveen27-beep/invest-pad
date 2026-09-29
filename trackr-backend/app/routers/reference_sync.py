@@ -13,6 +13,11 @@ from app.reference_worker import run_once
 
 router = APIRouter(tags=["reference-sync"])
 
+#: Leaves headroom inside the 300-second Vercel function limit (Hobby and Pro alike) for
+#: the task already running when the budget runs out.
+REFERENCE_CRON_BUDGET_SECONDS = 240.0
+REFERENCE_CRON_MAX_TASKS = 500
+
 
 @router.get(
     "/investors/{investor_id}/reference-status", dependencies=[Depends(require_owned_investor)]
@@ -30,7 +35,13 @@ def run(conn: Any = Depends(get_conn), settings: Settings = Depends(get_settings
 
 @router.get("/ops/reference-sync/run-cron", dependencies=[Depends(require_cron_secret)])
 def cron(conn: Any = Depends(get_conn), settings: Settings = Depends(get_settings)) -> dict:
-    return run_once(conn, settings, limit=1)
+    """Scheduled in vercel.json. A full batch per call, bounded by time rather than by a
+    task count of one -- at one task per call the queue (one NSDL task per held ISIN
+    plus one NSE task per month of history) never drained in production."""
+    return run_once(
+        conn, settings, limit=REFERENCE_CRON_MAX_TASKS,
+        time_budget_seconds=REFERENCE_CRON_BUDGET_SECONDS,
+    )
 
 
 @router.get("/ops/reference-sync/status", dependencies=[Depends(require_ops_key)])

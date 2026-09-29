@@ -151,6 +151,17 @@ class SkippedSnapshotOut(BaseModel):
     isins: list[str]
 
 
+class PriceBackfillResponse(BaseModel):
+    """One bounded price-history backfill run -- see ``app.prices.history``. ``pending`` is
+    how many trading days in the ledger's history still lacked an answer when the run
+    started; it reaches 0 once history is complete."""
+
+    pending: int
+    fetched_days: int
+    closed_days: int
+    failed_days: int
+
+
 class SnapshotRunResponse(BaseModel):
     snapshots_written: int
     price_dates_fetched: int

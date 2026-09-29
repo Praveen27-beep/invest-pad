@@ -41,15 +41,12 @@ from app.db.prices import (
     latest_prices,
     missing_prices,
     price_dates_settled,
-    record_absent_prices,
-    upsert_prices,
 )
 from app.db.repository import (
     get_investor_onboarding_date,
     list_investor_ids,
     load_transactions,
 )
-from app.db.universe import current_universe_isins
 from app.engine.benchmark import (
     benchmark_series,
     compute_benchmark,
@@ -76,6 +73,7 @@ from app.engine.xirr import (
     years_before,
 )
 from app.prices.alerts import Notifier, get_notifier
+from app.prices.history import backfill_price_history, store_backfilled_days
 from app.prices.index_sources import (
     TRI_INDICES,
     IndexSourceFetchFailed,
@@ -88,6 +86,7 @@ from app.schemas.analytical import (
     BenchmarkSeriesResponse,
     ContributionResponse,
     PerformanceResponse,
+    PriceBackfillResponse,
     PriceRefreshResponse,
     SnapshotOut,
     SnapshotRunResponse,
@@ -867,6 +866,34 @@ def refresh_prices_cron(
     return _refresh_prices(connection, settings)
 
 
+@router.post(
+    "/ops/prices/backfill",
+    response_model=PriceBackfillResponse,
+    dependencies=[Depends(require_ops_key)],
+)
+def backfill_prices(
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """``X-Ops-Key``-gated run of the automatic price-history backfill."""
+    return backfill_price_history(connection, notifier=get_notifier(settings))
+
+
+@router.get(
+    "/ops/cron/prices-backfill",
+    response_model=PriceBackfillResponse,
+    dependencies=[Depends(require_cron_secret)],
+)
+def backfill_prices_cron(
+    connection: Any = Depends(get_conn),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Vercel Cron counterpart. Runs often and is bounded per run, so a new user's
+    imported history is priced within hours with no human step; once history is
+    complete each run is one query and returns ``pending: 0``."""
+    return backfill_price_history(connection, notifier=get_notifier(settings))
+
+
 def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) -> dict[str, Any]:
     """The rebuild job. The ONLY code path allowed to write ``portfolio_snapshot``
     (docs/ENGINE_SPEC.md section 8) -- everywhere else, including ``_window_xirr``'s
@@ -892,41 +919,8 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
     """
     settled = price_dates_settled(connection, start, end)
     price_results = backfill_days(start, end, already_present=settled, notifier=notifier)
-    held = set(held_isins(connection))
-    # Stored for held AND universe ISINs, so the ranking universe accumulates the history
-    # factor scores need. ABSENCE RECORDING AND SETTLEMENT BELOW STAY SCOPED TO `held`,
-    # deliberately: a universe member is reference data, and letting one decide whether a
-    # date is "settled" would let a security nobody owns govern whether a real holding's
-    # price is ever fetched again.
-    wanted = held | set(current_universe_isins(connection))
-    price_dates_fetched = 0
-    for result in price_results:
-        stored = upsert_prices(connection, [p for p in result.prices if p.isin in wanted])
-        if stored:
-            price_dates_fetched += 1
-        # Whatever the archive answered with but did not mention is absent, not pending.
-        # Recording that is what lets this date count as settled next time instead of
-        # being re-fetched forever -- see app.db.prices.price_dates_settled.
-        #
-        # BOTH CONDITIONS ARE LOAD-BEARING, and neither is redundant.
-        #
-        #   `result.fetched`   -- some data actually came back. Empty on a weekend, a
-        #                         holiday, or a wholesale failure, where calling every
-        #                         security absent would settle the date forever and
-        #                         permanently lose the prices it should have had.
-        #   `result.succeeded` -- and NO exchange errored. A half-answer is the dangerous
-        #                         case: with BSE down, every BSE-only security is missing
-        #                         from a perfectly healthy-looking NSE file. Recording
-        #                         those as absent would be a permanent, silent lie about a
-        #                         real holding -- this portfolio has one of each
-        #                         (app.prices.pipe.merge names KALYANI-M and KDL-SM), which
-        #                         is the entire reason both exchanges are fetched.
-        #
-        # Being wrong in the other direction just costs one more fetch next run.
-        if result.fetched and result.succeeded:
-            record_absent_prices(
-                connection, result.price_date, sorted(held - {p.isin for p in result.prices})
-            )
+    # Upsert + absence rules live in one place, shared with the automatic backfill.
+    price_dates_fetched = store_backfilled_days(connection, price_results)
 
     snapshots_written = 0
     skipped: list[dict[str, Any]] = []

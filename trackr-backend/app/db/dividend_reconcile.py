@@ -31,6 +31,7 @@ from collections import Counter
 from datetime import date, timedelta
 from typing import Any
 
+from app.db.dividend_events import _NSE_SOURCE_NAME as NSE_FEED_SOURCE
 from app.db.dividend_events import corroborate_dividend_event, list_dividend_events
 from app.db.security_alias import verified_map
 from app.engine.corporate_actions import Verification
@@ -96,6 +97,12 @@ def reconcile_pending_dividends(
     pending = sorted(_pending(conn), key=lambda e: e.ex_date, reverse=True)
     counts["pending"] = len(pending)
     for event in pending[:max_events]:
+        if event.source == NSE_FEED_SOURCE:
+            # NSE's own row cannot be corroborated by NSE's feed read a second time --
+            # two reads of one feed are one observation. Its independent twin (usually
+            # yfinance under an older ISIN) is what gets corroborated instead.
+            counts["nse_sourced"] += 1
+            continue
         terminal = aliases.get(event.isin, event.isin)
         month = (event.ex_date.year, event.ex_date.month)
         if month not in feed_by_month:

@@ -299,7 +299,27 @@ def expected_dividends(
     # ensures for the ledger itself.
     from dataclasses import replace
 
+    from app.engine.corporate_actions import Verification
+
     events = [replace(e, isin=aliases.get(e.isin, e.isin)) for e in raw_events]
+
+    # ONE DIVIDEND, TWO ROWS, once identities are unified: yfinance filed it under the
+    # retired ISIN and NSE under the current one (GUJTHEM 2025-09-04, seen in production
+    # 2026-09-29), so the feeds never merged them. When a VERIFIED event exists for the
+    # same (isin, ex_date, amount), an unverified twin is that same declaration, not a
+    # second one awaiting confirmation. Only non-VERIFIED rows are dropped, and those never
+    # contribute money -- so this changes the "awaiting" count, never a figure.
+    verified_keys = {
+        (e.isin, e.ex_date, e.amount_per_share)
+        for e in events
+        if e.verification is Verification.VERIFIED
+    }
+    events = [
+        e
+        for e in events
+        if e.verification is Verification.VERIFIED
+        or (e.isin, e.ex_date, e.amount_per_share) not in verified_keys
+    ]
 
     expected, unprojectable = compute_expected_dividends(rows, events, actions, as_of=as_of)
 

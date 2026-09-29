@@ -234,6 +234,10 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
         "one or more held ISINs have no usable price within the staleness window",
         isins=exc.isins,
         names=_names_for(exc.isins),
+        # Which date was checked, when the caller knows (contribution checks two). The
+        # client (ApiError.asOf) already reads this; without it "no usable price" read as
+        # a contradiction of a Dashboard that prices the same holdings today.
+        as_of=exc.as_of.isoformat() if hasattr(exc.as_of, "isoformat") else exc.as_of,
     )
 
 
