@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.ingest.addresses import broker_has_forwarding
+from app.ingest.addresses import broker_has_email_adapter, broker_has_forwarding
 from app.ingest.file_validation import LABELS, ROUTING
 from app.ingest.webhook import PDF_PASSWORD_CASE
 
@@ -172,6 +172,9 @@ def describe(broker: Broker, ingest_domain: str) -> dict[str, object]:
         # so the promise made in the picker and the sentence shown on failure match.
         "document_labels": [LABELS[d] for d in documents if d in LABELS],
         "forwarding": broker_has_forwarding(ingest_domain, broker.code),
+        # The domain-independent half of "forwarding", so a client can say WHICH of
+        # the two reasons an address is missing -- see broker_has_email_adapter.
+        "email_adapter": broker_has_email_adapter(broker.code),
         "pdf_password": _pdf_password_rule(broker.code),
         "console_steps": list(broker.console_steps),
     }

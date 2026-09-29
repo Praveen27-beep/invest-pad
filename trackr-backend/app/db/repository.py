@@ -9,6 +9,7 @@ been broken.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date
 from typing import Any
 
@@ -177,12 +178,6 @@ def load_transactions(
     if account_id:
         clauses.append("t.account_id = %s")
         params.append(account_id)
-    if isin:
-        clauses.append("t.isin = %s")
-        params.append(isin)
-    if date_from:
-        clauses.append("t.txn_date >= %s")
-        params.append(date_from)
     if date_to:
         clauses.append("t.txn_date <= %s")
         params.append(date_to)
@@ -200,7 +195,7 @@ def load_transactions(
             FROM transaction t
             JOIN account a ON a.id = t.account_id
             {where}
-            ORDER BY t.txn_date, t.created_at, t.id
+            ORDER BY t.txn_date, t.seq
             """,
             params,
         )
@@ -209,8 +204,8 @@ def load_transactions(
     # Resolved once per read, not per row: verified_map returns each alias already
     # collapsed to its terminal ISIN, so this is a single dict lookup below and can never
     # hand the engine a half-resolved identity.
-    aliases = _alias_map(conn) if apply_aliases else {}
-    return [
+    aliases = _alias_map(conn, date_to) if apply_aliases else {}
+    transactions = [
             Transaction(
                 id=str(row[0]),
                 account_id=str(row[1]),
@@ -232,9 +227,22 @@ def load_transactions(
             )
             for row in rows
         ]
+    if apply_aliases and any(
+        (t.raw_payload or {}).get("auto_corporate_action_id") for t in transactions
+    ):
+        from app.db.corporate_actions import list_corporate_actions
+        from app.engine.action_replay import replay_derived_actions
+
+        actions = [replace(a, isin=aliases.get(a.isin, a.isin),
+                           resulting_isin=aliases.get(a.resulting_isin, a.resulting_isin))
+                   for a in list_corporate_actions(conn)]
+        transactions = replay_derived_actions(transactions, actions)
+    selected_isin = aliases.get(isin, isin)
+    return [t for t in transactions if (not isin or t.isin == selected_isin)
+            and (date_from is None or t.txn_date >= date_from)]
 
 
-def _alias_map(conn: Any) -> dict[str, str]:
+def _alias_map(conn: Any, as_of: date | None = None) -> dict[str, str]:
     """VERIFIED ISIN aliases, or nothing if the table is not there yet.
 
     Tolerating its absence keeps this read working against a database that has not run
@@ -247,7 +255,7 @@ def _alias_map(conn: Any) -> dict[str, str]:
     from app.db.security_alias import verified_map
 
     try:
-        return verified_map(conn)
+        return verified_map(conn, as_of)
     except psycopg.errors.UndefinedTable:
         conn.rollback()
         return {}
@@ -274,7 +282,7 @@ def create_investor(
     leaving a half-onboarded investor behind.
 
     ``onboarding_date`` feeds ``compute_period_xirr``'s ``start_date`` (see
-    ``app.routers.analytical._period_xirr``) -- optional, nullable, never defaulted.
+    ``app.routers.analytical._window_xirr``) -- optional, nullable, never defaulted.
 
     Raises:
         app.db.crypto.InvalidPANError: ``pan`` does not match the mandated PAN format.
@@ -385,6 +393,44 @@ def list_investor_ids(conn: Any) -> list[str]:
         return [str(row[0]) for row in cur.fetchall()]
 
 
+def list_investors_for_user(conn: Any, user_id: str) -> list[dict[str, Any]]:
+    """Every investor this login owns, oldest first.
+
+    The read behind a portfolio switcher, and the reason one can exist at all. Until this
+    existed the API could create a second investor (POST /investors) and report exactly
+    one (``first_investor_id_for_user``, which /auth/login echoes), so a login that owned
+    two had no way to name the second -- creating it switched to it, and the next login
+    switched silently back to the oldest. The data was never lost; there was no endpoint
+    that would admit it was there.
+
+    Ordered by ``created_at, id`` so the first row is the same investor
+    ``first_investor_id_for_user`` returns -- the switcher's default and the session's
+    default must agree, or logging out would appear to move you.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, code, display_name, family_group_id, onboarding_date, created_at
+            FROM investor
+            WHERE owner_user_id = %s
+            ORDER BY created_at, id
+            """,
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    return [
+        {
+            "id": str(row[0]),
+            "code": row[1],
+            "display_name": row[2],
+            "family_group_id": row[3],
+            "onboarding_date": row[4],
+            "created_at": row[5],
+        }
+        for row in rows
+    ]
+
+
 def create_personal_investor(
     conn: Any, owner_user_id: str, display_name: str | None = None
 ) -> dict[str, Any]:
@@ -448,7 +494,7 @@ def first_investor_id_for_user(conn: Any, user_id: str) -> str | None:
 
 def get_investor_onboarding_date(conn: Any, investor_id: str) -> date | None:
     """The investor's adviser-onboarding date -- ``compute_period_xirr``'s
-    ``start_date``, via ``app.routers.analytical._period_xirr``. ``None`` both when the
+    ``start_date``, via ``app.routers.analytical._window_xirr``. ``None`` both when the
     column is unset (most investors today) and when ``investor_id`` doesn't exist --
     this endpoint has never enforced investor existence (``load_transactions`` just
     returns an empty ledger for an unknown id), and this feature doesn't newly start.

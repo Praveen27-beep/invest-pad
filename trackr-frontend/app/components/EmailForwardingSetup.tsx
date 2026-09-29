@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
-import type { AccountOut } from "@/lib/api-types";
-import { Banner, SegmentedControl } from "./ds";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { api } from "@/lib/api-client";
+import type { AccountOut, ForwardingCodeOut } from "@/lib/api-types";
+import { Badge, Banner, SegmentedControl } from "./ds";
 import { CopyField } from "./CopyField";
 
 type Provider = "gmail" | "outlook" | "yahoo";
@@ -32,22 +34,60 @@ function doctypeLabel(address: string): string {
  * and in either case the honest thing on screen is a sentence saying so — which this
  * component already did, and which is why the backend gate was written to reuse it.
  *
- * THE CONFIRMATION-CODE STEP TELLS THE TRUTH. Gmail will not forward anything until a
- * code it emails to the address is pasted back into Gmail's settings, and nothing here
- * reads that code yet: the webhook loops over attachments and never opens the message
- * body. The wizard's version of this screen used to claim "we handle it — nothing for you
- * to click", which meant nobody could ever complete Gmail's own setup and the product
- * looked broken rather than incomplete (docs/ONBOARDING_AS_IS_VS_TO_BE.md, loophole L2).
+ * THE CONFIRMATION CODE IS CAUGHT AND SHOWN. Gmail will not forward anything until a code
+ * it emails to the address is pasted back into Gmail's settings. That message has no
+ * attachment and carries the code in its body, so while the webhook only ever looked at
+ * attachments the code was silently dropped and nobody could finish Gmail's own setup --
+ * the feature was a screen, not a feature (docs/ONBOARDING_FLOW.md, defect 2). The webhook
+ * now recognises it and `ForwardingCode` below polls for it.
+ *
+ * WE SHOW IT RATHER THAN CLICKING IT. Gmail's mail also carries a confirmation link, and
+ * following it server-side would work. It would also mean this product granting itself a
+ * mail permission on the person's behalf, silently. Showing the code keeps the human in
+ * the loop on a permission grant, and costs them one paste.
  */
-export function EmailForwardingSetup({ account }: { account: AccountOut }) {
+export function EmailForwardingSetup({
+  account,
+  brokerHasEmailAdapter,
+}: {
+  account: AccountOut;
+  /**
+   * `BrokerOut.email_adapter` for this account's broker. Optional because two call sites
+   * render this and only one of them has the registry to hand; when it is absent the
+   * banner keeps the old both-causes wording rather than guessing at one.
+   */
+  brokerHasEmailAdapter?: boolean;
+}) {
   const [provider, setProvider] = useState<Provider>("gmail");
 
   if (account.forwarding_addresses.length === 0) {
+    // TWO CAUSES, AND THEY ARE NOT THE SAME NEWS. `forwarding_addresses` is empty both
+    // for a broker nobody has written an email parser for and for a deployment with no
+    // mail-receiving domain, and this banner used to hedge between them in one sentence
+    // -- which named the user's broker while implying the broker was at fault, even for
+    // Zerodha, whose adapter has existed all along. `BrokerOut.email_adapter` is the
+    // domain-independent half of that AND, so it tells the two apart.
     return (
       <Banner tone="info">
-        No forwarding address for <strong>{account.broker}</strong> — either we have no
-        email adapter for this broker yet, or inbound mail isn&apos;t configured on this
-        deployment. Uploading files on the Import page works either way.
+        {brokerHasEmailAdapter === false ? (
+          <>
+            We can&apos;t read <strong>{account.broker}</strong> email yet — no parser
+            exists for this broker&apos;s documents, so there is no address to forward to.
+            Uploading files on the Import page works normally.
+          </>
+        ) : brokerHasEmailAdapter === true ? (
+          <>
+            Forwarding for <strong>{account.broker}</strong> is ready, but this deployment
+            has no mail-receiving domain configured yet, so there is no address to hand
+            you. Uploading files on the Import page works normally.
+          </>
+        ) : (
+          <>
+            No forwarding address for <strong>{account.broker}</strong> — either we have no
+            email adapter for this broker yet, or inbound mail isn&apos;t configured on
+            this deployment. Uploading files on the Import page works either way.
+          </>
+        )}
       </Banner>
     );
   }
@@ -78,6 +118,8 @@ export function EmailForwardingSetup({ account }: { account: AccountOut }) {
           options={PROVIDERS}
         />
         <div style={{ font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>
+          {provider === "gmail" && <ForwardingCode investorId={account.investor_id} />}
+
           {provider === "gmail" && (
             <Steps
               items={[
@@ -96,9 +138,10 @@ export function EmailForwardingSetup({ account }: { account: AccountOut }) {
                 </>,
                 <>
                   Gmail emails a confirmation code to that address and will not forward
-                  anything until it is pasted back into Gmail&apos;s forwarding settings.{" "}
-                  <strong>We can&apos;t read that code for you yet</strong>, so forwarding
-                  won&apos;t activate until we can — file upload is unaffected.
+                  anything until it is pasted back into Gmail&apos;s forwarding settings.
+                  We catch that email and show you the code below — paste it into{" "}
+                  <strong>Settings → Forwarding and POP/IMAP</strong> in Gmail and click{" "}
+                  <strong>Verify</strong>.
                 </>,
               ]}
             />
@@ -157,5 +200,80 @@ function Steps({ items }: { items: ReactNode[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+
+/**
+ * The code Gmail mailed to the forwarding address, once it arrives.
+ *
+ * POLLED, not pushed. The message lands on a webhook from the mail provider, so there is
+ * nothing for the browser to subscribe to, and the wait is short and bounded -- Gmail
+ * sends within seconds of the filter being created. A ten-second poll while this panel is
+ * open is cheap and stops the moment the component unmounts.
+ *
+ * RENDERS NOTHING WHEN THERE IS NOTHING, deliberately. Almost every visit to this screen
+ * is by someone who has not created a Gmail filter in the last day, and a permanent
+ * "waiting for a code…" box would be a box that is wrong nearly all the time. It appears
+ * when there is something true to say.
+ */
+export function ForwardingCode({ investorId }: { investorId: string }) {
+  const { token } = useAuth();
+  const [codes, setCodes] = useState<ForwardingCodeOut[]>([]);
+
+  useEffect(() => {
+    if (!investorId || !token) return;
+    let cancelled = false;
+
+    const poll = () => {
+      api
+        .get<ForwardingCodeOut[]>(`/investors/${investorId}/forwarding-code`, { token })
+        .then((rows) => {
+          if (!cancelled) setCodes(rows);
+        })
+        .catch(() => {
+          // A failed poll is not worth a message: the code either has not arrived or the
+          // request blipped, and both look the same to the person waiting. The next tick
+          // tries again.
+        });
+    };
+
+    poll();
+    const timer = setInterval(poll, 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [investorId, token]);
+
+  if (codes.length === 0) return null;
+
+  return (
+    <div style={{ display: "grid", gap: 8, marginBottom: 12 }}>
+      {codes.map((c) => (
+        <div key={`${c.broker}-${c.doctype}-${c.code}`} style={{ display: "grid", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span
+              style={{
+                font: "var(--type-label)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--tracking-label)",
+                color: "var(--text-tertiary)",
+              }}
+            >
+              Gmail confirmation code
+            </span>
+            <Badge tone="neutral" mono>
+              {c.broker}
+            </Badge>
+          </div>
+          <CopyField value={c.code} label="Gmail confirmation code" />
+        </div>
+      ))}
+      <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+        Paste this into Gmail under <strong>Settings → Forwarding and POP/IMAP</strong> and
+        click <strong>Verify</strong>. Until you do, Gmail forwards nothing.
+      </p>
+    </div>
   );
 }

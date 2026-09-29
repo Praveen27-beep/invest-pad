@@ -12,6 +12,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
+from app.engine.errors import MissingPriceError
 from app.engine.holdings import compute_holdings
 from app.engine.ledger import ordered
 from app.engine.types import (
@@ -72,14 +73,25 @@ def compute_contribution(
             or one held at ``as_of`` has no ``end_prices`` entry -- via ``value_holdings``
             (section 2), exactly like any other valuation. Never substituted with zero.
     """
-    start_holdings = {
-        h.isin: h.market_value
-        for h in value_holdings(compute_holdings(transactions, start_date), start_prices)
-    }
-    end_holdings = {
-        h.isin: h.market_value
-        for h in value_holdings(compute_holdings(transactions, as_of), end_prices)
-    }
+    # value_holdings itself raises MissingPriceError with no `as_of` -- every other
+    # caller only ever checks one date, so it has never needed to say which. This is the
+    # one caller checking two (period_start and as_of), and a bare "no usable price for
+    # X" reads as a flat contradiction of a screen that only ever asks about today (the
+    # Dashboard) unless it names which of the two dates it means.
+    try:
+        start_holdings = {
+            h.isin: h.market_value
+            for h in value_holdings(compute_holdings(transactions, start_date), start_prices)
+        }
+    except MissingPriceError as exc:
+        raise MissingPriceError(exc.isins, as_of=start_date) from exc
+    try:
+        end_holdings = {
+            h.isin: h.market_value
+            for h in value_holdings(compute_holdings(transactions, as_of), end_prices)
+        }
+    except MissingPriceError as exc:
+        raise MissingPriceError(exc.isins, as_of=as_of) from exc
 
     period_rows = [t for t in ordered(transactions, as_of) if start_date < t.txn_date <= as_of]
     flows = _period_flows(period_rows)

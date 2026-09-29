@@ -1,0 +1,192 @@
+{
+  "_about": "SYNTHETIC. BE 27/28 calculator fixtures. Every formula, company, fact and value here is INVENTED to exercise app/engine/research_metrics.py; none is an approved BE-Q03 definition, a real issuer figure or a recommendation. The registry below is loaded with synthetic=True and cannot become the live registry (FormulaRegistry refuses SYNTHETIC_FIXTURE approvals when synthetic=False). Expected values were derived BY HAND from the stated expression before the engine was run; each case records its derivation. Do not regenerate expectations from the implementation.",
+  "registry": {
+    "version": "synthetic-fixture-1",
+    "output_contracts": ["SYN_CONDITIONAL_AMOUNT_V1"],
+    "formulas": [
+      {
+        "formula_id": "SYN_MARGIN", "version": "1", "kind": "METRIC",
+        "title": "Synthetic ratio of operating profit to revenue (test only)",
+        "expression": ["div", ["input", "op"], ["input", "rev"]],
+        "inputs": [
+          {"name": "op", "metric": "SYN_OPERATING_PROFIT", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"},
+          {"name": "rev", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"}
+        ],
+        "output_unit": "RATIO",
+        "precision": {"quantum": "0.000001", "rounding": "ROUND_HALF_EVEN"},
+        "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+      },
+      {
+        "formula_id": "SYN_MARGIN", "version": "2", "kind": "METRIC",
+        "title": "Synthetic margin in percentage points, two decimals (test only)",
+        "expression": ["mul", ["div", ["input", "op"], ["input", "rev"]], ["const", "100"]],
+        "inputs": [
+          {"name": "op", "metric": "SYN_OPERATING_PROFIT", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"},
+          {"name": "rev", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"}
+        ],
+        "output_unit": "PERCENT",
+        "precision": {"quantum": "0.01", "rounding": "ROUND_HALF_EVEN"},
+        "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+      },
+      {
+        "formula_id": "SYN_GROWTH", "version": "1", "kind": "METRIC",
+        "title": "Synthetic year-on-year change ratio (test only)",
+        "expression": ["div", ["sub", ["input", "cur"], ["input", "prior"]], ["input", "prior"]],
+        "inputs": [
+          {"name": "cur", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"},
+          {"name": "prior", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "PRIOR"}
+        ],
+        "output_unit": "RATIO",
+        "precision": {"quantum": "0.000001", "rounding": "ROUND_HALF_EVEN"},
+        "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+      },
+      {
+        "formula_id": "SYN_SCENARIO_AMOUNT", "version": "1", "kind": "SCENARIO",
+        "title": "Synthetic conditional company-level amount: base x (1 + person's rate) (test only)",
+        "expression": ["mul", ["input", "base"], ["add", ["const", "1"], ["assumption", "rate"]]],
+        "inputs": [
+          {"name": "base", "metric": "SYN_OPERATING_CASH_FLOW", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"}
+        ],
+        "assumptions": [
+          {"name": "rate", "unit": "RATIO", "minimum": "-1", "maximum": "1", "description": "The person's own stated change rate for one period"}
+        ],
+        "output_unit": "INR", "output_kind": "COMPANY_LEVEL_AMOUNT", "output_contract": "SYN_CONDITIONAL_AMOUNT_V1",
+        "precision": {"quantum": "0.000001", "rounding": "ROUND_HALF_EVEN"},
+        "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+      },
+      {
+        "formula_id": "SYN_SCENARIO_UNCONTRACTED", "version": "1", "kind": "SCENARIO",
+        "title": "Synthetic scenario whose output contract is NOT approved (test only)",
+        "expression": ["mul", ["input", "base"], ["assumption", "factor"]],
+        "inputs": [
+          {"name": "base", "metric": "SYN_OPERATING_CASH_FLOW", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"}
+        ],
+        "assumptions": [
+          {"name": "factor", "unit": "RATIO", "minimum": "0", "maximum": "10", "description": "Person-stated factor"}
+        ],
+        "output_unit": "INR", "output_kind": "COMPANY_LEVEL_AMOUNT", "output_contract": "SYN_NOT_APPROVED_CONTRACT",
+        "precision": {"quantum": "0.000001", "rounding": "ROUND_HALF_EVEN"},
+        "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+      }
+    ]
+  },
+  "prohibited_definitions": [
+    {
+      "_why": "A per-share value is a price target whatever it is called. Registry construction must raise ProhibitedScenarioOutput.",
+      "formula_id": "SYN_PER_SHARE_ILLUSTRATION", "version": "1", "kind": "SCENARIO", "title": "Illustrative value per share",
+      "expression": ["div", ["mul", ["input", "base"], ["assumption", "multiple"]], ["input", "shares"]],
+      "inputs": [
+        {"name": "base", "metric": "SYN_OPERATING_CASH_FLOW", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"},
+        {"name": "shares", "metric": "SYN_SHARES_OUTSTANDING", "basis": "CONSOLIDATED", "unit": "SHARES", "cadence": "YEAR", "period_role": "CURRENT"}
+      ],
+      "assumptions": [{"name": "multiple", "unit": "RATIO", "minimum": "0", "maximum": "100", "description": "multiple"}],
+      "output_unit": "INR_PER_SHARE", "output_kind": "ILLUSTRATIVE_VALUE", "output_contract": "SYN_CONDITIONAL_AMOUNT_V1",
+      "precision": {"quantum": "0.01", "rounding": "ROUND_HALF_EVEN"},
+      "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+    },
+    {
+      "_why": "Renaming a fair value 'range' does not change it. output_kind FAIR_VALUE must raise.",
+      "formula_id": "SYN_FAIR_RANGE", "version": "1", "kind": "SCENARIO", "title": "Scenario range",
+      "expression": ["mul", ["input", "base"], ["assumption", "multiple"]],
+      "inputs": [
+        {"name": "base", "metric": "SYN_OPERATING_CASH_FLOW", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_role": "CURRENT"}
+      ],
+      "assumptions": [{"name": "multiple", "unit": "RATIO", "minimum": "0", "maximum": "100", "description": "multiple"}],
+      "output_unit": "INR", "output_kind": "FAIR_VALUE", "output_contract": "SYN_CONDITIONAL_AMOUNT_V1",
+      "precision": {"quantum": "0.01", "rounding": "ROUND_HALF_EVEN"},
+      "approval": {"authority": "SYNTHETIC_FIXTURE", "decided_on": "2026-09-28", "reference": "fixtures/research_metrics.json"}
+    }
+  ],
+  "company": {"isin": "INE000SYN001", "family": ["INE000SYN001", "INE000SYN0R2"]},
+  "facts": [
+    {"id": "f-op-24", "isin": "INE000SYN001", "metric": "SYN_OPERATING_PROFIT", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "1234.5", "verification": "VERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-rev-24", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "10000", "verification": "VERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-rev-23", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2022-04-01", "period_end": "2023-03-31", "numeric_value": "8000", "verification": "VERIFIED", "source_id": "s-ar-23"},
+    {"id": "f-rev-24-other", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "10100", "verification": "VERIFIED", "source_id": "s-results-24"},
+    {"id": "f-rev-24-same", "isin": "INE000SYN0R2", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "10000.000000", "verification": "VERIFIED", "source_id": "s-redistributor-24"},
+    {"id": "f-rev-24-unverified", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "10000", "verification": "UNVERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-rev-24-standalone", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "STANDALONE", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "9000", "verification": "VERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-rev-24-lakhs", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR_LAKHS", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "0.1", "verification": "VERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-rev-24-q", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "QUARTER", "period_start": "2024-01-01", "period_end": "2024-03-31", "numeric_value": "2600", "verification": "VERIFIED", "source_id": "s-results-24"},
+    {"id": "f-op-23", "isin": "INE000SYN001", "metric": "SYN_OPERATING_PROFIT", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2022-04-01", "period_end": "2023-03-31", "numeric_value": "900", "verification": "VERIFIED", "source_id": "s-ar-23"},
+    {"id": "f-rev-zero", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2021-04-01", "period_end": "2022-03-31", "numeric_value": "0", "verification": "VERIFIED", "source_id": "s-ar-22"},
+    {"id": "f-op-22", "isin": "INE000SYN001", "metric": "SYN_OPERATING_PROFIT", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2021-04-01", "period_end": "2022-03-31", "numeric_value": "-50", "verification": "VERIFIED", "source_id": "s-ar-22"},
+    {"id": "f-rev-21", "isin": "INE000SYN001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2019-04-01", "period_end": "2020-03-31", "numeric_value": "7000", "verification": "VERIFIED", "source_id": "s-ar-20"},
+    {"id": "f-ocf-24", "isin": "INE000SYN001", "metric": "SYN_OPERATING_CASH_FLOW", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "500", "verification": "VERIFIED", "source_id": "s-ar-24"},
+    {"id": "f-other-company", "isin": "INE999ZZZ001", "metric": "SYN_REVENUE", "basis": "CONSOLIDATED", "unit": "INR", "cadence": "YEAR", "period_start": "2023-04-01", "period_end": "2024-03-31", "numeric_value": "10000", "verification": "VERIFIED", "source_id": "s-elsewhere"}
+  ],
+  "superseded_by": {"f-rev-24-superseded": "f-rev-24"},
+  "cases": [
+    {"id": "margin_v1", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24"],
+     "expect": {"status": "OK", "value": "0.123450", "unit": "RATIO"},
+     "derivation": "1234.5 / 10000 = 0.12345 exactly; quantize to 0.000001 -> 0.123450."},
+    {"id": "margin_v2_rounding", "formula": ["SYN_MARGIN", "2"], "fact_ids": ["f-op-24", "f-rev-24"],
+     "expect": {"status": "OK", "value": "12.34", "unit": "PERCENT"},
+     "derivation": "1234.5 / 10000 = 0.12345; x 100 = 12.345; quantize 0.01 ROUND_HALF_EVEN -> 12.34 (the discarded 5 is exactly half and 4 is even). Version 1 of the same id still returns 0.123450: old versions reproduce."},
+    {"id": "growth", "formula": ["SYN_GROWTH", "1"], "fact_ids": ["f-rev-24", "f-rev-23"],
+     "expect": {"status": "OK", "value": "0.250000", "unit": "RATIO"},
+     "derivation": "(10000 - 8000) / 8000 = 2000 / 8000 = 0.25 -> 0.250000. FY2023 ends 2023-03-31, the day before FY2024 starts, so it is PRIOR."},
+    {"id": "growth_gap_not_prior", "formula": ["SYN_GROWTH", "1"], "fact_ids": ["f-rev-24", "f-rev-21"],
+     "expect": {"status": "UNKNOWN", "reasons": ["PERIOD_MISMATCH"]},
+     "derivation": "FY2020 (ends 2020-03-31) is not adjacent to FY2024; the two CURRENT candidates cannot be resolved to one period plus its prior. Never 'the last row that exists'."},
+    {"id": "negative_numerator", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-22", "f-rev-zero"],
+     "expect": {"status": "UNKNOWN", "reasons": ["ZERO_DENOMINATOR"]},
+     "derivation": "-50 / 0 is undefined. UNKNOWN, never zero, infinity or an exception."},
+    {"id": "missing_input", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24"],
+     "expect": {"status": "UNKNOWN", "reasons": ["MISSING_INPUT"]},
+     "derivation": "rev is not supplied; the gap names metric SYN_REVENUE / CONSOLIDATED / INR / YEAR."},
+    {"id": "unverified", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24-unverified"],
+     "expect": {"status": "UNKNOWN", "reasons": ["UNVERIFIED", "MISSING_INPUT"]},
+     "derivation": "An UNVERIFIED fact is refused; rev is then missing."},
+    {"id": "basis_mismatch", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24-standalone"],
+     "expect": {"status": "UNKNOWN", "reasons": ["BASIS_MISMATCH", "MISSING_INPUT"]},
+     "derivation": "Standalone revenue is a different series from consolidated. No conversion."},
+    {"id": "unit_mismatch", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24-lakhs"],
+     "expect": {"status": "UNKNOWN", "reasons": ["UNIT_MISMATCH", "MISSING_INPUT"]},
+     "derivation": "0.1 INR_LAKHS is 10000 INR, but the engine never scales: a unit mismatch is UNKNOWN. Computing 1234.5/0.1 = 12345 would be the factor-of-100000 error the unit check stops."},
+    {"id": "cadence_mismatch", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24-q"],
+     "expect": {"status": "UNKNOWN", "reasons": ["CADENCE_MISMATCH", "MISSING_INPUT"]},
+     "derivation": "A quarter is not a year; never annualised."},
+    {"id": "period_mismatch", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-23", "f-rev-24"],
+     "expect": {"status": "UNKNOWN", "reasons": ["PERIOD_MISMATCH"]},
+     "derivation": "FY2023 profit over FY2024 revenue mixes periods."},
+    {"id": "conflict", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24", "f-rev-24-other"],
+     "expect": {"status": "CONFLICT", "conflict_fact_ids": ["f-rev-24", "f-rev-24-other"]},
+     "derivation": "10000 and 10100 for one input from two sources: CONFLICT with both. Never (10000+10100)/2 = 10050 and never the later filing."},
+    {"id": "same_value_two_citations", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-rev-24", "f-rev-24-same"], "family": ["INE000SYN001", "INE000SYN0R2"],
+     "expect": {"status": "OK", "value": "0.123450"},
+     "derivation": "10000 and 10000.000000 are one number (a verified-alias copy); both citations kept, value as margin_v1. Not claimed as independent corroboration."},
+    {"id": "other_company", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-other-company"], "family": ["INE000SYN001", "INE000SYN0R2"],
+     "expect": {"status": "UNKNOWN", "reasons": ["ISIN_MISMATCH", "MISSING_INPUT"]},
+     "derivation": "A fact filed under another ISIN is never an input."},
+    {"id": "unknown_fact_id", "formula": ["SYN_MARGIN", "1"], "fact_ids": ["f-op-24", "f-does-not-exist"],
+     "expect": {"status": "UNKNOWN", "reasons": ["FACT_NOT_FOUND", "MISSING_INPUT"]},
+     "derivation": "An id with no loaded fact is named, not ignored."},
+    {"id": "not_approved_id", "formula": ["SYN_MARGIN", "3"], "fact_ids": ["f-op-24", "f-rev-24"],
+     "expect": {"status": "UNKNOWN", "reasons": ["FORMULA_NOT_APPROVED"]},
+     "derivation": "Version 3 does not exist. There is no implicit latest."},
+    {"id": "scenario_low", "formula": ["SYN_SCENARIO_AMOUNT", "1"], "fact_ids": ["f-ocf-24"],
+     "assumptions": [{"name": "rate", "value": "-0.2", "unit": "RATIO", "reason": "I think demand falls", "origin": "user-a"}],
+     "expect": {"status": "OK", "value": "400.000000", "unit": "INR"},
+     "derivation": "500 x (1 + -0.2) = 500 x 0.8 = 400 -> 400.000000."},
+    {"id": "scenario_high", "formula": ["SYN_SCENARIO_AMOUNT", "1"], "fact_ids": ["f-ocf-24"],
+     "assumptions": [{"name": "rate", "value": "0.35", "unit": "RATIO", "reason": "I think demand rises", "origin": "user-a"}],
+     "expect": {"status": "OK", "value": "675.000000", "unit": "INR"},
+     "derivation": "500 x 1.35 = 675 -> 675.000000. Same formula, same evidence, different person-stated rate: 400 vs 675. The output is a function of the assumption, not a property of the company."},
+    {"id": "scenario_missing_assumption", "formula": ["SYN_SCENARIO_AMOUNT", "1"], "fact_ids": ["f-ocf-24"], "assumptions": [],
+     "expect": {"status": "UNKNOWN", "reasons": ["MISSING_ASSUMPTION"]},
+     "derivation": "No default rate exists; the gap names 'rate' with unit RATIO."},
+    {"id": "scenario_out_of_range", "formula": ["SYN_SCENARIO_AMOUNT", "1"], "fact_ids": ["f-ocf-24"],
+     "assumptions": [{"name": "rate", "value": "1.5", "unit": "RATIO", "reason": "x", "origin": "user-a"}],
+     "expect": {"status": "UNKNOWN", "reasons": ["ASSUMPTION_OUT_OF_RANGE"]},
+     "derivation": "1.5 exceeds the declared maximum 1."},
+    {"id": "scenario_percent_given", "formula": ["SYN_SCENARIO_AMOUNT", "1"], "fact_ids": ["f-ocf-24"],
+     "assumptions": [{"name": "rate", "value": "10", "unit": "PERCENT", "reason": "x", "origin": "user-a"}],
+     "expect": {"status": "UNKNOWN", "reasons": ["ASSUMPTION_UNIT_MISMATCH"]},
+     "derivation": "10 PERCENT is not silently read as 0.10 RATIO -- or as 10. Refused."},
+    {"id": "scenario_contract_not_approved", "formula": ["SYN_SCENARIO_UNCONTRACTED", "1"], "fact_ids": ["f-ocf-24"],
+     "assumptions": [{"name": "factor", "value": "2", "unit": "RATIO", "reason": "x", "origin": "user-a"}],
+     "expect": {"status": "UNKNOWN", "reasons": ["OUTPUT_CONTRACT_NOT_APPROVED", "FORMULA_NOT_APPROVED"]},
+     "derivation": "Arithmetic registered, output shape not approved: nothing computed."}
+  ]
+}

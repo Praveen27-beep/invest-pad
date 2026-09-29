@@ -1,10 +1,10 @@
 -- 022_price_absent.sql -- "we looked, and it wasn't there" is an answer worth keeping.
 --
 -- THE BUG THIS FIXES. A backfill skipped any date that already had price rows
--- (app.db.prices.price_dates_present, as was). That treats one question -- "have we
--- fetched this day's bhavcopy?" -- as answered by a different one: "does SOME security
--- have a price on this day?". The two agree only while the set of securities we care
--- about never changes.
+-- (app.db.prices.price_dates_settled, then named price_dates_present). That treats one
+-- question -- "have we fetched this day's bhavcopy?" -- as answered by a different one:
+-- "does SOME security have a price on this day?". The two agree only while the set of
+-- securities we care about never changes.
 --
 -- It changes every time somebody buys something. Buy a new stock today and every
 -- historical date already has prices for the OTHER holdings, so every date is "present",

@@ -106,9 +106,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
 /**
  * Standard page body padding. Screens that own their header (the dashboard's headline
  * bar, say) render it flush and wrap only their content in this.
+ *
+ * `column` centres the content in a `--page-column` measure instead of filling the window.
+ * It is for the screens made of forms and prose rather than tables -- Import, Reconcile,
+ * Settings, Privacy -- which at full width put a 200-character line and a lone input in the
+ * middle of an otherwise empty page. The four share the variable so they cannot drift to
+ * four different widths, which is what made moving between them feel like moving between
+ * four products.
  */
-export function PageBody({ children }: { children: React.ReactNode }) {
+export function PageBody({ children, column = false }: { children: React.ReactNode; column?: boolean }) {
   return (
-    <div style={{ padding: "var(--page-padding-y) var(--page-padding-x)" }}>{children}</div>
+    <div style={{ padding: "var(--page-padding-y) var(--page-padding-x)" }}>
+      {column ? (
+        <div style={{ width: "100%", maxWidth: "var(--page-column)", marginInline: "auto" }}>{children}</div>
+      ) : (
+        children
+      )}
+    </div>
   );
 }

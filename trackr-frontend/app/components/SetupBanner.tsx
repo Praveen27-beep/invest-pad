@@ -195,7 +195,7 @@ export function SetupBanner() {
               done={false}
               optional
               label="Email forwarding"
-              detail="Optional — new trades arrive on their own"
+              detail="Optional. New trades come in on their own"
               action="Set up"
               step="forward"
               onDismiss={() => {
@@ -214,7 +214,7 @@ export function SetupBanner() {
 function headline(s: OnboardingStateOut): string {
   if (!s.consent) return "One permission, then your files. About two minutes.";
   if (s.accounts === 0) return "Tell us which brokers you use, and we'll take your files.";
-  return "There's nothing to show yet — we need your trades.";
+  return "There's nothing to show yet. We need your trades.";
 }
 
 function resumeLabel(s: OnboardingStateOut): string {
@@ -311,7 +311,7 @@ function ChecklistRow({
           type="button"
           onClick={onDismiss}
           aria-label="Not interested in email forwarding"
-          title="Not interested — don't ask again"
+          title="Not interested, don't ask again"
           style={{
             display: "inline-flex",
             alignItems: "center",

@@ -15,6 +15,13 @@ import { Icon } from "../ds";
  * wizard is the first thing a new account sees, so it is the last screen that should
  * look like a different product.
  *
+ * ONE SIZE, WHATEVER THE STEP. The card is a fixed height rather than one that fits its
+ * content, because a modal that shrank on the permission screen and grew on the broker
+ * screen moved its own footer out from under the cursor between clicks. The body is the
+ * only part that scrolls, and at this height nothing in the flow needs it to: the steps that
+ * can outgrow it are the ones a person made longer themselves, by uploading a dozen files or
+ * opening the "where do I find these files" disclosure.
+ *
  * CENTRED IN THE VIEWPORT, ALWAYS. It portals to document.body because a caller nested
  * under an ancestor with `backdrop-filter` (the ribbon's glass panel) would make that
  * ancestor the containing block for this `fixed` overlay — centring the modal inside a
@@ -55,6 +62,10 @@ export function WizardShell(props: WizardShellProps) {
 export interface WizardStep {
   /** Two or three words. Read on the rail, so it names the task, not the screen. */
   label: string;
+  /** Whether the rail may jump to this step right now. Dimmed and inert when false,
+   *  never hidden: the rail is the map of what setup involves, and a map that changes
+   *  length between screens is not one. */
+  enabled?: boolean;
 }
 
 interface WizardShellProps {
@@ -62,7 +73,10 @@ interface WizardShellProps {
   subtitle?: string;
   steps: WizardStep[];
   stepIndex: number;
-  onBack?: () => void;
+  /** Jump straight to a step from the rail, which is the only way back now. A separate
+   *  "Back" button could walk exactly one step at a time, while the rail was already
+   *  showing four labelled steps and ignoring the click each one invited. */
+  onStepSelect?: (index: number) => void;
   onSkip: () => void;
   /** Hidden on a step that must finish before the person can leave it — the market
    * alignment, which is over in seconds and means nothing half-done. */
@@ -88,7 +102,7 @@ function WizardShellContent({
   subtitle,
   steps,
   stepIndex,
-  onBack,
+  onStepSelect,
   onSkip,
   skipLabel = "I'll do this later",
   children,
@@ -121,6 +135,7 @@ function WizardShellContent({
           flexDirection: "column",
           width: "100%",
           maxWidth: 620,
+          height: "min(620px, calc(100vh - 48px))",
           maxHeight: "calc(100vh - 48px)",
           margin: "auto",
           background: "var(--surface)",
@@ -162,9 +177,9 @@ function WizardShellContent({
           </button>
         </header>
 
-        <StepRail steps={steps} stepIndex={stepIndex} />
+        <StepRail steps={steps} stepIndex={stepIndex} onStepSelect={onStepSelect} />
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px 8px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "24px 28px 8px" }}>
           <h2
             style={{
               margin: 0,
@@ -203,12 +218,6 @@ function WizardShellContent({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {onBack && (
-              <TextButton onClick={onBack}>
-                <Icon name="chevron-left" size={14} />
-                Back
-              </TextButton>
-            )}
             {skipLabel && <TextButton onClick={onSkip}>{skipLabel}</TextButton>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -228,8 +237,20 @@ function WizardShellContent({
  * is the difference between a person deciding to spend two minutes here and a person
  * closing the modal because they cannot see what it wants. Completed steps get a tick,
  * so the rail also reads as progress rather than only position.
+ *
+ * AND IT IS THE NAVIGATION. Each reachable step is a real button, so the rail replaces the
+ * Back link entirely: switching screens is one click in any direction rather than one step
+ * backwards at a time.
  */
-function StepRail({ steps, stepIndex }: { steps: WizardStep[]; stepIndex: number }) {
+function StepRail({
+  steps,
+  stepIndex,
+  onStepSelect,
+}: {
+  steps: WizardStep[];
+  stepIndex: number;
+  onStepSelect?: (index: number) => void;
+}) {
   return (
     <ol
       style={{
@@ -244,47 +265,118 @@ function StepRail({ steps, stepIndex }: { steps: WizardStep[]; stepIndex: number
       }}
     >
       {steps.map((step, i) => {
-        const done = i < stepIndex;
         const current = i === stepIndex;
         return (
-          <li key={step.label} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <li
+            key={step.label}
+            aria-current={current ? "step" : undefined}
+            style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
+          >
             {i > 0 && (
               <span
                 aria-hidden="true"
                 style={{ width: 16, height: 1, background: "var(--border-strong)", flexShrink: 0 }}
               />
             )}
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 18,
-                height: 18,
-                flexShrink: 0,
-                borderRadius: "var(--radius-full)",
-                border: "1px solid " + (current || done ? "var(--ink-900)" : "var(--border-strong)"),
-                background: done ? "var(--ink-900)" : "transparent",
-                color: done ? "var(--text-inverse)" : current ? "var(--ink-900)" : "var(--text-tertiary)",
-                font: "var(--type-label)",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {done ? <Icon name="check" size={11} /> : i + 1}
-            </span>
-            <span
-              style={{
-                ...labelStyle,
-                color: current ? "var(--text-primary)" : "var(--text-tertiary)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {step.label}
-            </span>
+            <RailStep
+              index={i}
+              label={step.label}
+              done={i < stepIndex}
+              current={current}
+              onSelect={
+                !current && step.enabled === true && onStepSelect
+                  ? () => onStepSelect(i)
+                  : undefined
+              }
+            />
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/**
+ * One rail item: a button where you can go, plain dimmed text where you cannot.
+ *
+ * What it must never be is a button that looks live and does nothing. A step whose
+ * prerequisite is missing would land someone on a screen that cannot work — files with no
+ * account behind them, numbers with nothing to value — so it is shown at reduced contrast
+ * and is not focusable, and the caller decides which those are.
+ */
+function RailStep({
+  index,
+  label,
+  done,
+  current,
+  onSelect,
+}: {
+  index: number;
+  label: string;
+  done: boolean;
+  current: boolean;
+  onSelect?: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const active = onSelect !== undefined && hover;
+  const lit = current || done || active;
+  const inner = (
+    <>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 18,
+          height: 18,
+          flexShrink: 0,
+          borderRadius: "var(--radius-full)",
+          border: "1px solid " + (lit ? "var(--ink-900)" : "var(--border-strong)"),
+          background: done ? "var(--ink-900)" : "transparent",
+          color: done ? "var(--text-inverse)" : lit ? "var(--ink-900)" : "var(--text-tertiary)",
+          font: "var(--type-label)",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {done ? <Icon name="check" size={11} /> : index + 1}
+      </span>
+      <span
+        style={{
+          ...labelStyle,
+          color: current || active ? "var(--text-primary)" : "var(--text-tertiary)",
+          whiteSpace: "nowrap",
+          textDecoration: active ? "underline" : "none",
+        }}
+      >
+        {label}
+      </span>
+    </>
+  );
+
+  const shared: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    minWidth: 0,
+    padding: 0,
+    border: "none",
+    background: "none",
+    textAlign: "left",
+  };
+
+  if (!onSelect) {
+    return <span style={{ ...shared, opacity: current || done ? 1 : 0.55 }}>{inner}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ ...shared, cursor: "pointer" }}
+    >
+      {inner}
+    </button>
   );
 }
 

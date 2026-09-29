@@ -69,8 +69,8 @@ SURFACES: dict[str, tuple[str, ...]] = {
         "kpi.*", "health.*", "allocation.*", "derived.position_count",
         "derived.effective_holdings", "insight.*",
     ),
-    #: Per-holding. Scoped further by ``for_holding`` -- the pattern below would
-    #: otherwise let a holding's page cite every OTHER holding's numbers.
+    #: Per-holding. Scoped further by ``select()``'s ``isin`` argument -- the pattern
+    #: below would otherwise let a holding's page cite every OTHER holding's numbers.
     "holding": (
         "position.*", "kpi.market_value", "allocation.sector.*",
     ),

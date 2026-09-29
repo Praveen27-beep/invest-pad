@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 class BenchmarkOut(BaseModel):
     name: str
-    xirr: float | None = None
+    xirr: str | None = None
     terminal_value: str | None = None
 
 
@@ -18,36 +18,36 @@ class PerformanceResponse(BaseModel):
     as_of: date
     # Both variants together, always -- CLAUDE.md: reporting one alone leaves a choice
     # about which number flatters the portfolio.
-    xirr_all: float | None
-    xirr_holdings: float | None
+    xirr_all: str | None
+    xirr_holdings: str | None
     # Never shown alone either (app.engine.xirr.compute_fy_xirr's docstring) -- sits
     # beside the pair above. No default: the router must always say so explicitly, even
     # when it is null because no 1-April price exists for a held ISIN.
-    fy_xirr: float | None
+    fy_xirr: str | None
     # Fixed-calendar trailing windows, same resolution as fy_xirr (see
     # app.routers.analytical._window_xirr) -- 1/3/5 calendar years back from as_of, via
     # years_before (app.engine.xirr). Each is independently null: a portfolio with 2
     # years of history gets a null xirr_5y alongside real xirr_1y/xirr_3y values, never
     # all blanked together and never a mislabeled xirr_all standing in for the window.
-    xirr_1y: float | None = None
-    xirr_3y: float | None = None
-    xirr_5y: float | None = None
+    xirr_1y: str | None = None
+    xirr_3y: str | None = None
+    xirr_5y: str | None = None
     # TWRR (app.engine.twrr, ENGINE_SPEC section 5) -- the adviser-skill companion to
     # the fy/1y/3y/5y XIRR windows above, never shown alone. Same fixed-calendar
     # resolution, same independent nullability -- chains the persisted daily snapshot
     # series instead of solving a single money-weighted rate.
-    fy_twrr: float | None = None
-    twrr_1y: float | None = None
-    twrr_3y: float | None = None
-    twrr_5y: float | None = None
+    fy_twrr: str | None = None
+    twrr_1y: str | None = None
+    twrr_3y: str | None = None
+    twrr_5y: str | None = None
     # Adviser-onboarding variant: since investor.onboarding_date (docs/DATA_MODEL.md),
     # resolved the same honest way as fy_xirr -- see
     # app.routers.analytical._window_xirr. period_start echoes back the date actually
     # used; both are None together, exactly when no onboarding_date is usable.
-    period_xirr: float | None = None
+    period_xirr: str | None = None
     period_start: date | None = None
-    absolute_return: float | None = None
-    cagr: float | None = None
+    absolute_return: str | None = None
+    cagr: str | None = None
     invested: str | None = None
     market_value: str | None = None
     unrealised: str | None = None
@@ -66,7 +66,7 @@ class ContributionOut(BaseModel):
     end_value: str
     net_flow: str
     gain: str
-    pct_of_total: float | None = None
+    pct_of_total: str | None = None
 
 
 class ContributionResponse(BaseModel):

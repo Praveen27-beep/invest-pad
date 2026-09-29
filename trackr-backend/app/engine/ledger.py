@@ -55,4 +55,11 @@ def ordered(transactions: list[Transaction], as_of: date | None = None) -> list[
     an earlier date, and prices from that date reproduce the portfolio as it stood.
     """
     rows = transactions if as_of is None else [t for t in transactions if t.txn_date <= as_of]
-    return sorted(rows, key=lambda t: (t.txn_date, t.txn_type in _SAME_DAY_LAST))
+    # Splits transform opening lots, before any purchase on the ex-date.
+    return sorted(
+        rows,
+        key=lambda t: (
+            t.txn_date,
+            -1 if t.txn_type is TxnType.SPLIT_ADJ else int(t.txn_type in _SAME_DAY_LAST),
+        ),
+    )

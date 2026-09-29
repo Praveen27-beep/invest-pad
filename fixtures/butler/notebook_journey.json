@@ -1,0 +1,36 @@
+{
+  "_comment": "BT 15 longitudinal notebook journey. SYNTHETIC. Each step is an action through the real repository functions or HTTP routes, with the expected notebook state after it. Written from docs/BUTLER_INVESTOR_MEMORY.md, not from the code. Dates are offsets in days from the journey start (day 0 = opt-in). Evaluate correction handling and false-pattern suggestions, never agreement with Butler or trading profit. Not yet a test: a test-writing pass should drive these steps on a disposable database (app/db/scratch.py) and assert each 'expect'.",
+  "journey_version": "notebook-journey-1",
+  "catalogue_rule_version": "notebook-rules-1",
+  "steps": [
+    {"id": "J01", "day": 0, "action": "READ_NOTEBOOK", "expect": {"consent.state": "NOT_SET", "profiling_active": false, "patterns": 0, "episodes": 0}, "why": "Off by default; signup, imports and follows never opt anyone in."},
+    {"id": "J02", "day": 0, "action": "COMPLETE_REVIEW", "args": {"decision_kind": "RESEARCH_CHECKPOINT", "falsifier": "LEFT_OPEN"}, "then": "WORKER_PASS", "expect": {"episodes": 0}, "why": "No consent: nothing is captured, even by a worker pass."},
+    {"id": "J03", "day": 0, "action": "OPT_IN", "args": {"sources": ["REVIEW_RESPONSES", "DECISION_RECEIPTS"], "include_from": null, "reflection_enabled": false}, "expect": {"consent.state": "ACTIVE", "effective_include_from": "day 0 (UTC)"}, "why": "No retrospective backfill without an explicit date."},
+    {"id": "J04", "day": 1, "action": "COMPLETE_REVIEW", "args": {"decision_kind": "POSITION_DECISION", "falsifier": "LEFT_OPEN", "answers": "fluent, confident, no evidence"}, "then": "WORKER_PASS", "expect": {"pattern:REPEATED_UNANSWERED_FALSIFICATION_QUESTION": "TENTATIVE/BELOW_THRESHOLD", "review_field_states": "ANSWER_RECORDED for evidence-expecting questions"}, "why": "One episode is not a trait; a fluent answer is recorded, not checked."},
+    {"id": "J05", "day": 8, "action": "COMPLETE_REVIEW", "args": {"decision_kind": "POSITION_DECISION", "falsifier": "LEFT_OPEN"}, "then": "WORKER_PASS", "expect": {"pattern:REPEATED_UNANSWERED_FALSIFICATION_QUESTION": "TENTATIVE/BELOW_THRESHOLD"}},
+    {"id": "J06", "day": 8, "action": "DUPLICATE_WORKER_PASS", "expect": {"new_episodes": 0, "new_revisions": 0}, "why": "Repeated copies of one episode never count toward the threshold."},
+    {"id": "J07", "day": 15, "action": "COMPLETE_REVIEW", "args": {"decision_kind": "THESIS_CHANGE", "falsifier": "LEFT_OPEN"}, "then": "WORKER_PASS", "expect": {"pattern:REPEATED_UNANSWERED_FALSIFICATION_QUESTION": "REPEATED_IN_RECORDS/THRESHOLD_MET", "supporting": 3, "distinct_dates": 3}},
+    {"id": "J08", "day": 16, "action": "START_REVIEW", "args": {"decision_kind": "POSITION_DECISION"}, "expect": {"personalised_question": "WHAT_WOULD_FALSIFY_THIS_NOW", "why.personalised": true, "why.pattern.supporting": 3, "coaching_use_rows": 1}},
+    {"id": "J09", "day": 16, "action": "ANSWER", "args": {"question_id": "WHAT_WOULD_FALSIFY_THIS_NOW", "answer": "A rehearsed, well-written paragraph with no dated observation."}, "expect": {"field_state": "ANSWER_RECORDED", "follow_up": null}, "why": "WHAT_WOULD_FALSIFY_THIS_NOW is answer-satisfied; persuasion cannot reach CHECKED_BY_CODE."},
+    {"id": "J10", "day": 22, "action": "COMPLETE_REVIEW", "args": {"decision_kind": "POSITION_DECISION", "falsifier": "ANSWERED"}, "then": "WORKER_PASS", "expect": {"counterexamples": ">= 1", "status": "REPEATED_IN_RECORDS"}, "why": "Improvement is tracked as carefully as the lapse."},
+    {"id": "J11", "day": 29, "action": "COMPLETE_REVIEW_X2", "args": {"falsifier": "ANSWERED"}, "then": "WORKER_PASS", "expect": {"status": "TENTATIVE/COUNTEREXAMPLES_NOT_OUTNUMBERED"}, "why": "Genuine improvement retires assertive coaching without any user action."},
+    {"id": "J12", "day": 30, "action": "CONTROL", "args": {"action": "CORRECT_EPISODE", "correction_code": "CIRCUMSTANCES_CHANGED", "target": "one supporting episode"}, "expect": {"status_immediately": "SUSPENDED_PENDING_RECHECK", "used_for_coaching": false}, "why": "A correction takes effect on the next read, before any worker pass."},
+    {"id": "J13", "day": 30, "action": "CONTROL", "args": {"action": "DISPUTE", "note": "I answer this outside the app."}, "expect": {"status": "DISPUTED_BY_USER", "personalised_question_on_next_review": null}, "why": "Disagreement stops personality-directed prompts; it is never evidence of defensiveness."},
+    {"id": "J14", "day": 31, "action": "START_REVIEW", "args": {"decision_kind": "POSITION_DECISION"}, "expect": {"checklist_unchanged": true, "personalised_question": null}, "why": "Financial and factual checks are identical with or without the notebook."},
+    {"id": "J15", "day": 125, "action": "WORKER_PASS", "expect": {"any_remaining_tentative_or_repeated": "STALE/NO_FRESH_EPISODE"}, "why": "90 days without a fresh eligible episode -> stale, not deleted."},
+    {"id": "J16", "day": 126, "action": "CONSENT", "args": {"action": "PAUSE"}, "then": "COMPLETE_REVIEW+WORKER_PASS", "expect": {"new_episodes": 0, "notebook_still_visible": true}},
+    {"id": "J17", "day": 127, "action": "CONSENT", "args": {"action": "REVOKE"}, "expect": {"running_reflection_jobs": "CANCEL_REQUESTED", "late_reflection_output": "refused by 054/053"}},
+    {"id": "J18", "day": 128, "action": "DELETE_NOTEBOOK", "expect": {"purge.status": "PURGED", "patterns": 0, "episodes": 0, "kept_tables": ["butler_learning_consent", "butler_notebook_exclusion"], "notes_theses_reviews_portfolio": "unchanged"}},
+    {"id": "J19", "day": 129, "action": "OPT_IN", "args": {"include_from": "day 0"}, "then": "WORKER_PASS", "expect": {"episodes": 0}, "why": "An ALL_BEFORE exclusion stops deleted material from being rebuilt by a backfill."},
+    {"id": "J20", "day": 129, "action": "REQUEST_COMPANY_REPORT", "expect": {"report_packet_has_no_notebook_keys": true}, "why": "Report/profile isolation (report_contract.forbid_notebook_keys; make lint import wall)."}
+  ],
+  "cross_cutting": [
+    {"id": "X01", "check": "Runner and scheduler roles have no SELECT on any notebook table (053 grants)."},
+    {"id": "X02", "check": "Another investor/user reading this notebook gets the scoped 404/403, never rows (RLS + ownership)."},
+    {"id": "X03", "check": "The engine role cannot write consent, self-descriptions, controls or exclusions; the human role cannot write episodes, patterns or revisions."},
+    {"id": "X04", "check": "A pattern revision with faked counts, a REPEATED status under threshold, or a cited episode of the wrong polarity/catalogue is refused by 053."},
+    {"id": "X05", "check": "Reflection packet contains ids, codes and dates only -- no note, answer, thesis or chat text."},
+    {"id": "X06", "check": "A reflection proposal naming an unknown catalogue id (e.g. a diagnosis label) is rejected whole; deterministic revisions stand."},
+    {"id": "X07", "check": "Plus (trackr-frontend) and packages/ contain no notebook client (make lint)."}
+  ]
+}

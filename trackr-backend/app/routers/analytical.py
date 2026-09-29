@@ -399,7 +399,8 @@ def performance(
     ``_benchmark`` for the cash-flow replication and why ``SENSEX_TRI`` 400s.
     """
     resolved_as_of = as_of or date.today()
-    transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
+    transactions = load_transactions(connection, investor_id=investor_id,
+                                     advised_only=advised_only, date_to=resolved_as_of)
 
     isins = [h.isin for h in compute_holdings(transactions, resolved_as_of)]
     prices = latest_prices(connection, isins, resolved_as_of)
@@ -948,7 +949,11 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
                 if on_date in already_snapped:
                     continue
                 try:
-                    reconciled, _skipped = compute_holdings_partitioned(transactions, on_date)
+                    day_transactions = load_transactions(
+                        connection, investor_id=investor_id, advised_only=advised_only,
+                        date_to=on_date,
+                    )
+                    reconciled, _skipped = compute_holdings_partitioned(day_transactions, on_date)
                     isins = [h.isin for h in reconciled]
                     day_prices = latest_prices(connection, isins, on_date)
                     # A holding the ARCHIVE has already answered about without carrying it
@@ -963,7 +968,7 @@ def _run_snapshots(connection: Any, start: date, end: date, notifier: Notifier) 
                         connection, [i for i in isins if i not in day_prices], on_date
                     )
                     snap = compute_snapshot(
-                        transactions, day_prices, on_date, exclude_isins=unpriceable
+                        day_transactions, day_prices, on_date, exclude_isins=unpriceable
                     )
                 except (MissingPriceError, NegativeHoldingError) as exc:
                     # NO exc_info HERE, deliberately. This is an expected, handled skip on

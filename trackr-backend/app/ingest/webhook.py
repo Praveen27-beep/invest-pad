@@ -17,13 +17,16 @@ call (``app/routers/ingest.py``), per "Staging: why nothing auto-commits".
 from __future__ import annotations
 
 import base64
+import uuid
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
-from app.db import consent, crypto, identity, imports
+from app.db import consent, crypto, documents, forwarding_confirmation
 from app.ingest.base import Adapter
+from app.ingest.cas_pdf import CasPdfAdapter
 from app.ingest.zerodha_contract_note import ZerodhaContractNoteAdapter
-from app.storage.keys import content_hash
+from app.jobs import queue
 
 #: broker -> the case transform applied to the investor's PAN to unlock a contract-note
 #: PDF. docs/INGESTION.md "PDF password rules -- a real trap": a single hardcoded case
@@ -32,15 +35,58 @@ PDF_PASSWORD_CASE = {
     "zerodha": str.upper,
     "groww": str.upper,
     "upstox": str.lower,
+    # CDSL's own CAS FAQ: "PAN of the first/sole demat account holder in CAPITAL letters".
+    # NSDL's eCAS follows the same rule. app.ingest.cas_pdf._password_candidates tries
+    # variants on top of whatever it is handed, so this is the documented starting point
+    # rather than the only thing attempted.
+    "cdsl": str.upper,
+    "nsdl": str.upper,
 }
 
 #: (broker, doctype) -> adapter factory, taking the unlocked PDF password. Only
 #: combinations with a real, tested parser are listed -- CLAUDE.md: never invent parsing
 #: logic for a source the codebase does not yet handle. A combination absent here is a
 #: named gap, not a guess.
+#: Every factory takes ``(password, broker_accounts)``. The second argument matters only
+#: for a cross-broker document; the broker-specific adapters ignore it. Uniform on purpose
+#: -- a registry whose entries have different arities is how a caller ends up silently
+#: constructing one of them wrong.
 _ADAPTER_FACTORIES: dict[tuple[str, str], Any] = {
-    ("zerodha", "contractnote"): lambda password: ZerodhaContractNoteAdapter(password=password),
+    ("zerodha", "contractnote"): lambda password, _accounts: ZerodhaContractNoteAdapter(
+        password=password
+    ),
+    # A CAS is a HOLDINGS AND DISCOVERY source, never a transaction source. It carries no
+    # price -- a depository records securities movement, not trades -- so it can never
+    # produce a Transaction, and app.ingest.cas_pdf enforces that by rejecting rather than
+    # guessing. What it uniquely gives is every ISIN and quantity across EVERY broker on
+    # one PAN, which is the only completeness proof this system can get. Registered for
+    # both depositories because whichever holds the earlier-opened demat account is the
+    # one that mails it (SEBI CIR/MRD/DP/31/2014).
+    ("cdsl", "cas"): lambda password, accounts: CasPdfAdapter(
+        pan=password, broker_accounts=accounts
+    ),
+    ("nsdl", "cas"): lambda password, accounts: CasPdfAdapter(
+        pan=password, broker_accounts=accounts
+    ),
 }
+
+#: Doctypes that describe the investor's whole portfolio rather than one broker's dealings.
+#: A CAS spans every DP on a PAN, so requiring a matching ``account.broker`` row would make
+#: it unroutable for exactly the investors it helps most. ``resolve_account`` therefore
+#: falls back to any account of theirs, and app.ingest.cas_pdf re-resolves the real account
+#: per DP from the document's own text (``CasPdfAdapter._resolve_account``).
+_CROSS_BROKER_DOCTYPES = frozenset({"cas"})
+
+#: Refuse a delivery carrying more attachments than this. Gmail's bulk "Forward as
+#: attachment" is capped by its own page size of 100 conversations, so this is that plus
+#: headroom -- high enough never to refuse a legitimate forward, low enough that someone
+#: forwarding an entire mailbox does not enqueue ten thousand jobs. Refused with 406 so the
+#: provider does not retry a permanent condition for eight hours.
+MAX_ATTACHMENTS_PER_DELIVERY = 150
+
+
+class TooManyAttachmentsError(ValueError):
+    """One delivery carried more attachments than MAX_ATTACHMENTS_PER_DELIVERY."""
 
 
 class UnroutableAddressError(ValueError):
@@ -97,13 +143,33 @@ def resolve_investor(conn: Any, investor_code: str) -> tuple[str, str]:
     return str(row[0]), row[1]
 
 
-def resolve_account(conn: Any, investor_id: str, broker: str) -> str:
-    """The account this broker's documents belong to."""
+def resolve_account(conn: Any, investor_id: str, broker: str, doctype: str = "") -> str:
+    """The account this document's rows belong to.
+
+    For a broker document that is the account matching the broker. For a cross-broker
+    document -- a CAS, which is consolidated across every DP on one PAN -- there is no
+    "cdsl account" to match, so the investor's earliest account is used as the FALLBACK
+    only: ``CasPdfAdapter`` re-resolves the true account per DP from the statement's own
+    text, and the fallback is what it lands on when it cannot. Requiring a matching broker
+    row here would make a CAS unroutable for every investor, which is the opposite of what
+    it is for.
+    """
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT id FROM account WHERE investor_id = %s AND lower(broker) = %s LIMIT 1",
-            (investor_id, broker),
-        )
+        if doctype in _CROSS_BROKER_DOCTYPES:
+            # ORDER BY id, not by age: ``account`` carries no timestamp column, so
+            # "earliest" is not expressible. Deterministic is what actually matters here --
+            # this is only the FALLBACK, reached when the statement's own DP names cannot be
+            # matched to an account. When they can, ``broker_accounts`` below wins and this
+            # choice never surfaces.
+            cur.execute(
+                "SELECT id FROM account WHERE investor_id = %s ORDER BY id LIMIT 1",
+                (investor_id,),
+            )
+        else:
+            cur.execute(
+                "SELECT id FROM account WHERE investor_id = %s AND lower(broker) = %s LIMIT 1",
+                (investor_id, broker),
+            )
         row = cur.fetchone()
     if row is None:
         raise NoMatchingAccountError(f"investor has no account for broker {broker!r}")
@@ -134,11 +200,34 @@ def pdf_password(conn: Any, investor_id: str, broker: str) -> str:
     return case(pan) if pan else ""
 
 
+def investor_broker_accounts(conn: Any, investor_id: str) -> dict[str, str]:
+    """``{broker: account_id}`` for every account this investor holds.
+
+    What a CAS needs and a broker document does not. A consolidated statement lists each
+    depository participant by name -- "ZERODHA BROKING LIMITED", "AXIS SECURITIES LIMITED"
+    -- and ``CasPdfAdapter._resolve_account`` matches those names against this map so each
+    DP's holdings are attributed to the right account. Without it every holding in a
+    multi-broker statement lands on one arbitrary account, which would make the
+    reconciliation the CAS exists to provide actively misleading.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT lower(broker), id FROM account WHERE investor_id = %s AND broker IS NOT NULL",
+            (investor_id,),
+        )
+        return {row[0]: str(row[1]) for row in cur.fetchall()}
+
+
 def adapter_for(conn: Any, investor_id: str, broker: str, doctype: str) -> Adapter:
     factory = _ADAPTER_FACTORIES.get((broker, doctype))
     if factory is None:
         raise UnsupportedDocumentError(f"no adapter for broker={broker!r} doctype={doctype!r}")
-    return factory(pdf_password(conn, investor_id, broker))
+    accounts = (
+        investor_broker_accounts(conn, investor_id)
+        if doctype in _CROSS_BROKER_DOCTYPES
+        else None
+    )
+    return factory(pdf_password(conn, investor_id, broker), accounts)
 
 
 def handle_inbound_email(
@@ -146,86 +235,155 @@ def handle_inbound_email(
     store: Any,
     to: str,
     attachments: list[dict[str, Any]],
+    sender: str = "",
+    body_text: str = "",
+    max_attachments: int = MAX_ATTACHMENTS_PER_DELIVERY,
 ) -> list[dict[str, Any]]:
-    """Stage every attachment on one inbound message. Returns one ``stage_batch`` result
-    per attachment.
+    """Archive every attachment on one inbound message and queue it for parsing.
 
-    All attachments on one message share a single connection (``app.database.get_conn``
-    -- one per request), so letting ``DuplicateUploadError`` propagate out of this loop
-    would roll back every attachment already staged ahead of it in the same message,
-    including ones that were legitimately new. Each attachment is independent instead:
-    a duplicate is caught right here and reported inline, alongside whatever else in
-    the message staged cleanly.
+    I/O ONLY. Nothing here parses a PDF, and that is the point. Mailgun's webhook timeout
+    is 15 seconds and it retries any non-200 six times over eight hours, so a delivery of
+    more than a handful of documents cannot be parsed inside the request -- a slow webhook
+    is not slow, it is the same message delivered again, on a backoff, for hours. Measured:
+    a contract note is ~0.26 s, so about 55 of them crosses 15 s, and a bulk forward
+    carries up to 100. See docs/BACKFILL_PIPELINE.md sections 4.1 and 5.
+
+    So each attachment is stored (bytes to object storage, a row in ``document`` with
+    ``parse_status='UNPARSED'``) and a job is enqueued naming it. Both writes share this
+    request's single transaction, so a 200 is never returned for work that was not durably
+    recorded -- the reason the queue is Postgres and not a separate broker.
+
+    The routing checks that are CHEAP still happen here, before anything is stored: a
+    document whose address does not resolve, whose investor or account does not exist, or
+    for which no adapter is registered, is refused at the door. Only the expensive
+    judgement -- what is actually inside the file -- is deferred.
+
+    Returns one result per attachment, shaped like ``stage_batch``'s so the response model
+    is unchanged: a queued attachment reports its ``document_id`` and no ``batch_id``,
+    because no batch exists until it is parsed.
 
     Raises:
         UnroutableAddressError, NoSuchInvestorError, NoMatchingAccountError,
-        UnsupportedDocumentError: routing failed before anything was staged.
+            UnsupportedDocumentError: routing failed before anything was stored.
+        TooManyAttachmentsError: more attachments than this deployment accepts in one
+            delivery. Permanent, so the router answers 406 rather than inviting a retry.
         ConsentMissingError: routing succeeded but this investor has no live consent --
-            checked last, after routing/account/adapter resolution, so those errors
-            keep naming the actual routing problem instead of being masked by a 403.
+            checked last, after routing, so those errors keep naming the actual routing
+            problem instead of being masked by a 403.
     """
     routed = parse_to_address(to)
     investor_id, investor_code = resolve_investor(conn, routed.investor_code)
-    account_id = resolve_account(conn, investor_id, routed.broker)
-    adapter = adapter_for(conn, investor_id, routed.broker, routed.doctype)
+
+    # Gmail's forwarding verification, handled before anything document-shaped.
+    #
+    # ORDER MATTERS THREE WAYS. It is after resolve_investor because a code is worthless
+    # unless we know whose address it was sent to. It is before resolve_account and
+    # adapter_for because this message is not a document and must not be refused for
+    # having no parser -- that is exactly the 422 that used to swallow it. And it is
+    # before require_consent because a mailbox-verification handshake is not processing
+    # anyone's financial data: gating it on DPDP consent would deadlock setup for an
+    # investor who has not granted yet, and there is nothing here to protect -- the code
+    # is generated by the client's own Gmail and is shown straight back to them.
+    #
+    # Returns [] rather than raising on an unreadable body: Gmail sends other mail from
+    # this address, and a non-2xx would make the provider retry a permanent non-event for
+    # hours (docs/ONBOARDING_FLOW.md, defect 9).
+    if sender.strip().lower() == forwarding_confirmation.GMAIL_FORWARDING_SENDER:
+        code = forwarding_confirmation.extract_code(body_text)
+        if code is not None:
+            forwarding_confirmation.record_confirmation_code(
+                conn, investor_id, routed.broker, routed.doctype, code
+            )
+        return []
+
+    if len(attachments) > max_attachments:
+        raise TooManyAttachmentsError(
+            f"delivery carries {len(attachments)} attachments; this address accepts at most "
+            f"{max_attachments} per message. Forward in smaller batches -- re-sending a "
+            f"batch you already sent is a no-op, so nothing is lost by overlapping."
+        )
+
+    account_id = resolve_account(conn, investor_id, routed.broker, routed.doctype)
+    # Resolved here purely to REFUSE EARLY for an unregistered (broker, doctype): the
+    # instance is thrown away, and the drain builds its own at parse time. Doing it here
+    # keeps "no parser for this" a 406 at the door rather than a queued job that can only
+    # ever fail.
+    adapter_for(conn, investor_id, routed.broker, routed.doctype)
     consent.require_consent(conn, investor_id)
 
-    results = []
+    # One delivery, one id. This is what turns "promote 487 documents" into a single
+    # attributed decision instead of 487 of them (migration 038).
+    delivery_id = str(uuid.uuid4())
+    doctype = routed.doctype.upper()
+
+    results: list[dict[str, Any]] = []
     for attachment in attachments:
         content = base64.b64decode(attachment["content_b64"])
-        try:
-            result = imports.stage_batch(
-                conn,
-                adapter,
-                content,
-                investor_id=investor_id,
-                account_id=account_id,
-                filename=attachment.get("filename", ""),
-                store=store,
-                investor_code=investor_code,
-                actor_uid=None,
-                # Every document this webhook handles today is a PDF. doctype mirrors
-                # the address's own doctype segment (docs/INGESTION.md's address
-                # scheme) so a stored object's metadata matches how it was routed --
-                # previously hardcoded to TRADEBOOK/text-csv inside stage_batch, which
-                # mislabeled every PDF (contract notes included) ever staged this way.
-                doctype=routed.doctype.upper(),
-                content_type="application/pdf",
-            )
-        except imports.DuplicateUploadError as exc:
-            results.append(
-                {
-                    "batch_id": exc.batch_id,
-                    "parsed": 0,
-                    "rejected": 0,
-                    "sha256": exc.sha256,
-                    "document_id": None,
-                    "notes": [f"skipped: identical file already staged as batch {exc.batch_id}"],
-                }
-            )
-            continue
-        except identity.IdentityMismatchError as exc:
-            # Caught per-attachment for the same reason DuplicateUploadError is: these
-            # share one connection, so letting it out of the loop would roll back every
-            # attachment already staged ahead of it -- and, here, the refusal audit row
-            # with them. A forwarded message can legitimately carry one investor's note
-            # and one stray attachment; the stray is refused and the rest still land.
-            #
-            # exc's message is already redacted (app.db.identity builds it from
-            # crypto.redact_pan), so it is safe to hand back to the caller.
+        filename = attachment.get("filename", "")
+        # Present only when this attachment came out of a nested message/rfc822 part --
+        # i.e. a bulk "Forward as attachment". These are the ORIGINAL email's headers, not
+        # the forwarding wrapper's, which is what makes a date-window lookup over the
+        # archive meaningful later.
+        email_meta = attachment.get("email_meta")
+
+        stored = documents.store_document(
+            conn,
+            store,
+            investor_id=investor_id,
+            investor_code=investor_code,
+            doctype=doctype,
+            content=content,
+            received=date.today(),
+            filename=filename,
+            content_type=attachment.get("content_type") or "application/pdf",
+            account_id=account_id,
+            source_message_id=(email_meta or {}).get("message_id"),
+            actor_uid=None,
+            email_meta=email_meta,
+        )
+        document_id = str(stored["id"])
+        sha256 = str(stored["sha256"])
+
+        if stored.get("already_present"):
+            # Content addressing, per investor (migration 020). Re-forwarding a Gmail page
+            # you already sent is explicitly supported -- users are told "if you lose your
+            # place, just forward the page again" -- and this is what makes that true
+            # rather than hopeful. No second job: the first one already covers these bytes.
             results.append(
                 {
                     "batch_id": None,
                     "parsed": 0,
                     "rejected": 0,
-                    # The hash is of the bytes, not of any tenant, so it is safe to
-                    # return and is the only handle a caller has on a refused
-                    # attachment -- batch_id cannot exist, nothing was staged.
-                    "sha256": content_hash(content),
-                    "document_id": None,
-                    "notes": [f"refused: {exc}"],
+                    "sha256": sha256,
+                    "document_id": document_id,
+                    "notes": [f"skipped: {filename or 'document'} already archived"],
                 }
             )
             continue
-        results.append(result)
+
+        queue.enqueue(
+            conn,
+            queue.KIND_PARSE_DOCUMENT,
+            {
+                # IDS ONLY -- no bytes, no PAN. app/jobs/queue.py refuses anything else.
+                "document_id": document_id,
+                "account_id": account_id,
+                "investor_code": investor_code,
+                "broker": routed.broker,
+                "doctype": routed.doctype,
+                "filename": filename,
+                "delivery_id": delivery_id,
+            },
+            investor_id=investor_id,
+        )
+        results.append(
+            {
+                "batch_id": None,
+                "parsed": 0,
+                "rejected": 0,
+                "sha256": sha256,
+                "document_id": document_id,
+                "notes": [f"queued for parsing: {filename or 'document'}"],
+            }
+        )
     return results

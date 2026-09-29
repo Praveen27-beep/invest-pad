@@ -18,7 +18,7 @@ def get_store(settings: Settings) -> DocumentStore:
             falling back to local storage in an environment that meant to use S3.
     """
     if settings.storage_backend == "local":
-        return LocalDocumentStore(settings.local_storage_root)
+        return LocalDocumentStore(settings.local_storage_root, settings.local_storage_base_url)
     if settings.storage_backend == "s3":
         return S3DocumentStore(
             bucket=settings.portfolio_storage_bucket,

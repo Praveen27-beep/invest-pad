@@ -18,15 +18,12 @@ from __future__ import annotations
 
 import csv
 import io
-import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from app.engine.types import Source, Transaction, TxnType
 from app.ingest.base import CONFIDENCE_CERTAIN, ParseResult, Rejection, StagedRow
-
-ISIN_PATTERN = re.compile(r"^IN[A-Z0-9]{10}$")
 
 TRADE_TYPES = {"buy": TxnType.BUY, "sell": TxnType.SELL}
 
@@ -125,9 +122,11 @@ class ZerodhaTradebookAdapter:
         if segment and segment != SUPPORTED_SEGMENT:
             return reject(f"segment {segment!r} is not supported in Phase 1 (equities only)")
 
+        # Validated centrally, in app.db.imports._screen_isins, against app.isin -- which
+        # checks the ISO 6166 check digit this adapter's own pattern never did. Taken as
+        # printed here; normalisation is that screen's job, on every source rather than
+        # this one.
         isin = (raw.get("isin") or "").strip().upper()
-        if not ISIN_PATTERN.match(isin):
-            return reject(f"not a valid ISIN: {isin!r}")
 
         trade_type = (raw.get("trade_type") or "").strip().lower()
         if trade_type not in TRADE_TYPES:

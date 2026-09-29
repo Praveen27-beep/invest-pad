@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/butler_reflection_proposal.schema.json",
+  "title": "ReflectionProposal",
+  "description": "butler.reflection_proposal.v1 -- what the reflection model may return. Identifiers and\none abstention code. No prose field exists: a diagnosis, motive or personality label has\nnowhere to go, and extra fields are refused whole.",
+  "$defs": {
+    "ReflectionPatternProposal": {
+      "additionalProperties": false,
+      "properties": {
+        "catalogue_id": {
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+          "title": "Catalogue Id",
+          "type": "string"
+        },
+        "supporting_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Supporting Episode Ids",
+          "type": "array"
+        },
+        "counter_episode_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Counter Episode Ids",
+          "type": "array"
+        },
+        "alternative_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Alternative Ids",
+          "type": "array"
+        },
+        "question_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "title": "Question Ids",
+          "type": "array"
+        },
+        "retire": {
+          "default": false,
+          "title": "Retire",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "catalogue_id"
+      ],
+      "title": "ReflectionPatternProposal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "butler.reflection_proposal.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "packet_id": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Packet Id",
+      "type": "string"
+    },
+    "patterns": {
+      "items": {
+        "$ref": "#/$defs/ReflectionPatternProposal"
+      },
+      "maxItems": 6,
+      "title": "Patterns",
+      "type": "array"
+    },
+    "abstain_code": {
+      "anyOf": [
+        {
+          "enum": [
+            "INSUFFICIENT_EVIDENCE",
+            "NO_COMPARABLE_EPISODES",
+            "COUNTEREXAMPLES_DOMINATE",
+            "OUT_OF_SCOPE"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Abstain Code"
+    }
+  },
+  "required": [
+    "schema_version",
+    "packet_id"
+  ],
+  "type": "object"
+}

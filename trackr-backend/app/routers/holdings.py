@@ -71,7 +71,8 @@ def _portfolio(
     DATA_MODEL.md, contracts/openapi.yaml) -- so a SEBI-registered adviser can report on
     the mandated account only.
     """
-    transactions = load_transactions(connection, investor_id=investor_id, advised_only=advised_only)
+    transactions = load_transactions(connection, investor_id=investor_id,
+                                     advised_only=advised_only, date_to=as_of)
     holdings, skipped = compute_holdings_partitioned(transactions, as_of=as_of)
 
     isins = [h.isin for h in holdings]

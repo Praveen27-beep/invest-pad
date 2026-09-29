@@ -324,9 +324,11 @@ def refresh_corporate_actions_cron(conn: Any = Depends(get_conn)) -> dict[str, A
 
 
 # ---------------------------------------------------------------------------
-# yfinance discovery -- the second free candidate source, for the historical gap
-# refresh-cron's live NSE notices structurally cannot reach. See
-# app.ingest.corporate_action_yfinance's module docstring for the full writeup.
+# yfinance discovery -- a second, independent free candidate source. NOT a historical
+# fallback: NSE's notices API does serve arbitrary historical windows (re-probed live
+# 2026-09-26), and the month-by-month sweep in app.db.reference_sync.schedule is what
+# actually reaches a years-deep gap. See app.ingest.corporate_action_yfinance's module
+# docstring for the correction and what the remaining uncovered gap really is (BSE).
 # ---------------------------------------------------------------------------
 
 

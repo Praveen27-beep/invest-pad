@@ -44,14 +44,46 @@ def due_for_deletion(conn: Any, as_of: date) -> list[dict[str, Any]]:
     A held investor is never listed, at any age. Where a dispute has been raised, records
     are kept until it resolves or SEBI directs otherwise -- a cleanup job must not be able
     to quietly destroy evidence in a live matter.
+
+    RESEARCH ACTIVITY COUNTS AS ACTIVITY. This used to measure inactivity from the last
+    transaction date alone, which made an investor who reads filings, writes notes and revises
+    a thesis every week -- but has not traded in six years -- look dormant and appear on a
+    deletion report. Research is now folded into ``last_activity``.
+
+    That is deliberately the CONSERVATIVE half of BE-Q05 and not an answer to it. Keeping an
+    active researcher off a deletion report needs no policy decision: this function only
+    reports, a human acts on the list, and a false positive there is the expensive direction.
+    What still needs a decision is which retention CATEGORY and which START EVENT govern
+    research records -- see ``app/db/workspace_privacy.readiness_blockers``, which refuses to let
+    research inherit the five-year investor default by omission.
     """
+    research_available = _research_activity_available(conn)
+    research_clause = (
+        """,
+                   (SELECT max(latest) FROM (
+                        SELECT max(recorded_at) AS latest FROM note WHERE investor_id = i.id
+                        UNION ALL
+                        SELECT max(recorded_at) FROM question_answer WHERE investor_id = i.id
+                        UNION ALL
+                        SELECT max(recorded_at) FROM thesis WHERE investor_id = i.id
+                        UNION ALL
+                        SELECT max(recorded_at) FROM research_source WHERE investor_id = i.id
+                        UNION ALL
+                        SELECT max(recorded_at) FROM thesis_event WHERE investor_id = i.id
+                        UNION ALL
+                        SELECT max(created_at) FROM task WHERE investor_id = i.id
+                   ) r) AS last_research"""
+        if research_available
+        else ", NULL::timestamptz AS last_research"
+    )
     with conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT i.id, i.code, i.created_at,
                    (SELECT max(t.txn_date) FROM transaction t
                     JOIN account a ON a.id = t.account_id
-                    WHERE a.investor_id = i.id) AS last_activity
+                    WHERE a.investor_id = i.id) AS last_transaction
+                   {research_clause}
             FROM investor i
             WHERE NOT EXISTS (
                 SELECT 1 FROM legal_hold h
@@ -67,7 +99,41 @@ def due_for_deletion(conn: Any, as_of: date) -> list[dict[str, Any]]:
     for row in rows:
         # Retention runs from the LAST interaction, not the first: an active client's
         # early records stay for as long as the relationship does.
-        last = row["last_activity"] or row["created_at"].date()
+        candidates = [d for d in (row["last_transaction"], row["created_at"].date()) if d]
+        research = row.get("last_research")
+        if research is not None:
+            candidates.append(research.date())
+        last = max(candidates)
         if last < limit:
-            due.append({**row, "retained_until": limit, "last_activity": last})
+            due.append(
+                {
+                    **row,
+                    "retained_until": limit,
+                    "last_activity": last,
+                    # Which kind of activity set the clock. A reviewer deciding whether to act on
+                    # a row needs to know whether "last active 2019" means "stopped trading" or
+                    # "stopped using the product".
+                    "last_activity_source": (
+                        "research"
+                        if research is not None and research.date() == last
+                        else "transaction"
+                        if row["last_transaction"] == last
+                        else "investor_created"
+                    ),
+                }
+            )
     return due
+
+
+def _research_activity_available(conn: Any) -> bool:
+    """Does this database have the workspace research tables?
+
+    One catalogue read, so ``due_for_deletion`` works unchanged on every database that has no
+    research schema -- which is all of them today -- without the caller having to know.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'note')"
+        )
+        return bool(cur.fetchone()[0])

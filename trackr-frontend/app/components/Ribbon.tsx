@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useAIChat } from "@/lib/ai-chat-context";
+import { focusPageHeading, useLauncher } from "@trackr/core";
 import { Icon, IconButton } from "./ds";
+import { PortfolioSwitcher } from "./PortfolioSwitcher";
 import { locate } from "./nav";
 import { SectionMapModal } from "./SectionMapModal";
 import { GmailInstructionsModal } from "./GmailInstructionsModal";
@@ -20,24 +22,33 @@ import { GmailInstructionsModal } from "./GmailInstructionsModal";
  * to the data.
  */
 export function Ribbon({ pathname }: { pathname: string }) {
-  const [mapOpen, setMapOpen] = useState(false);
   const [gmailOpen, setGmailOpen] = useState(false);
   const router = useRouter();
   const { user } = useAuth();
   const { openChat } = useAIChat();
   const here = locate(pathname);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setMapOpen((v) => !v);
-      }
-      if (e.key === "Escape") setMapOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  /**
+   * PLUS'S ONE LAUNCHER OWNER. Behaviour comes from `@trackr/core`; the sheet's appearance
+   * stays entirely in `SectionMapModal` and is unchanged.
+   *
+   * This replaced a local `mapOpen` state plus a hand-rolled ⌘K/Escape listener, which had
+   * three gaps the shared hook closes: it fired while the user was typing in a text field, it
+   * trapped no focus, and it returned focus nowhere on close. `blocked` is how the hook is told
+   * the Gmail sheet already owns the screen -- stacking two dialogs gives two focus traps
+   * fighting over the same focus and an Escape that closes the wrong one.
+   */
+  const launcher = useLauncher({
+    label: "Go to a section",
+    blocked: gmailOpen,
+    onNavigate: (href) => {
+      router.push(href);
+      // Selecting advances focus to the destination heading; cancelling restores it to the
+      // trigger. The hook handles the second, this handles the first -- the two must differ, or
+      // a keyboard user has to tab through the whole ribbon to reach the page they just chose.
+      requestAnimationFrame(() => focusPageHeading());
+    },
+  });
 
   const initial = (user?.email ?? "?").trim().charAt(0).toUpperCase();
 
@@ -80,8 +91,8 @@ export function Ribbon({ pathname }: { pathname: string }) {
 
         <button
           type="button"
-          onClick={() => setMapOpen((v) => !v)}
-          aria-expanded={mapOpen}
+          onClick={launcher.open ? launcher.closeLauncher : launcher.openLauncher}
+          aria-expanded={launcher.open}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -142,6 +153,10 @@ export function Ribbon({ pathname }: { pathname: string }) {
         </span>
 
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {/* Renders nothing for a login that owns one portfolio, which is most of them.
+              Here rather than only in Settings because which portfolio you are reading is
+              a property of every screen, not a setting you change and leave. */}
+          <PortfolioSwitcher compact />
           <IconButton name="import" label="How to import your trades" onClick={() => router.push("/import")} />
           <IconButton name="mail" label="Set up Gmail auto-forwarding" onClick={() => setGmailOpen(true)} />
           <IconButton name="reconcile" label="Reconcile against a statement" onClick={() => router.push("/reconcile")} />
@@ -150,7 +165,7 @@ export function Ribbon({ pathname }: { pathname: string }) {
         </span>
       </nav>
 
-      <SectionMapModal open={mapOpen} onClose={() => setMapOpen(false)} activeHref={here.item.href} />
+      <SectionMapModal launcher={launcher} activeHref={here.item.href} />
       <GmailInstructionsModal open={gmailOpen} onClose={() => setGmailOpen(false)} />
     </>
   );

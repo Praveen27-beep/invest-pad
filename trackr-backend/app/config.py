@@ -13,8 +13,9 @@ in ``.env``, same as production.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: provider name -> the Settings field names its verifier requires. Keys here are the
@@ -39,6 +40,92 @@ class Settings(BaseSettings):
     # Exact existing name: db/connection.py's DATABASE_URL_ENV. No default -- a silent
     # fallback to localhost is how a test run ends up writing to something real.
     database_url: str
+
+    # --- migration identity ---------------------------------------------------------
+    # The connection migrations are applied through, which is NOT the connection requests
+    # use. The identity that runs DDL owns the tables, and a table owner can drop the
+    # append-only triggers migration 044 installs; handing that authority to a request
+    # handler would make those guards decorative.
+    #
+    # Optional, and the fallback is deliberate but narrow: unset, the runner uses
+    # `database_url`, which is what every existing deployment and dev box does today and
+    # what keeps `make install` working on a single-role docker Postgres. What is NOT
+    # allowed is that fallback surviving into a Workspace deployment -- see
+    # `_validate_workspace_identities` below, which requires this to be set and distinct
+    # the moment `workspace_enabled` is true. The runner also announces which identity it
+    # used (`app/db/migrate.py::migration_url`) so the fallback is never silent.
+    migration_database_url: str | None = None
+
+    # --- workspace database identities ----------------------------------------------
+    # Six capability logins, provisioned by scripts/provision_workspace_roles.sql and
+    # selected BY THE SERVER OPERATION, never by a request. `app/db/connection.py` maps a
+    # finite `WorkspaceCapability` enum member to one of these; a DTO, header or query
+    # parameter can no more ask for the eraser connection than it can ask for a DSN.
+    #
+    # All six default to None and FAIL CLOSED when used. There is no fallback to the
+    # migration owner or to `database_url`: a missing eraser credential must refuse to
+    # erase, not quietly erase as the schema owner with every trigger bypassed.
+    workspace_human_database_url: str | None = None
+    workspace_runner_database_url: str | None = None
+    workspace_engine_database_url: str | None = None
+    workspace_scheduler_database_url: str | None = None
+    workspace_reader_database_url: str | None = None
+    workspace_eraser_database_url: str | None = None
+
+    # OFF. Not a beta flag -- research routes do not exist yet. Even once they do, this
+    # flag alone cannot turn them on: the complete 040-045 migration bundle has to be
+    # recorded as applied as well (`app/db/migrate.py::assert_workspace_ready`), because a
+    # flag that could expose an unguarded half-built schema is worse than no flag.
+    workspace_enabled: bool = False
+
+    # --- research model execution (BE 21-25, BT 08, BT 10) ---------------------------
+    # KILL SWITCHES, not readiness flags. The server never calls a model; these decide
+    # whether it will ACCEPT a browser-reported attempt at all. Turning one off refuses new
+    # attempt starts with 503 and leaves every stored task, result, review, note and Butler
+    # memory untouched and readable -- portfolio routes are unaffected either way.
+    research_model_execution_enabled: bool = True
+    butler_model_selection_enabled: bool = True
+    # Butler's source-derived cards (new saved documents). Off -> those events are recorded as
+    # SUPPRESSED(SOURCE_INGESTION_DISABLED); nothing is deleted and portfolio is unaffected.
+    butler_source_events_enabled: bool = True
+    # Investors allowed to run STORED_SAMPLE attempts (comma-separated UUIDs). Empty by
+    # default: a sample is a fixture, permanently labelled, and is confined to explicitly
+    # listed demo/test investors. A missing key is never a reason to serve one.
+    workspace_sample_investors: str = ""
+
+    # --- BT-P02 hosted jobs: company reports and notebook reflection (RP 01) -----------
+    # OFF, and inert until an OPERATOR declares every value below. A job is refused at
+    # admission (503 PLATFORM_NOT_CONFIGURED) while any is missing: no invented price, no
+    # unlimited budget, no default model. This is the ONLY place the platform credential is
+    # named; app/research/platform_inference.py is the ONLY module that reads it, and only
+    # inside the worker (`make lint` enforces both). It is never a user key, never stored in
+    # a table, never placed in a packet, queue payload, checkpoint or log. Personal BYOK keys
+    # stay in the browser (BE 23) and cannot reach this path.
+    hosted_jobs_enabled: bool = False
+    # HMAC key for short-lived, purpose-bound worker delegations. Not a provider credential.
+    hosted_delegation_signing_key: str | None = None
+    platform_inference_provider: str = ""  # only "anthropic" is allowlisted
+    platform_inference_model: str = ""
+    platform_inference_key: str | None = Field(default=None, repr=False)
+    platform_inference_price_version: str = ""
+    platform_inference_currency: str = ""  # ISO 4217, e.g. "USD"
+    # Decimal strings: price per million input / output tokens in that currency.
+    platform_inference_input_price_per_mtok: str = ""
+    platform_inference_output_price_per_mtok: str = ""
+    # Operator bounds a request must fit inside (decimal strings in the currency above).
+    report_max_budget: str = ""
+    report_max_deadline_minutes: int = 240
+    report_stage_max_input_tokens: int = 60000
+    report_stage_max_output_tokens: int = 4000
+    reflection_daily_budget: str = ""
+    reflection_max_input_tokens: int = 20000
+    reflection_max_output_tokens: int = 1024
+    reflection_deadline_minutes: int = 30
+
+    @property
+    def sample_investor_ids(self) -> frozenset[str]:
+        return frozenset(i.strip().lower() for i in self.workspace_sample_investors.split(",")
+                         if i.strip())
 
     # --- field-level encryption -----------------------------------------------------
     # Exact existing names: db/crypto.py's ENCRYPTION_KEY_ENV and PAN_PEPPER_ENV.
@@ -79,10 +166,20 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     debug: bool = False
 
+    # Free public reference sources. DEBUG never changes the source or supplies data.
+    reference_sync_enabled: bool = True
+    reference_http_timeout_seconds: int = Field(default=20, ge=1, le=30)
+    reference_worker_poll_seconds: int = Field(default=30, ge=5, le=3600)
+    reference_worker_batch_size: int = Field(default=5, ge=1, le=100)
+    reference_nsdl_max_pages: int = Field(default=100, ge=1, le=1000)
+
     # --- document storage ---------------------------------------------------------
     # "local" or "s3". Local is the development default; production selects s3 (R2).
     storage_backend: str = "local"
     local_storage_root: str = "./data/documents"
+    # Explicit self-hosted deployment choice; never use on ephemeral serverless disks.
+    allow_local_storage_in_production: bool = False
+    local_storage_base_url: str = "http://localhost:8000/documents"
     # Exact existing names, read directly by storage/s3.py and storage/local.py -- kept
     # here too so app/storage/factory.py can choose and construct a backend at startup
     # without duplicating storage/s3.py's own env parsing.
@@ -128,6 +225,12 @@ class Settings(BaseSettings):
     # Not secret-guarding, so unlike the fields above this may default: 25 MiB matches
     # Mailgun's own combined-attachment cap.
     ingest_max_attachment_bytes: int = 26_214_400
+    # How many attachments one inbound message may carry. Gmail's bulk "Forward as
+    # attachment" is bounded by its own page size of 100 conversations, so this is that
+    # plus headroom: high enough never to refuse a legitimate forward, low enough that
+    # someone forwarding an entire mailbox cannot enqueue ten thousand jobs in one POST.
+    # Exceeding it answers 406, which is Mailgun's "rejected, do not retry".
+    ingest_max_attachments_per_delivery: int = 150
 
     # --- LLM-assisted document extraction (app/ai/groq.py, app/ingest/llm_*.py) -----
     # TWO FACTS, DELIBERATELY SEPARATE. ``groq_api_key`` is "we hold credentials";
@@ -160,6 +263,16 @@ class Settings(BaseSettings):
     # the model cannot emit a number at all -- which is why the boundary moved rather
     # than broke. See docs/COMPLIANCE.md for the processor gate this waits on.
     insight_generation_enabled: bool = False
+
+    # --- fast semantic classification (app/ai/jev.py, app/ingest/corporate_action_feed.py) --
+    # PUBLIC-DATA-ONLY, unlike groq_api_key above. The one caller sends an NSE
+    # corporate-action subject line, ISIN and symbol to disambiguate a dividend notice --
+    # a company-wide announcement, never an investor's own data -- so this does not carry
+    # groq_api_key/llm_parsing_enabled's DPA gate. Degrades gracefully to "attribution
+    # unresolved, notice refused" when unset, same convention as gemini_api_key above: a
+    # classification feature going dark must never take the rest of the app down with it.
+    jev_api_key: str | None = None
+    jev_model: str = "jev-latest"
 
     # --- demerger/amalgamation notification watch (app/ingest/demerger_watch.py) ----
     # ON BY DEFAULT since 2026-09-22 AND DELIBERATELY LIGHTWEIGHT. Reuses the SAME NSE
@@ -195,8 +308,54 @@ class Settings(BaseSettings):
         Checks falsiness too, not just equality to the placeholder: an ``INGEST_DOMAIN=``
         line left blank in a copied ``.env`` parses as ``""``, not the placeholder
         string, and ``""`` would be an even worse address to hand out.
+
+        AND IT MUST BE A BARE HOSTNAME, checked in every mode including DEBUG.
+
+        This setting is interpolated straight into an address by
+        ``app.ingest.addresses.forwarding_addresses``, so whatever survives this
+        validator is what a client is told to paste into Gmail. Before the format check
+        existed, ``INGEST_DOMAIN=https://meicapital.in/`` -- the natural thing to paste
+        when someone asks you for "your domain" -- was accepted, passed
+        ``forwarding_enabled`` (it has a dot and no reserved suffix), and produced
+        ``c001-zerodha-contractnote@https://meicapital.in/`` on a real screen.
+
+        ``forwarding_enabled`` already normalises case and a trailing dot for its own
+        check, but ``forwarding_addresses`` interpolated the RAW value, so
+        ``"Ingest.MeiCapital.IN "`` yielded an address with the trailing space intact.
+        Normalising HERE, once, and assigning back is what keeps those two readings of
+        the same setting from disagreeing.
+
+        Rejected in DEBUG too, unlike the placeholder rule above: a placeholder is a
+        deployment that has not got there yet, which is a normal state to develop in,
+        but a malformed hostname is wrong everywhere and is cheapest to learn about on
+        the machine where it was typed.
         """
-        placeholder = not self.ingest_domain or self.ingest_domain == _INGEST_DOMAIN_DEV_DEFAULT
+        normalised = self.ingest_domain.strip().lower().rstrip(".")
+        if normalised != self.ingest_domain:
+            # Assign through __dict__: this is a mode="after" validator, so ordinary
+            # attribute assignment would re-enter validation on a validate_assignment
+            # model and recurse.
+            self.__dict__["ingest_domain"] = normalised
+
+        if normalised:
+            bad = next((c for c in ' \t/@\\?#"' if c in normalised), None)
+            if bad is not None:
+                raise ValueError(
+                    "INGEST_DOMAIN must be a bare hostname such as "
+                    f"'ingest.example.org' -- no scheme, path, port or credentials "
+                    f"(got {self.ingest_domain!r}, which contains {bad!r})"
+                )
+            if ":" in normalised:
+                raise ValueError(
+                    "INGEST_DOMAIN must not carry a port: mail is routed by MX record, "
+                    f"not by port (got {self.ingest_domain!r})"
+                )
+            if normalised.startswith("-") or normalised.startswith("."):
+                raise ValueError(
+                    f"INGEST_DOMAIN is not a valid hostname (got {self.ingest_domain!r})"
+                )
+
+        placeholder = not normalised or normalised == _INGEST_DOMAIN_DEV_DEFAULT
         if not self.debug and placeholder:
             raise ValueError(
                 "INGEST_DOMAIN must be set to a real, mail-receiving domain outside "
@@ -225,7 +384,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_storage_backend(self) -> Settings:
-        """Outside DEBUG mode, ``local`` must not be the storage backend.
+        """Production local storage requires explicit persistent self-hosting opt-in.
 
         ``LocalDocumentStore`` writes to a real directory on disk (``mkdir`` then
         ``write_bytes``) -- true on a VPS, but on Vercel (docs/DEPLOYMENT.md) the
@@ -237,11 +396,50 @@ class Settings(BaseSettings):
         ``_validate_ingest_domain`` takes for a forgotten ``INGEST_DOMAIN``.
         """
         if not self.debug and self.storage_backend == "local":
+            if self.allow_local_storage_in_production:
+                if not Path(self.local_storage_root).is_absolute():
+                    raise ValueError(
+                        "Production LOCAL_STORAGE_ROOT must be an absolute persistent path"
+                    )
+                if not self.local_storage_base_url.startswith("https://"):
+                    raise ValueError("Production LOCAL_STORAGE_BASE_URL must use HTTPS")
+                return self
             raise ValueError(
                 "STORAGE_BACKEND=local is a development-only default and will not "
                 "work outside of DEBUG mode -- set STORAGE_BACKEND=s3 and the "
                 "PORTFOLIO_STORAGE_* variables instead (see docs/DEPLOYMENT.md)"
             )
+
+        # THE OTHER HALF OF THE SAME ARGUMENT, WHICH WAS MISSING. The branch above
+        # refuses `local` outside DEBUG so an upload cannot fail with a raw filesystem
+        # error days after deploying. But when the backend IS `s3`, nothing was checked at
+        # all: bucket, endpoint and credentials were unvalidated, and S3DocumentStore
+        # builds its boto3 client LAZILY (app/storage/s3.py), so a missing bucket surfaced
+        # on the first request and a missing or rotated key surfaced on the first PUT --
+        # the exact late, confusing failure this validator exists to prevent. It closed the
+        # hole for local storage and left it open for the backend production actually uses.
+        #
+        # Credentials themselves are deliberately NOT asserted here: boto3 resolves them
+        # from its own chain (env vars, instance role, shared config), so this code cannot
+        # know whether they will resolve without attempting a call -- which a config
+        # validator must not do. The reachability check belongs to GET /health, which does
+        # one HEAD against the bucket. Bucket and endpoint, though, are ours to require.
+        if self.storage_backend == "s3":
+            missing = [
+                name
+                for name, value in (
+                    ("PORTFOLIO_STORAGE_BUCKET", self.portfolio_storage_bucket),
+                    ("PORTFOLIO_STORAGE_ENDPOINT", self.portfolio_storage_endpoint),
+                )
+                if not value
+            ]
+            if missing:
+                raise ValueError(
+                    f"STORAGE_BACKEND=s3 requires {', '.join(missing)} "
+                    f"(see docs/DEPLOYMENT.md). boto3 additionally needs AWS_ACCESS_KEY_ID "
+                    f"and AWS_SECRET_ACCESS_KEY in the environment; those are checked by "
+                    f"GET /health, not here, because only a real call can prove them."
+                )
         return self
 
 
@@ -268,6 +466,78 @@ class Settings(BaseSettings):
             raise ValueError(
                 "LLM_PARSING_ENABLED=true requires " + ", ".join(n.upper() for n in missing)
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_workspace_identities(self) -> Settings:
+        """WORKSPACE_ENABLED=true requires all six capability logins and a separate
+        migration identity, and requires them to be six DIFFERENT connections.
+
+        Same shape as ``_validate_webhook_provider``: a feature that is off needs no
+        configuration, and a feature that is on must not discover its own
+        misconfiguration mid-request. The specific failure this prevents is worse than a
+        missing setting, though, which is why the distinctness check is here too.
+
+        POINTING TWO CAPABILITIES AT ONE LOGIN SILENTLY DELETES A GUARD. Every check in
+        migration 044 asks the database who is connected -- ``ws_human()`` is
+        ``pg_has_role(current_user, 'trackr_ws_human', 'member')``. If the runner DSN and
+        the human DSN carry the same login, then the untrusted browser-result submission
+        path IS a human reviewer as far as PostgreSQL is concerned: it can insert a
+        ``task_review`` and accept its own output, and no test that only reads Python
+        would notice. The connection factory cannot detect this -- both DSNs work -- so
+        startup is the last place it can be caught.
+
+        Equality is compared on the raw string, which catches the copy-paste that
+        actually happens (the same line duplicated across six env vars) and does not
+        pretend to catch a determined operator writing the same login two different ways.
+        A cluster-side proof of separation is the role matrix printed by
+        scripts/provision_workspace_roles.sql, not a string comparison here.
+        """
+        capability_fields = (
+            "workspace_human_database_url",
+            "workspace_runner_database_url",
+            "workspace_engine_database_url",
+            "workspace_scheduler_database_url",
+            "workspace_reader_database_url",
+            "workspace_eraser_database_url",
+        )
+        if not self.workspace_enabled:
+            return self
+
+        missing = [
+            name
+            for name in ("migration_database_url", *capability_fields)
+            if not (getattr(self, name) or "").strip()
+        ]
+        if missing:
+            raise ValueError(
+                "WORKSPACE_ENABLED=true requires "
+                + ", ".join(name.upper() for name in missing)
+                + " (see docs/DEPLOYMENT.md, 'Workspace database identities'). Provision "
+                "them with scripts/provision_workspace_roles.sql first."
+            )
+
+        seen: dict[str, str] = {}
+        for name in capability_fields:
+            url = (getattr(self, name) or "").strip()
+            if url == (self.migration_database_url or "").strip():
+                raise ValueError(
+                    f"{name.upper()} is the same connection as MIGRATION_DATABASE_URL. A "
+                    "runtime identity must not own the workspace tables: an owner can drop "
+                    "the append-only triggers that make them append-only."
+                )
+            if url == self.database_url.strip():
+                raise ValueError(
+                    f"{name.upper()} is the same connection as DATABASE_URL. The financial "
+                    "connection has no workspace capability and must not acquire one."
+                )
+            if url in seen:
+                raise ValueError(
+                    f"{name.upper()} and {seen[url].upper()} are the same connection. Each "
+                    "workspace capability needs its own login, or the database cannot tell "
+                    "the two apart and every actor check in migration 044 collapses."
+                )
+            seen[url] = name
         return self
 
     @model_validator(mode="after")

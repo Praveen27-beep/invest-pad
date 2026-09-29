@@ -104,7 +104,6 @@ export function isBannerHiddenThisSession(investorId: string): boolean {
 // ---------------------------------------------------------------------------
 
 const OPEN_EVENT = "trackr:open-onboarding";
-const REFRESH_EVENT = "trackr:portfolio-refresh";
 
 /** Which step to open on. `undefined` means "wherever the server says they are". */
 export type OnboardingStep = "access" | "brokers" | "files" | "align" | "forward";
@@ -132,23 +131,10 @@ export function useOnboardingOpenRequest(handler: (step: OnboardingStep | null) 
 }
 
 /**
- * "New transactions exist — re-read everything derived from them."
+ * The import-refresh signal MOVED to `packages/trackr-core/src/refresh.ts`.
  *
- * Every figure in this product is computed from the ledger on read (CLAUDE.md's one
- * architectural rule), so a finished import invalidates every screen at once and there is
- * nothing to patch locally: the honest response is to re-fetch. A window event rather
- * than shared React state because the publisher (a modal portalled to document.body) and
- * the subscribers (whatever page is mounted behind it) have no common provider, and
- * threading one through the tree to move a boolean would be the larger change.
+ * Both applications' portfolio screens subscribe to it, and one implementation is what
+ * stops them disagreeing about whether an import has landed. Re-exported here so Plus's
+ * existing `@/lib/onboarding` imports keep resolving; the event name is unchanged.
  */
-export function broadcastPortfolioRefresh(): void {
-  window.dispatchEvent(new CustomEvent(REFRESH_EVENT));
-}
-
-export function usePortfolioRefresh(handler: () => void): void {
-  useEffect(() => {
-    const listener = () => handler();
-    window.addEventListener(REFRESH_EVENT, listener);
-    return () => window.removeEventListener(REFRESH_EVENT, listener);
-  }, [handler]);
-}
+export { broadcastPortfolioRefresh, usePortfolioRefresh } from "@trackr/core";

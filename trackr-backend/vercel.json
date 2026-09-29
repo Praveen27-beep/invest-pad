@@ -36,6 +36,10 @@
     {
       "path": "/ops/dividends/discover-yfinance-cron",
       "schedule": "45 11 * * 0"
+    },
+    {
+      "path": "/ops/cron/jobs-drain",
+      "schedule": "20 11 * * *"
     }
   ]
 }

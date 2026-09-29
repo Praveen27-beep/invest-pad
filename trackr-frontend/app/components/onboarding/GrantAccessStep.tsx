@@ -1,58 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
-import { CONSENT_NOTICE_TEXT, CONSENT_NOTICE_VERSION } from "@/lib/consent";
+import { CONSENT_NOTICE_VERSION } from "@/lib/consent";
 import type { ConsentGrantOut, ConsentStatusOut } from "@/lib/api-types";
-import { Banner, Icon, type IconName } from "../ds";
-
-interface Promise_ {
-  icon: IconName;
-  title: string;
-  body: string;
-}
-
-/**
- * What granting access actually means, said in the order a suspicious person asks it.
- *
- * "Grant access" is a phrase that has been trained to mean "hand over your broker login",
- * so the first line has to be the refusal, not a feature. Everything Trackr+ can do it can
- * do from files the person gives it — which is a real product constraint (CLAUDE.md rule 6:
- * no broker credentials, ever) and not a limitation to apologise for.
- *
- * TWO OF THESE THREE USED TO OVERSTATE. The old second line promised "and nothing else in
- * your account", which is true of an upload and not true of an email-forwarding rule that
- * the person themselves writes — so it now says what actually decides what reaches us.
- * The old third line said we "stop processing immediately", which is half the story:
- * stopping and erasing are two different actions in two different places, and implying
- * that withdrawal deletes anything would be the more comfortable of two wrong answers
- * (docs/ONBOARDING_AS_IS_VS_TO_BE.md, screen 1).
- */
-const PROMISES: Promise_[] = [
-  {
-    icon: "privacy",
-    title: "We never ask for your broker login",
-    body: "No password, no OTP, no API key. Ever. You send us files; we read them.",
-  },
-  {
-    icon: "document",
-    title: "You decide what reaches us",
-    body:
-      "Files you upload, or a rule you write that forwards only your broker's statements. " +
-      "Nothing arrives here that you didn't send.",
-  },
-  {
-    icon: "trash",
-    title: "Turn it off whenever you like",
-    body:
-      "Withdraw in Settings and we stop processing at once. Erasing what's already " +
-      "stored is a separate button, on the Privacy page.",
-  },
-];
+import { Banner, Icon } from "../ds";
 
 /**
  * Step 1 — permission, in one click. One click, and now genuinely one button.
+ *
+ * KEPT DELIBERATELY MINIMAL. The wizard's title and subtitle already state what the
+ * permission covers, and the footer already carries the two real actions — "Allow and
+ * continue" or "I'll do this later". This step's own body used to restate that case with
+ * a three-item promise list and a "read the exact wording" disclosure; both are gone so
+ * the screen is just the ask, the grant, and the skip.
  *
  * THE BUG THIS SCREEN USED TO HAVE. There were two buttons that looked identical: an
  * inline one that did the work, and the wizard footer's — sitting in the position every
@@ -143,68 +105,6 @@ export function GrantAccessStep({
         </Banner>
       )}
 
-      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
-        {PROMISES.map((promise) => (
-          <li key={promise.title} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 30,
-                height: 30,
-                flexShrink: 0,
-                border: "1px solid var(--border)",
-                background: "var(--surface-sunken)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              <Icon name={promise.icon} size={15} />
-            </span>
-            <span style={{ minWidth: 0 }}>
-              <span
-                style={{
-                  display: "block",
-                  font: "var(--type-body)",
-                  fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
-                  color: "var(--text-primary)",
-                }}
-              >
-                {promise.title}
-              </span>
-              <span style={{ display: "block", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-                {promise.body}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      <details style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <summary
-          style={{
-            cursor: "pointer",
-            font: "var(--type-body-sm)",
-            color: "var(--text-tertiary)",
-            listStyle: "revert",
-          }}
-        >
-          Read the exact wording
-        </summary>
-        <p
-          style={{
-            margin: "8px 0 0",
-            font: "var(--type-body-sm)",
-            color: "var(--text-secondary)",
-            background: "var(--surface-sunken)",
-            border: "1px solid var(--border)",
-            padding: "10px 12px",
-          }}
-        >
-          {CONSENT_NOTICE_TEXT}
-        </p>
-      </details>
-
       {granted === true && (
         <p
           style={{
@@ -217,7 +117,7 @@ export function GrantAccessStep({
           }}
         >
           <Icon name="check" size={14} />
-          Permission already on file — nothing to do here.
+          You have already given permission.
         </p>
       )}
     </div>

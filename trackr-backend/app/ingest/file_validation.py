@@ -75,6 +75,12 @@ ROUTING: dict[str, tuple[str, str]] = {
     DOC_TRADEBOOK_CSV: ("zerodha_tradebook", "/ingest/csv"),
     DOC_CONTRACT_NOTE_XLSX: ("zerodha_contract_note_xlsx", "/ingest/xlsx"),
     DOC_CONTRACT_NOTE_PDF: ("zerodha_contract_note", "/ingest/files"),
+    # A CAS is recognised from its own markers (see _CAS_MARKERS) and routed to the
+    # holdings-only adapter. Routed rather than requiring the uploader to name the adapter,
+    # because "which of these is a CAS" is a question the bytes answer better than a person
+    # does -- and because a CAS misfiled as a contract note would otherwise be refused with
+    # a puzzling message rather than simply working.
+    DOC_CAS_PDF: ("cas_pdf", "/ingest/files"),
 }
 
 #: A human name per document kind, for the one place these are read aloud: the error a

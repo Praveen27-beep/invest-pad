@@ -22,7 +22,7 @@ interface Task {
 const INITIAL: Task[] = [
   { key: "promote", label: "Adding your trades to the ledger", state: "waiting" },
   { key: "positions", label: "Working out what you hold today", state: "waiting" },
-  { key: "quotes", label: "Fetching live market prices", state: "waiting" },
+  { key: "quotes", label: "Getting today's market prices", state: "waiting" },
   { key: "benchmark", label: "Comparing against NIFTY", state: "waiting" },
 ];
 
@@ -53,9 +53,14 @@ const INITIAL: Task[] = [
  */
 export function MarketAlignStep({
   batchIds,
+  onPromoted,
   onSettled,
 }: {
   batchIds: string[];
+  /** Fired the moment the staged batches have reached the ledger, ahead of the rest of the
+   *  run. The wizard forgets the batch ids here, because a batch that is already PROMOTED
+   *  answers 409 — and the rail can bring someone back to this step. */
+  onPromoted: () => void;
   /** Fired once, when the run finishes either way — lets the wizard enable "Done". */
   onSettled: (ok: boolean) => void;
 }) {
@@ -97,6 +102,10 @@ export function MarketAlignStep({
           state: "done",
           result: batchIds.length === 0 ? "nothing new to add" : `${inserted.toLocaleString("en-IN")} added`,
         });
+        // Spent, whatever the rest of this run does. Promotion is the one leg here that
+        // cannot be repeated, so it is the one the caller must be told about the instant it
+        // is over rather than at the end.
+        onPromoted();
 
         update("positions", { state: "running" });
         update("quotes", { state: "running" });
@@ -123,8 +132,8 @@ export function MarketAlignStep({
         if (summary.unpriced?.count) {
           setWarning(
             `${summary.unpriced.count} holding${summary.unpriced.count === 1 ? "" : "s"} had no ` +
-              "price today, so they're left out of the totals above rather than counted as zero. " +
-              "The dashboard names them."
+              "price today. We leave them out of the totals above instead of counting them as " +
+              "zero. The dashboard lists them."
           );
         }
 
@@ -153,14 +162,13 @@ export function MarketAlignStep({
     };
 
     void run();
-  }, [investorId, token, asOf, batchIds, update, onSettled]);
+  }, [investorId, token, asOf, batchIds, update, onPromoted, onSettled]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {error && (
-        <Banner tone="negative" title="We couldn't finish lining everything up">
-          {error} Your trades are safe — open the dashboard and it will pick up where this
-          left off.
+        <Banner tone="negative" title="We couldn't finish working out your numbers">
+          {error} Your trades are safe. Open the dashboard and it will carry on from here.
         </Banner>
       )}
 

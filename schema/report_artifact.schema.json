@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/report_artifact.schema.json",
+  "title": "ArtifactManifest",
+  "description": "RP 00 -- report.artifact.v1: the manifest of one rendered artifact, bound to the exact document digest and check receipts it represents (section 8). Raw source rows require an EXPORT right.",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "report.artifact.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "artifact_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+      "title": "Artifact Id",
+      "type": "string"
+    },
+    "report_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+      "title": "Report Id",
+      "type": "string"
+    },
+    "report_version": {
+      "minimum": 1,
+      "title": "Report Version",
+      "type": "integer"
+    },
+    "format": {
+      "enum": [
+        "PDF",
+        "HTML"
+      ],
+      "title": "Format",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "byte_size": {
+      "minimum": 1,
+      "title": "Byte Size",
+      "type": "integer"
+    },
+    "page_count": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Page Count"
+    },
+    "document_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Document Sha256",
+      "type": "string"
+    },
+    "claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 2000,
+      "title": "Claim Ids",
+      "type": "array"
+    },
+    "check_receipts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Check Receipts",
+      "type": "array"
+    },
+    "contains_raw_source_rows": {
+      "title": "Contains Raw Source Rows",
+      "type": "boolean"
+    },
+    "renderer": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+      "title": "Renderer",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "report_id",
+    "report_version",
+    "format",
+    "sha256",
+    "byte_size",
+    "document_sha256",
+    "claim_ids",
+    "check_receipts",
+    "contains_raw_source_rows",
+    "renderer",
+    "created_at"
+  ],
+  "type": "object"
+}

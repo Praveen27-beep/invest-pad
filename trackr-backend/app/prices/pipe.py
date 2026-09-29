@@ -24,7 +24,7 @@ SOURCE_LABEL = {"NSE": "NSE_BHAVCOPY", "BSE": "BSE_BHAVCOPY"}
 
 #: The backfill floor this pipe will attempt. NOT the same thing as
 #: app.prices.sources.NSE_CURRENT_FORMAT_SINCE (2024-01-01) any more -- nse_source()
-#: (app.prices.sources.NseBhavcopySource) now falls back to NSE's legacy pre-2024
+#: (returns an app.prices.sources.TieredBhavcopySource) now falls back to NSE's legacy pre-2024
 #: archive automatically, confirmed live against a real fetched 17-Oct-2023 file. This
 #: floor is a separate, deliberately conservative choice: it matches the ISIN-mandated
 #: settlement era and is a date this session actually stands behind, not a guess at how
@@ -189,7 +189,7 @@ def backfill_days(
     own verified floor, NOT the archives' true limit -- both exchanges serve older data
     than it admits, and lowering it is a follow-up that needs a verified fetch at the
     older date rather than an edit to the number. ``already_present`` (typically
-    ``app.db.prices.price_dates_present``) is what makes a multi-year backfill resumable;
+    ``app.db.prices.price_dates_settled``) is what makes a multi-year backfill resumable;
     this function stays storage-free like ``fetch_day``, so the caller decides what
     "already stored" means and does the upserting itself.
     """

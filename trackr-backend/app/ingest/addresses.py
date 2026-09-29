@@ -60,6 +60,20 @@ def forwarding_enabled(domain: str) -> bool:
     )
 
 
+def broker_has_email_adapter(broker: str) -> bool:
+    """Can we parse this broker's email at all, on any deployment?
+
+    Deliberately domain-independent, and that is the whole reason it exists separately
+    from ``broker_has_forwarding``. Both halves of that AND are false at once on a
+    deployment with no mail domain, so a caller holding only ``forwarding`` cannot tell
+    "we have never written a parser for Groww" from "this deployment cannot receive mail
+    yet" -- and a UI that cannot tell them apart has to hedge between the two in a
+    sentence that is half wrong whichever broker it names.
+    """
+    broker_key = broker.strip().lower()
+    return any(registered == broker_key for registered, _doctype in _ADAPTER_FACTORIES)
+
+
 def broker_has_forwarding(domain: str, broker: str) -> bool:
     """True when this broker on this deployment would actually yield an address.
 
@@ -67,10 +81,7 @@ def broker_has_forwarding(domain: str, broker: str) -> bool:
     to ask it -- the broker picker has to answer "email ✅ or email —" before any account
     exists.
     """
-    if not forwarding_enabled(domain):
-        return False
-    broker_key = broker.strip().lower()
-    return any(registered == broker_key for registered, _doctype in _ADAPTER_FACTORIES)
+    return forwarding_enabled(domain) and broker_has_email_adapter(broker)
 
 
 def forwarding_addresses(domain: str, investor_code: str, broker: str) -> list[str]:

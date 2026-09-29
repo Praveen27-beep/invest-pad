@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/butler_notebook_consent.schema.json",
+  "title": "ConsentIn",
+  "description": "BT 12 -- a versioned notebook consent action (docs/BUTLER_INVESTOR_MEMORY.md section 2). Off by default; written only by the person. include_from omitted means no retrospective backfill.",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "OPT_IN",
+        "UPDATE_SCOPE",
+        "PAUSE",
+        "RESUME",
+        "REVOKE"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "expected_version": {
+      "minimum": 0,
+      "title": "Expected Version",
+      "type": "integer"
+    },
+    "disclosure_version": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Disclosure Version"
+    },
+    "sources": {
+      "items": {
+        "enum": [
+          "RESEARCH_NOTES",
+          "REVIEW_RESPONSES",
+          "BUTLER_CONVERSATION",
+          "DECISION_RECEIPTS",
+          "PORTFOLIO_LINKED_DECISIONS"
+        ],
+        "type": "string"
+      },
+      "maxItems": 5,
+      "title": "Sources",
+      "type": "array"
+    },
+    "include_from": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Include From"
+    },
+    "reflection_enabled": {
+      "default": false,
+      "title": "Reflection Enabled",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "action",
+    "expected_version"
+  ],
+  "type": "object"
+}

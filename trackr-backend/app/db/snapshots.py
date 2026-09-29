@@ -56,7 +56,8 @@ def get_snapshot(
     """The persisted snapshot for one investor/date/series, or ``None`` if never written.
 
     A miss is not an error -- it means the caller should fall back to a live
-    ``compute_snapshot()`` call, exactly as ``_fy_xirr``/``_period_xirr`` already do when
+    ``compute_snapshot()`` call, exactly as ``app.engine.xirr.compute_fy_xirr`` and
+    ``app.routers.analytical._window_xirr`` already do when
     this table has nothing for the date they need.
     """
     with conn.cursor() as cur:
@@ -164,7 +165,7 @@ def snapshot_dates_present(
 ) -> set[date]:
     """Dates already written for this investor/series, so a backfill can resume.
 
-    Mirrors ``app.db.prices.price_dates_present`` for the same reason: a multi-year,
+    Mirrors ``app.db.prices.price_dates_settled`` for the same reason: a multi-year,
     multi-investor backfill is a lot of requests, and it has to be resumable rather than
     starting over after a timeout.
     """

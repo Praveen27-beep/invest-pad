@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mei.capital/schema/performance.schema.json",
   "title": "Performance",
-  "description": "The performance response. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md sections 4-6.\n\nENCODING RULE: rates are JSON numbers, not strings, matching how fixtures/golden_portfolio.json and fixtures/engine_cases.json already encode xirr_all and xirr_holdings. Money remains a string. Python holds rates as Decimal regardless, converting at the boundary via str().\n\nBOTH XIRR VARIANTS ARE REQUIRED TOGETHER. They answer different questions and the gap between them is itself the insight. Reporting only one leaves a choice about which number flatters the portfolio, and that choice should not exist.",
+  "description": "The performance response. DERIVED, NEVER STORED. Source of truth: docs/ENGINE_SPEC.md sections 4-6.\n\nENCODING RULE: EVERY decimal on the wire is a string -- rates exactly like money. This reversed an earlier rule that made rates JSON numbers on a display argument, which meant the one number this whole system exists to compute was the one it rounded on the way out: Decimal('0.1234567890123456789') left the server as 0.12345678901234568, and no client could recover the digits. Python holds rates as Decimal throughout and converts once, at the boundary, in app/database.py's rate(). Null still means NOT AVAILABLE and is never zero.\n\nThe FIXTURES are not wire documents and still encode rates as JSON numbers: fixtures/golden_portfolio.json and fixtures/engine_cases.json hold independently hand-verified expectations at six decimal places, compared against engine Decimals inside the process. Changing them would be rewriting the acceptance answers to suit a transport change, which CLAUDE.md forbids.\n\nBOTH XIRR VARIANTS ARE REQUIRED TOGETHER. They answer different questions and the gap between them is itself the insight. Reporting only one leaves a choice about which number flatters the portfolio, and that choice should not exist.",
   "type": "object",
   "additionalProperties": false,
   "required": ["as_of", "xirr_all", "xirr_holdings", "fy_xirr"],
@@ -12,51 +12,51 @@
       "format": "date"
     },
     "xirr_all": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Every transaction ever. Answers 'what has my investing returned, all in?'. Null when there are fewer than two flows, no sign change, or the solver fails."
     },
     "xirr_holdings": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Only ISINs currently held. Answers 'how is the live book performing?'. Never present this without xirr_all beside it."
     },
     "fy_xirr": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Financial-year-to-date, from 1 April. opening_value is the real market value on 1 April via compute_snapshot against that date's prices, never today's value or cost. Null when no 1-April price exists for a held ISIN -- never substituted with today's price or the nearest available date, which would count the year's entire gain as if it already existed on day one. Never presented without xirr_all and xirr_holdings beside it."
     },
     "xirr_1y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 1 calendar year from as_of, same resolution as fy_xirr: opening_value from the nearest persisted daily snapshot on or before that date (or a live equivalent when none exists), never a substitute. Independently null -- unrelated to whether fy_xirr, xirr_3y, or xirr_5y are present -- when the portfolio's history doesn't reach back that far, or no usable opening price exists."
     },
     "xirr_3y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 3 calendar years from as_of. Same resolution and independent null-ness as xirr_1y."
     },
     "xirr_5y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 5 calendar years from as_of. Same resolution and independent null-ness as xirr_1y -- most commonly null for a portfolio younger than 5 years, without affecting the shorter windows."
     },
     "fy_twrr": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Time-weighted return, financial-year-to-date -- the adviser-skill companion to fy_xirr (docs/ENGINE_SPEC.md section 5: TWRR measures the adviser, XIRR measures the client's experience). Chains sub-period returns geometrically between consecutive persisted daily snapshots, each closed by that sub-period's external cash flow (BUY/SELL/DIVIDEND signed the mirror image of section 4's investor-side flow table -- dividends counted as return, not excluded). Never presented alone; sits beside fy_xirr so a wide gap between the two reads as bad entry timing rather than a bad strategy, or vice versa. Independently null when the snapshot series doesn't reach back to 1 April, or has fewer than two usable rows."
     },
     "twrr_1y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 1 calendar year from as_of, same chaining convention as fy_twrr. Independently null, same conditions as xirr_1y's."
     },
     "twrr_3y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 3 calendar years from as_of. Same resolution and independent null-ness as twrr_1y."
     },
     "twrr_5y": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Trailing 5 calendar years from as_of. Same resolution and independent null-ness as twrr_1y -- most commonly null for a portfolio younger than 5 years."
     },
     "absolute_return": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "(market_value + realised_to_date - net_invested) / net_invested"
     },
     "cagr": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Assumes a single lump sum and no flows, so it is valid per-holding only. XIRR is the headline metric."
     },
     "invested": {
@@ -82,7 +82,7 @@
           "description": "Total-return indices only. Price indices exclude dividends and understate the benchmark."
         },
         "xirr": {
-          "type": ["number", "null"]
+          "$ref": "transaction.schema.json#/$defs/nullableDecimal"
         },
         "terminal_value": {
           "$ref": "transaction.schema.json#/$defs/decimal"
@@ -90,7 +90,7 @@
       }
     },
     "period_xirr": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "Money-weighted return since the investor's stored onboarding_date (docs/DATA_MODEL.md investor.onboarding_date) -- the adviser-onboarding case. opening_value is the real market value on or immediately before onboarding_date (a persisted daily snapshot when one exists within a few days, else a live equivalent computed exactly on onboarding_date), never today's value or cost. Null when no onboarding_date is set, when onboarding_date is after as_of, when the portfolio's history doesn't reach back to onboarding_date, or when no usable price exists on/before it for a held ISIN. Never presented without xirr_all and xirr_holdings beside it."
     },
     "period_start": {

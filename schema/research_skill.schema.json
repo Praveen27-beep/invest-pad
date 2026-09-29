@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trackr.invalid/schema/research_skill.schema.json",
+  "title": "Research method version (skill)",
+  "description": "A published version of a code-owned catalogue method (BE 16-17, 30-35; trackr-backend/app/research/skills.py). The catalogue is the authority: permitted_tools may only narrow it, forbidden_conclusions and citation_rules may only add to it, reads must keep every required input, and output_contract must equal the catalogue descriptor exactly. Every scalar inside output_contract is a string (ws_string_numbers); limits are decimal strings compiled to integers in code. No provider, model, key or readiness field exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "name", "summary", "method", "reads", "citation_rules", "permitted_tools", "forbidden_conclusions", "output_contract", "house_rules_version", "enabled", "recorded_at", "method_key", "task_route", "availability"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid", "description": "Stable catalogue method id, shared by every investor's copy."},
+    "version": {"type": "integer", "minimum": 1},
+    "name": {"type": "string", "minLength": 1},
+    "summary": {"type": "string", "minLength": 1},
+    "method": {"type": "string", "minLength": 1, "description": "Human-readable method prose. Never proof of a prohibition; the structural lists are."},
+    "reads": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}},
+    "citation_rules": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}},
+    "permitted_tools": {"type": "array", "items": {"enum": ["get_active_thesis", "get_thesis_history", "get_exit_plan", "get_pre_mortem", "get_decision_history", "get_open_questions", "get_notes", "get_position_state", "get_trigger_status", "calculate_financial_metrics", "calculate_valuation", "get_filings", "get_financial_facts", "get_announcements"]}},
+    "forbidden_conclusions": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}},
+    "output_contract": {"$ref": "#/$defs/outputContract"},
+    "house_rules_version": {"type": "string"},
+    "enabled": {"type": "boolean"},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "method_key": {"type": ["string", "null"], "enum": ["forensic_accounting", "thesis_validation", "financial_statement_analysis", "earnings_analysis", "initiating_coverage", "comparable_companies", "catalyst_calendar", "due_diligence", "butler_selector", null]},
+    "task_route": {"type": ["string", "null"], "enum": ["TASKS", "BUTLER_ONLY", null]},
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "missing"],
+      "properties": {
+        "state": {"enum": ["READY", "UNKNOWN"]},
+        "missing": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "code", "gate"], "properties": {"id": {"type": "string"}, "kind": {"type": "string"}, "code": {"type": "string"}, "gate": {"type": ["string", "null"]}}}}
+      }
+    }
+  },
+  "$defs": {
+    "heading": {"enum": ["FACTS", "INTERPRETATION", "UNCERTAINTIES", "NEXT_QUESTIONS", "ASSUMPTIONS", "COUNTERARGUMENTS", "MATERIAL_CHANGE", "WHY_IT_MATTERS", "ORIGINAL_COMMITMENT", "SUPPORTED_OR_CHALLENGED"]},
+    "limit": {"type": "string", "pattern": "^[1-9][0-9]{0,5}$"},
+    "outputContract": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "headings", "required_headings", "heading_classes", "citation_required_headings", "heading_context_kinds", "deterministic_headings", "classifications", "value_fields", "forbidden_fields", "limits"],
+          "properties": {
+            "schema": {"const": "research.proposal.v1"},
+            "headings": {"type": "array", "items": {"$ref": "#/$defs/heading"}},
+            "required_headings": {"type": "array", "items": {"$ref": "#/$defs/heading"}},
+            "heading_classes": {"type": "object", "additionalProperties": {"type": "array", "items": {"enum": ["FILED", "INTERPRETATION", "UNKNOWN", "CONFLICT"]}}},
+            "citation_required_headings": {"type": "array", "items": {"$ref": "#/$defs/heading"}},
+            "heading_context_kinds": {"type": "object", "additionalProperties": {"type": "array", "items": {"enum": ["note", "thesis", "answer", "source", "fact", "evaluation"]}}},
+            "deterministic_headings": {"type": "array", "items": {"$ref": "#/$defs/heading"}},
+            "classifications": {"type": "array", "items": {"enum": ["FILED", "INTERPRETATION", "UNKNOWN", "CONFLICT"]}},
+            "value_fields": {"const": "RESOLVED_BY_CODE"},
+            "forbidden_fields": {"type": "array", "items": {"type": "string"}},
+            "limits": {"type": "object", "additionalProperties": {"$ref": "#/$defs/limit"}}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema", "validated_by", "value_fields", "forbidden_fields"],
+          "properties": {
+            "schema": {"const": "butler.proposal.v1"},
+            "validated_by": {"type": "string"},
+            "value_fields": {"const": "NONE"},
+            "forbidden_fields": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      ]
+    }
+  }
+}

@@ -602,20 +602,21 @@ def apply_known_actions_for_account(
     is a second, redundant backstop, not the only thing standing between here and a
     silently duplicated bonus.
 
-    KNOWN LIMITATION, not silently glossed over: eligibility is computed from THIS
-    account's ledger as it stands right now. If an older contract note surfaces LATER
-    (more pre-action history lands after this already ran), the earlier-applied
-    quantity can go stale. Nothing here rewrites it -- CLAUDE.md's ledger is
-    append-only -- so a stale auto-applied row is corrected the same way any other
-    ledger mistake is: a human reviews it and appends the reversing and correct rows by
-    hand, same as a bad parse or a superseded source always has been.
+    Generated rows carry the source action's ID. The read boundary recalculates these
+    derived entitlements after late imports without editing stored broker history.
+    Older untagged adjustments still require explicit correction evidence.
     """
     transactions = load_transactions(conn, account_id=account_id)
     if not transactions:
         return ImportSummary()
 
     isins = sorted({t.isin for t in transactions})
-    actions = list_corporate_actions(conn, isins)
+    from app.db.security_alias import verified_map
+
+    aliases = verified_map(conn)
+    actions = [replace(a, isin=aliases.get(a.isin, a.isin))
+               for a in list_corporate_actions(conn)
+               if aliases.get(a.isin, a.isin) in isins]
     safe_actions, _failures = screen(actions)
 
     # The primary idempotency check -- content-based, not string-based. A CORP_ACTION
@@ -630,11 +631,23 @@ def apply_known_actions_for_account(
 
     to_insert: list[Transaction] = []
     for action in safe_actions:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM reference_account_issue WHERE account_id=%s AND action_id=%s",
+                        (account_id, action.id))
         held_qty = quantity_held_before(transactions, action.isin, action.ex_date)
         if held_qty <= ZERO:
             continue  # not a holder of record -- this action does not apply here
         isin, txn_type, quantity = free_share_effect(action, held_qty)
         if quantity <= ZERO:
+            continue
+        if quantity != quantity.to_integral_value():
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO reference_account_issue(account_id,action_id,isin,reason) "
+                    "VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                    (account_id, action.id, isin,
+                     "Fractional entitlement requires allotment or cash settlement evidence"),
+                )
             continue
         if (isin, action.ex_date, _TXN_TYPE[txn_type]) in already_applied:
             continue
@@ -653,8 +666,12 @@ def apply_known_actions_for_account(
                 # path must produce an IDENTICAL source_ref for the same event, or the
                 # two paths fail to recognise each other's work and double-credit it.
                 source_ref=f"{action.source} {action.source_url}",
+                raw_payload={"auto_corporate_action_id": action.id},
             )
         )
+
+        # A later event in this sweep must see earlier entitlements too.
+        transactions.append(to_insert[-1])
 
     summary = save_transactions(conn, to_insert, actor_uid=actor_uid)
     if summary.inserted:
@@ -835,11 +852,8 @@ def refresh_corporate_action_feed(
 
     verified = 0
     exceptions = 0
-    seen_keys: set[tuple[str, CorpActionType, date]] = set()
-
+    errors = 0
     for row in feed_rows:
-        key = (row.isin, row.action_type, row.ex_date)
-        seen_keys.add(key)
         try:
             candidate = _evaluate_bonus_split(
                 conn, row.isin, row.action_type, row.ex_date,
@@ -870,8 +884,27 @@ def refresh_corporate_action_feed(
             # Already on file (an earlier run's fetch, VERIFIED or still in
             # Exceptions) -- benign, expected on a re-fetched notice. If it's still
             # pending, the loop below retries it along with every other pending row.
+        except psycopg.errors.ForeignKeyViolation:
+            conn.rollback()
+            # NOT MY SECURITY -- as benign as the UniqueViolation above, and far more
+            # common. This feed is ALL-MARKET: every month carries notices for hundreds
+            # of scrips this database has no `security` row for, and both FKs on
+            # corporate_action (isin, resulting_isin) point at that table. There is
+            # nothing to retry -- the insert will fail identically forever until the
+            # security is actually held.
+            #
+            # Counting these as errors is what made the result carry `error`, which
+            # app.reference_worker.process raises on, which puts the whole NSE month
+            # into `retry`. Observed live 2026-09-26: all 48 monthly tasks retrying,
+            # `done` frozen, REPLAY tasks behind them never running -- while the months
+            # had in fact fetched and stored their real rows successfully.
+            logger.debug(
+                "corporate-action notice for unheld isin=%s ex_date=%s -- skipped",
+                row.isin, row.ex_date,
+            )
         except Exception:
             conn.rollback()
+            errors += 1
             logger.warning(
                 "corporate-action candidate failed for isin=%s ex_date=%s -- skipped, "
                 "not aborting the run", row.isin, row.ex_date, exc_info=True,
@@ -886,8 +919,7 @@ def refresh_corporate_action_feed(
 
     reevaluable = (CorpActionType.BONUS, CorpActionType.SPLIT)
     for pending in list_pending_corporate_actions(conn):
-        key = (pending.isin, pending.action_type, pending.ex_date)
-        if key in seen_keys or pending.action_type not in reevaluable:
+        if pending.action_type not in reevaluable:
             continue  # not this run's business, or not a type this feed re-evaluates
         try:
             candidate = _evaluate_bonus_split(
@@ -908,12 +940,16 @@ def refresh_corporate_action_feed(
             verified += 1
         except Exception:
             conn.rollback()
+            errors += 1
             logger.warning(
                 "corporate-action retry failed for isin=%s ex_date=%s -- skipped",
                 pending.isin, pending.ex_date, exc_info=True,
             )
 
-    return {"fetched": len(feed_rows), "verified": verified, "exceptions": exceptions}
+    result = {"fetched": len(feed_rows), "verified": verified, "exceptions": exceptions}
+    if errors:
+        result["error"] = f"{errors} corporate-action rows failed; retry required"
+    return result
 
 
 def discover_from_yfinance(

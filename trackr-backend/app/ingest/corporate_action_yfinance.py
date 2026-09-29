@@ -1,10 +1,29 @@
 """A second, independent, FREE candidate source for historical BONUS/SPLIT discovery --
-alongside ``app.ingest.corporate_action_feed``'s live NSE notices, and built for the gap
-that feed structurally cannot close: NSE's own notices API has no historical depth
-(confirmed live, 2026-09-10 -- a real ~10-month-old GUJTHEM bonus notice was absent from
-a live query of NSE's own feed for a window around its own ex-date), so a freshly
-imported, years-deep ledger gap can never be found there no matter how the date window
-is chosen.
+alongside ``app.ingest.corporate_action_feed``'s live NSE notices.
+
+CORRECTED 2026-09-26. This module previously claimed NSE's notices API "has no historical
+depth", generalised from one observation on 2026-09-10: a GUJTHEM notice absent from a
+live query around its own ex-date. That generalisation is **false**, and the observation
+had a different cause.
+
+Re-probed live by sweeping ``nse_corporate_action_feed()`` from 2022-10-01 to 2026-09-25
+in 60-day chunks: zero fetch errors, real rows throughout, including GENSOL's
+``BONUS 2:1 ex 2023-10-17`` -- a notice nearly three years old. NSE's API serves
+arbitrary historical windows; the real gap was that ``refresh_corporate_action_feed``
+had only two callers and both passed a 2-day window. That is now closed by
+``app.db.reference_sync.schedule``, which enqueues one month per task from an account's
+earliest ``txn_date`` to today.
+
+GUJTHEM was absent for a reason that has nothing to do with date depth: it is a **BSE**
+scrip, so NSE never carried that event at all. The same sweep returned only dividends --
+no bonus/split -- for GUJTHEM and KAMAHOLD across the whole range, and
+``app.prices.sources``' own comment notes BSE's legacy archive "is the only place
+GUJTHEM's (BSE scrip 506879) split evidence exists at all". The uncovered gap is an
+EXCHANGE one, not a temporal one.
+
+This module remains useful as an independent second opinion on NSE-listed securities,
+and its untrusted-candidate posture below is unchanged. It is not, however, the answer to
+BSE-only securities -- that needs a BSE source.
 
 WHY THIS MODULE NEVER EMITS A VERIFIED CorporateAction -- same boundary
 ``corporate_action_feed.parse_corporate_action_feed`` holds. ``yfinance``'s

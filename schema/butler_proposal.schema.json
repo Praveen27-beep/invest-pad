@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/butler_proposal.schema.json",
+  "title": "ButlerProposal",
+  "description": "butler.proposal.v1 -- what a model may return for a sealed butler.context.v1 packet (docs/BUTLER_ARCHITECTURE.md section 4). IDs and enums ONLY: no answer, summary, number, URL, tool name, approval, confidence, HTML or new memory field. Passing this schema proves shape, never truth: trackr-backend/app/research/butler_validation.py additionally checks every reference against the sealed packet and the caller's CURRENT access, and only then renders reviewed templates. A proposal that fails anything is rejected whole and never shown as a partial answer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "packet_id", "observation_refs", "comparison_candidates", "question_ids", "lesson_ids", "abstain_code"],
+  "properties": {
+    "schema_version": { "const": "butler.proposal.v1" },
+    "packet_id": { "$ref": "butler_context.schema.json#/$defs/packet_id" },
+    "observation_refs": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": { "$ref": "butler_context.schema.json#/$defs/observation_id" }
+    },
+    "comparison_candidates": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["left_excerpt_id", "right_excerpt_id"],
+        "properties": {
+          "left_excerpt_id": { "$ref": "butler_context.schema.json#/$defs/excerpt_id" },
+          "right_excerpt_id": { "$ref": "butler_context.schema.json#/$defs/excerpt_id" }
+        }
+      }
+    },
+    "question_ids": {
+      "type": "array",
+      "maxItems": 1,
+      "items": { "$ref": "butler_context.schema.json#/$defs/question_id" }
+    },
+    "lesson_ids": {
+      "type": "array",
+      "maxItems": 1,
+      "items": { "$ref": "butler_context.schema.json#/$defs/lesson_id" }
+    },
+    "abstain_code": {
+      "description": "Null when something is selected. An empty selection with a null abstain_code is invalid; a non-null code with a selection is invalid. Permission failures are never an abstention -- the server handles them before invocation and at submission.",
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["INSUFFICIENT_EVIDENCE", "STALE_EVIDENCE", "CONFLICTING_EVIDENCE", "INCOMPLETE_COVERAGE", "OUT_OF_SCOPE"] }
+      ]
+    }
+  }
+}

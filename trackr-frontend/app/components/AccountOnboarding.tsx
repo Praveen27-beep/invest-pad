@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api, ApiError } from "@/lib/api-client";
 import { useFetch } from "@/lib/use-fetch";
 import type { AccountIn, AccountOut, BrokerOut } from "@/lib/api-types";
-import { Badge, Banner, Button, Field, Input, Select } from "./ds";
+import { Badge, Banner, Button, Field, Input, Select, Skeleton } from "./ds";
 import { EmailForwardingSetup } from "./EmailForwardingSetup";
 
 const EMPTY: AccountIn = { broker: "", dp_id: null, client_id: null, is_advised: true, label: null };
@@ -184,9 +184,13 @@ export function AccountOnboarding({ investorId, token }: { investorId: string; t
       </form>
 
       {accounts.loading ? (
-        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-          Loading accounts…
-        </p>
+        // Two account-card-shaped placeholders, for the same reason the consent panel has
+        // one: "Loading accounts…" is one short line where the answer is several tall rows,
+        // so the card grew under the cursor the moment the list arrived.
+        <div style={{ display: "grid", gap: 12 }}>
+          <Skeleton height={72} />
+          <Skeleton height={72} />
+        </div>
       ) : accounts.error ? (
         <Banner tone="negative">{accounts.error}</Banner>
       ) : accountList.length === 0 ? (
@@ -228,7 +232,7 @@ function AccountCard({ account, brokers }: { account: AccountOut; brokers: Broke
           </span>
         )}
       </div>
-      <EmailForwardingSetup account={account} />
+      <EmailForwardingSetup account={account} brokerHasEmailAdapter={known?.email_adapter} />
     </div>
   );
 }

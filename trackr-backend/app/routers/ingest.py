@@ -38,6 +38,7 @@ from app.db import consent, imports, repository
 from app.db.identity import IdentityMismatchError
 from app.db.imports import DuplicateUploadError
 from app.ingest import file_validation, webhook, webhook_providers
+from app.ingest.cas_pdf import CasPdfAdapter
 from app.ingest.file_validation import FileVerdict
 from app.ingest.llm_adapter import LlmDocumentAdapter
 from app.ingest.webhook_providers import WebhookNotConfiguredError
@@ -84,6 +85,10 @@ _XLSX_ADAPTERS = {
 #: adapter name -> factory for the PDF path. Unlike the two above this one takes the
 #: investor's own PDF password, so it is constructed through ``_build_adapter`` rather
 #: than called directly -- see app.ingest.webhook.pdf_password for where that comes from.
+#:
+#: ``cas_pdf`` is built separately in ``_build_adapter`` because it takes a ``pan=`` rather
+#: than a ``password=``: CDSL's rule is the PAN in capitals and the adapter tries casing
+#: variants itself, so handing it the raw PAN is more robust than pre-casing it here.
 _PDF_ADAPTERS = {"zerodha_contract_note": ZerodhaContractNoteAdapter}
 
 
@@ -116,6 +121,15 @@ def _build_adapter(name: str, pdf_password: str = "", settings: Settings | None 
         return _XLSX_ADAPTERS[name]()
     if name in _PDF_ADAPTERS:
         return _PDF_ADAPTERS[name](password=pdf_password)
+    if name == CasPdfAdapter.name:
+        # HOLDINGS AND DISCOVERY ONLY. A CAS carries no price -- a depository records
+        # securities movement, not trades -- so it can never produce a Transaction, and
+        # cas_pdf rejects a movement it cannot explain rather than inventing one. What it
+        # writes is holding_snapshot, which is the only completeness proof available: every
+        # ISIN and quantity across EVERY broker on one PAN. stage_batch already branches on
+        # parse_declared_holdings, so nothing downstream needed changing -- only this
+        # registration, which is what made a written parser reachable.
+        return CasPdfAdapter(pan=pdf_password)
     if name == LlmDocumentAdapter.name:
         return LlmDocumentAdapter(password=pdf_password, client=_llm_client(settings))
     raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"no adapter for {name!r}")
@@ -132,6 +146,7 @@ _DOCTYPES: dict[str, tuple[str, str]] = {
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ),
     "zerodha_contract_note": ("CONTRACT_NOTE", "application/pdf"),
+    CasPdfAdapter.name: ("CAS", "application/pdf"),
     # Documents no deterministic parser claimed. The doctype is deliberately generic:
     # what this file IS was never established -- only that it carried a trade table.
     LlmDocumentAdapter.name: ("DOCUMENT", "application/pdf"),
@@ -603,9 +618,17 @@ async def ingest_email(
     _reject_if_oversized(request, settings)
     if settings.ingest_webhook_provider is None:
         raise WebhookNotConfiguredError()
-    to, attachments = await webhook_providers.verify_and_translate(request, settings)
+    message = await webhook_providers.verify_and_translate(request, settings)
     store = get_store(settings)
-    return webhook.handle_inbound_email(conn, store, to, attachments)
+    return webhook.handle_inbound_email(
+        conn,
+        store,
+        message.to,
+        message.attachments,
+        sender=message.sender,
+        body_text=message.body_text,
+        max_attachments=settings.ingest_max_attachments_per_delivery,
+    )
 
 
 @router.get(

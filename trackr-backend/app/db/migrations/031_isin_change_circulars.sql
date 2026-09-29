@@ -46,10 +46,13 @@ CREATE TABLE isin_change_circular (
     -- read here only to classify the kind of event, never to derive a ratio.
     remarks_raw       text,
 
-    -- Jev's closed-set classification of remarks_raw (SUB_DIVISION, CONSOLIDATION,
-    -- MERGER_OR_SCHEME, DEMERGER, RENAME, OTHER), or NULL if unavailable or under
-    -- confidence -- see app.ingest.isin_change_feed._classify_isin_change_reason. Purely
-    -- a review-queue enrichment: nothing downstream branches on it.
+    -- A closed-set classification of remarks_raw (SUB_DIVISION, CONSOLIDATION,
+    -- MERGER_OR_SCHEME, DEMERGER, RENAME, OTHER). ALWAYS NULL TODAY: the classifier
+    -- that populated it was removed on 2026-09-22 and nothing replaced it, so
+    -- app.ingest.isin_change_feed.ParsedCircular hard-codes reason_class=None. The
+    -- columns are kept because they were only ever a review-queue enrichment --
+    -- nothing downstream branches on them, so an always-NULL column changes no
+    -- number and a future classifier needs no migration.
     reason_class      text,
     reason_confidence numeric(4,3),
 
@@ -99,7 +102,8 @@ COMMENT ON TABLE isin_change_circular IS
 
 -- Generic per-feed poll state: consecutive-failure count and circuit-breaker window.
 -- Not specific to this feed -- app.ingest.corporate_action_feed and
--- app.ingest.dividend_events poll on the same "never raise on a routine failure" posture
+-- app.db.dividend_events.refresh_dividend_feed poll on the same "never raise on a
+-- routine failure" posture
 -- today with no persisted failure count at all; this table is reusable by them without a
 -- further migration once they want a breaker of their own.
 CREATE TABLE feed_poll_state (

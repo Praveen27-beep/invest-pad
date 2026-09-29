@@ -34,10 +34,13 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+from itertools import permutations
 from typing import Any, Protocol, runtime_checkable
 
+from app.ai.jev import JevResponseError, JevUnavailable
 from app.engine.corporate_actions import CorpActionType
-from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS, _ssl_context
+from app.ingest.nse_session import cookie_session
+from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS
 
 #: NSE's interactive corporate-filings page -- confirmed live, 2026-09-10, that the
 #: underlying API 403s without a warmed session cookie AND this exact Referer.
@@ -72,23 +75,20 @@ class NseCorporateActionFeedSource:
     caller, when a licensed feed is in place."""
 
     def __init__(self, opener: Any = None):
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener if opener is not None else cookie_session().open
 
     def fetch(self, start: date, end: date) -> bytes:
-        ctx = _ssl_context()
-        # Warm a session cookie against the homepage first -- confirmed live that the
-        # API 403s a cold request even with browser headers. The cookie jar is carried
-        # via a shared urllib opener with a CookieProcessor when this runs for real;
-        # tests inject their own ``opener`` and skip this entirely.
+        # Both calls use the same private cookie jar. Plain urlopen does not retain
+        # the warm-up response's Set-Cookie headers for the API request.
         try:
             warmup = urllib.request.Request(NSE_HOMEPAGE_URL, headers=BROWSER_HEADERS)
-            self._opener(warmup, timeout=TIMEOUT_SECONDS, context=ctx).close()
+            self._opener(warmup, timeout=TIMEOUT_SECONDS).close()
 
             request = urllib.request.Request(
                 NSE_CORP_ACTIONS_URL.format(start=start, end=end),
                 headers={**BROWSER_HEADERS, "Referer": NSE_REFERER, "Accept": "application/json"},
             )
-            with self._opener(request, timeout=TIMEOUT_SECONDS, context=ctx) as response:
+            with self._opener(request, timeout=TIMEOUT_SECONDS) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             raise CorporateActionFeedFetchFailed(f"NSE corporate actions: HTTP {exc.code}") from exc
@@ -322,29 +322,148 @@ _DIVIDEND_KINDS = (
     ("SPECIAL", re.compile(r"\bspecial\b", re.IGNORECASE)),
 )
 
+#: Above this many named amounts, a subject reads as regex noise rather than a genuine
+#: multi-tranche declaration -- NSE has never been observed naming more than two in one
+#: notice. Bounding this also keeps the permutation count (n!) small enough for one
+#: Choice call to enumerate as options.
+_MAX_ATTRIBUTABLE_AMOUNTS = 3
 
-def parse_dividend_feed(payload: bytes) -> list[DividendFeedRow]:
+#: Jev's own confidence guidance treats anything below this as genuinely unsure --
+#: "don't guess" -- so this is the API's stated floor, not a number this codebase tuned.
+#: A notice rejected below it is exactly as recoverable as before this module could ask
+#: Jev at all: it stays unparsed, and a human still has the raw subject in the logs.
+_JEV_CONFIDENCE_FLOOR = Decimal("0.5")
+
+
+def _valid_amounts(raw_amounts: list[str]) -> list[Decimal]:
+    """The regex can match a well-formed but nonsensical figure (a stray "Rs 0" in a
+    disclaimer clause). Parsing failure or non-positivity drops that ONE candidate rather
+    than the whole notice -- the same "one bad row must not cost the others" posture
+    ``llm_verify`` documents for a different layer of this same problem.
+    """
+    valid: list[Decimal] = []
+    for text in raw_amounts:
+        try:
+            value = Decimal(text)
+        except InvalidOperation:
+            continue
+        if value > 0:
+            valid.append(value)
+    return valid
+
+
+def _attribute_with_jev(
+    jev_client: Any,
+    subject: str,
+    isin: str,
+    symbol: str,
+    amounts: list[Decimal],
+    kinds: list[str],
+) -> list[tuple[Decimal, str]] | None:
+    """Ask Jev which amount pairs with which named kind. Returns the resolved
+    ``(amount, kind)`` pairs, or ``None`` when there is no client, the shapes don't fit a
+    question this function knows how to ask, the call fails, or confidence does not clear
+    ``_JEV_CONFIDENCE_FLOOR`` -- in every one of those cases the caller's existing refusal
+    is unchanged from before this function existed.
+
+    Never raises: a transport failure or a shape drift here degrades to the refusal this
+    notice always had, not a broken feed refresh over a network hiccup. Mirrors the
+    "log-and-continue" posture ``refresh_dividend_feed`` already applies per row -- except
+    quieter, because an ambiguous notice is this module's routine, documented case, not an
+    exceptional one worth a log line of its own.
+
+    Only two shapes are handled, matching the two ambiguities ``parse_dividend_feed``'s
+    docstring documents. Anything else (mismatched amount/kind counts, more amounts than
+    ``_MAX_ATTRIBUTABLE_AMOUNTS``) returns ``None`` without spending a call: the caller
+    already refuses those shapes on its own, and Jev would only be guessing at a pairing
+    with no textual anchor to reason from.
+    """
+    if jev_client is None or len(kinds) <= 1:
+        return None
+
+    state = {
+        "subject": subject,
+        "isin": isin,
+        "symbol": symbol,
+        "amounts_per_share": [str(a) for a in amounts],
+        "kinds_named": kinds,
+    }
+
+    if len(amounts) == 1:
+        criteria = {
+            kind: f"Rs {amounts[0]} Per Share is the {kind.title()} Dividend" for kind in kinds
+        }
+        instructions = (
+            "This NSE dividend notice's subject names one rupee amount and more than one "
+            "kind of dividend (interim/final/special). Given the wording and order of "
+            "`subject`, which named kind does the amount belong to?"
+        )
+    elif len(amounts) == len(kinds) and len(amounts) <= _MAX_ATTRIBUTABLE_AMOUNTS:
+        pairings = list(permutations(kinds))
+        criteria = {
+            str(index): ", ".join(
+                f"{kind.title()} Dividend = Rs {amount} Per Share"
+                for kind, amount in zip(pairing, amounts, strict=True)
+            )
+            for index, pairing in enumerate(pairings)
+        }
+        instructions = (
+            "This NSE dividend notice's subject names multiple rupee amounts and the same "
+            "number of dividend kinds (interim/final/special), each amount attached to a "
+            "kind somewhere in the wording. Which pairing of amount to kind is correct?"
+        )
+    else:
+        return None
+
+    try:
+        answer = jev_client.choose(state, instructions, criteria)
+    except (JevUnavailable, JevResponseError):
+        return None
+
+    if answer.confidence < _JEV_CONFIDENCE_FLOOR:
+        return None
+
+    if len(amounts) == 1:
+        return [(amounts[0], answer.choice)]
+    return list(zip(amounts, pairings[int(answer.choice)], strict=True))
+
+
+def parse_dividend_feed(
+    payload: bytes, jev_client: Any = None
+) -> list[DividendFeedRow]:
     """NSE's ``corporates-corporateActions`` JSON into structured, unverified dividends.
 
     Reads the SAME payload ``parse_corporate_action_feed`` reads, so one fetch serves both
     and the anti-bot session warm-up is paid once.
 
-    FOUR THINGS THIS REFUSES TO PARSE, each one a real shape in live NSE data:
+    ``jev_client`` is an ``app.ai.jev.JevClient`` (or anything with the same ``choose``),
+    injected rather than constructed here so this module needs no Settings and no network
+    to test -- same posture as ``llm_extract.structure``'s injected Groq client. ``None``,
+    the default, is the ordinary state absent a configured key, and reproduces this
+    function's behaviour from before Jev existed exactly: refusals 2 and 3 below always
+    drop the notice rather than ask anything.
+
+    FOUR THINGS THIS CAN REFUSE TO PARSE, each one a real shape in live NSE data:
 
     1. A PERCENTAGE DECLARATION -- "Dividend - 150%". Historically common, and it means
        150% OF FACE VALUE, not of price and not a rupee amount. Computing it needs the
        security's face value AT THAT TIME, which this feed does not carry and which a
        later split changes. Reading "150" as Rs 150 would be a 100x error on a Rs 1.50
-       dividend. No candidate.
+       dividend. No candidate. Always refused; Jev is never asked about a percentage.
     2. MORE THAN ONE AMOUNT in one subject -- "Interim Dividend Rs 1.50 Per Share And
        Special Dividend Rs 2 Per Share". Both amounts and both kinds are present, but
        PAIRING them correctly is an inference about text order, and getting it backwards
-       silently swaps a Rs 2 special with a Rs 1.50 interim. A known gap, not a silent
-       one: no candidate, and the notice stays visible as unparsed.
-    3. MORE THAN ONE KIND NAMED, for the same reason -- the kind could not be attributed.
+       silently swaps a Rs 2 special with a Rs 1.50 interim. With a confident
+       ``jev_client`` answer this now yields ONE ROW PER PAIR -- both are usually real
+       declarations, not a choice between them. Without one (or below
+       ``_JEV_CONFIDENCE_FLOOR``), still no candidate: a rejected notice is exactly as
+       recoverable as before, and a human still has the raw subject in the logs.
+    3. MORE THAN ONE KIND NAMED against a single amount, for the same reason -- which kind
+       the one amount belongs to is an inference ``jev_client`` can also attempt, yielding
+       one row on success and no candidate otherwise.
     4. ANYTHING ``_DISQUALIFYING_TERMS`` CATCHES, reused unchanged. A preference-share or
        debenture "dividend" is a different instrument's income and must not land against
-       an equity ISIN; a scheme of arrangement is not a plain dividend.
+       an equity ISIN; a scheme of arrangement is not a plain dividend. Always refused.
 
     ``recDate`` is read when present and ignored when absent or "-", which NSE sends for a
     date not yet fixed. It is never required: ``_REQUIRED_FIELDS`` deliberately does not
@@ -387,20 +506,27 @@ def parse_dividend_feed(payload: bytes) -> list[DividendFeedRow]:
         if ex_date is None:
             continue  # "-" is a real, routine value for a not-yet-fixed date
 
-        amounts = _DIVIDEND_AMOUNT_RE.findall(subject)
-        if len(amounts) != 1:
-            continue  # none to read, or two that cannot be attributed -- refusal 2
-        try:
-            amount = Decimal(amounts[0])
-        except InvalidOperation:
-            continue
-        if amount <= 0:
-            continue  # a zero or negative declaration is not a dividend
+        amounts = _valid_amounts(_DIVIDEND_AMOUNT_RE.findall(subject))
+        if not amounts:
+            continue  # nothing to attribute -- the "none to read" half of refusal 2
 
         kinds = [name for name, pattern in _DIVIDEND_KINDS if pattern.search(subject)]
-        if len(kinds) > 1:
-            continue  # two kinds named, neither attributable -- refusal 3
-        kind = kinds[0] if kinds else "UNSPECIFIED"
+
+        if len(amounts) == 1 and len(kinds) <= 1:
+            pairs = [(amounts[0], kinds[0] if kinds else "UNSPECIFIED")]
+        elif len(amounts) == 1:
+            attributed = _attribute_with_jev(jev_client, subject, isin, symbol, amounts, kinds)
+            if attributed is None:
+                continue  # refusal 3: two+ kinds named, neither attributable
+            pairs = attributed
+        elif len(kinds) == len(amounts):
+            attributed = _attribute_with_jev(jev_client, subject, isin, symbol, amounts, kinds)
+            if attributed is None:
+                continue  # refusal 2: multiple amounts that cannot be paired
+            pairs = attributed
+        else:
+            continue  # refusal 2: amount/kind counts don't even match -- no textual
+            # anchor for a pairing question, so not something jev_client is asked about
 
         record_date = _parse_nse_date(str(record.get("recDate", "")).strip())
         if record_date is not None and record_date < ex_date:
@@ -409,16 +535,17 @@ def parse_dividend_feed(payload: bytes) -> list[DividendFeedRow]:
             # what eligibility uses, and record_date is display only.
             record_date = None
 
-        out.append(
-            DividendFeedRow(
-                isin=isin,
-                symbol=symbol,
-                ex_date=ex_date,
-                amount_per_share=amount,
-                kind=kind,
-                record_date=record_date,
-                raw_subject=subject,
+        for amount, kind in pairs:
+            out.append(
+                DividendFeedRow(
+                    isin=isin,
+                    symbol=symbol,
+                    ex_date=ex_date,
+                    amount_per_share=amount,
+                    kind=kind,
+                    record_date=record_date,
+                    raw_subject=subject,
+                )
             )
-        )
 
     return out

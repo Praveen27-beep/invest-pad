@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useFetch } from "@/lib/use-fetch";
-import { formatMoney, formatPercent } from "@/lib/format";
+import { formatMoney, formatPercent, parseDecimal } from "@/lib/format";
 import type { SummaryResponse } from "@/lib/api-types";
 import { PageHeader } from "../components/PageHeader";
 import { PageBody } from "../components/Shell";
@@ -45,12 +45,14 @@ export default function NotesPage() {
     token
   );
 
+  // A sector with no known weight is LEFT OUT of the chart, not drawn as a 0% slice --
+  // the ratio is multiplied in Decimal and becomes a number only as the slice's sweep.
   const sectorSlices: Slice[] = useMemo(
     () =>
-      (summary.data?.allocation_by_sector ?? []).slice(0, 6).map((g) => ({
-        label: g.label,
-        value: (g.weight_pct ?? 0) * 100,
-      })),
+      (summary.data?.allocation_by_sector ?? []).slice(0, 6).flatMap((g) => {
+        const weight = parseDecimal(g.weight_pct);
+        return weight === null ? [] : [{ label: g.label, value: weight.times(100).toNumber() }];
+      }),
     [summary.data]
   );
 

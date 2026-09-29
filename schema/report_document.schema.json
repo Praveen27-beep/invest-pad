@@ -1,0 +1,762 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/report_document.schema.json",
+  "title": "ReportDocument",
+  "description": "RP 00 -- report.document.v1: the typed report model HTML and PDF are rendered from (sections 5-8). Every value is a decimal string with unit, scale, period and basis. Status is re-derived by trackr-backend/app/research/report_contract.py and may never exceed it. Passing this schema proves shape, never truth. Notebook/profile fields are prohibited and refused at any depth.",
+  "$defs": {
+    "Claim": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "section_id": {
+          "enum": [
+            "COVER_AND_SCOPE",
+            "BUSINESS",
+            "HISTORICAL_FINANCIALS",
+            "CASH_FUNDING_OBLIGATIONS",
+            "GOVERNANCE_ACCOUNTING",
+            "WHAT_CHANGED",
+            "EVIDENCE_FOR_AND_AGAINST",
+            "RISKS_AND_OPEN_QUESTIONS",
+            "METHODS_AND_SOURCES"
+          ],
+          "title": "Section Id",
+          "type": "string"
+        },
+        "claim_class": {
+          "enum": [
+            "SOURCE_STATEMENT",
+            "CALCULATED_VALUE",
+            "INTERPRETATION",
+            "HYPOTHETICAL_RISK",
+            "UNKNOWN"
+          ],
+          "title": "Claim Class",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 8,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "excerpt": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excerpt"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaimValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "calculation_ref": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculation Ref"
+        },
+        "calculation_version": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9._-]{1,32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculation Version"
+        },
+        "input_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Input Claim Ids",
+          "type": "array"
+        },
+        "premise_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 12,
+          "title": "Premise Claim Ids",
+          "type": "array"
+        },
+        "verification": {
+          "enum": [
+            "CHECKED_BY_CODE",
+            "EXTRACTIVE",
+            "AI_INTERPRETATION",
+            "HUMAN_REVIEWED_INTERPRETATION",
+            "NEEDS_REVIEW",
+            "UNKNOWN"
+          ],
+          "title": "Verification",
+          "type": "string"
+        },
+        "unknown_reason": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unknown Reason"
+        }
+      },
+      "required": [
+        "claim_id",
+        "section_id",
+        "claim_class",
+        "text",
+        "verification"
+      ],
+      "title": "Claim",
+      "type": "object"
+    },
+    "ClaimValue": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "pattern": "^-?(0|[1-9][0-9]{0,17})(\\.[0-9]{1,6})?$",
+          "title": "Value",
+          "type": "string"
+        },
+        "unit": {
+          "pattern": "^[A-Z]{3}$|^(PERCENT|RATIO|SHARES|COUNT|DAYS)$",
+          "title": "Unit",
+          "type": "string"
+        },
+        "scale": {
+          "enum": [
+            "UNITS",
+            "THOUSANDS",
+            "LAKHS",
+            "MILLIONS",
+            "CRORES",
+            "BILLIONS"
+          ],
+          "title": "Scale",
+          "type": "string"
+        },
+        "period_label": {
+          "pattern": "^FY[0-9]{4}(-S[0-9])?$",
+          "title": "Period Label",
+          "type": "string"
+        },
+        "basis": {
+          "enum": [
+            "CONSOLIDATED",
+            "STANDALONE"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "version_shown": {
+          "default": "ONLY",
+          "enum": [
+            "ORIGINAL",
+            "RESTATED",
+            "ONLY"
+          ],
+          "title": "Version Shown",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "unit",
+        "scale",
+        "period_label",
+        "basis"
+      ],
+      "title": "ClaimValue",
+      "type": "object"
+    },
+    "CoverageCell": {
+      "additionalProperties": false,
+      "properties": {
+        "cell_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Cell Id",
+          "type": "string"
+        },
+        "period": {
+          "$ref": "#/$defs/FiscalPeriod"
+        },
+        "statement": {
+          "enum": [
+            "INCOME_STATEMENT",
+            "BALANCE_SHEET",
+            "CASH_FLOW",
+            "SEGMENTS",
+            "SHAREHOLDING",
+            "AUDITOR_REPORT"
+          ],
+          "title": "Statement",
+          "type": "string"
+        },
+        "basis": {
+          "enum": [
+            "CONSOLIDATED",
+            "STANDALONE"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "SUPPORTED",
+            "RESTATED",
+            "MISSING",
+            "NOT_COMPARABLE",
+            "CONFLICT",
+            "RIGHTS_DENIED",
+            "NOT_REQUESTED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "gap_code": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gap Code"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 8,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "original_source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "maxItems": 8,
+          "title": "Original Source Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cell_id",
+        "period",
+        "statement",
+        "basis",
+        "status"
+      ],
+      "title": "CoverageCell",
+      "type": "object"
+    },
+    "CoverageMatrix": {
+      "additionalProperties": false,
+      "properties": {
+        "isin": {
+          "maxLength": 12,
+          "minLength": 12,
+          "title": "Isin",
+          "type": "string"
+        },
+        "requested_years": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Requested Years",
+          "type": "integer"
+        },
+        "basis": {
+          "enum": [
+            "CONSOLIDATED",
+            "STANDALONE"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/CoverageCell"
+          },
+          "maxItems": 200,
+          "title": "Cells",
+          "type": "array"
+        }
+      },
+      "required": [
+        "isin",
+        "requested_years",
+        "basis",
+        "cells"
+      ],
+      "title": "CoverageMatrix",
+      "type": "object"
+    },
+    "FiscalPeriod": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "pattern": "^FY[0-9]{4}(-S[0-9])?$",
+          "title": "Label",
+          "type": "string"
+        },
+        "start": {
+          "format": "date",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "date",
+          "title": "End",
+          "type": "string"
+        },
+        "months": {
+          "maximum": 24,
+          "minimum": 1,
+          "title": "Months",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "label",
+        "start",
+        "end",
+        "months"
+      ],
+      "title": "FiscalPeriod",
+      "type": "object"
+    },
+    "Limitation": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{2,63}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "applies_to": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Applies To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "applies_to"
+      ],
+      "title": "Limitation",
+      "type": "object"
+    },
+    "RegisteredSource": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "ISSUER_FILING",
+            "EXCHANGE_FILING",
+            "ANNUAL_REPORT",
+            "AUDITOR_REPORT",
+            "RESULTS",
+            "REGULATOR_ORDER",
+            "NEWS",
+            "USER_DOCUMENT"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "attribution": {
+          "enum": [
+            "AUDITED",
+            "UNAUDITED",
+            "ISSUER_CLAIM",
+            "NEWS_REPORT",
+            "REGULATOR"
+          ],
+          "title": "Attribution",
+          "type": "string"
+        },
+        "published_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Published On"
+        },
+        "retrieved_at": {
+          "format": "date-time",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "fiscal_period": {
+          "anyOf": [
+            {
+              "pattern": "^FY[0-9]{4}(-S[0-9])?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fiscal Period"
+        },
+        "basis": {
+          "anyOf": [
+            {
+              "enum": [
+                "CONSOLIDATED",
+                "STANDALONE"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basis"
+        },
+        "rights": {
+          "additionalProperties": {
+            "enum": [
+              "ALLOWED",
+              "DENIED",
+              "UNDECIDED",
+              "METADATA_ONLY"
+            ],
+            "type": "string"
+          },
+          "propertyNames": {
+            "enum": [
+              "FETCH",
+              "STORE",
+              "EXTRACT",
+              "MODEL",
+              "EXPORT"
+            ]
+          },
+          "title": "Rights",
+          "type": "object"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_version",
+        "title",
+        "origin",
+        "attribution",
+        "published_on",
+        "retrieved_at",
+        "content_sha256",
+        "rights"
+      ],
+      "title": "RegisteredSource",
+      "type": "object"
+    },
+    "Section": {
+      "additionalProperties": false,
+      "properties": {
+        "section_id": {
+          "enum": [
+            "COVER_AND_SCOPE",
+            "BUSINESS",
+            "HISTORICAL_FINANCIALS",
+            "CASH_FUNDING_OBLIGATIONS",
+            "GOVERNANCE_ACCOUNTING",
+            "WHAT_CHANGED",
+            "EVIDENCE_FOR_AND_AGAINST",
+            "RISKS_AND_OPEN_QUESTIONS",
+            "METHODS_AND_SOURCES"
+          ],
+          "title": "Section Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "COVERED",
+            "PARTIAL",
+            "UNKNOWN"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 400,
+          "title": "Claim Ids",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "$ref": "#/$defs/Limitation"
+          },
+          "maxItems": 40,
+          "title": "Limitations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "section_id",
+        "status"
+      ],
+      "title": "Section",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "source_version": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Source Version",
+          "type": "string"
+        },
+        "locator": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "source_version",
+        "locator"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "report.document.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "report_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+      "title": "Report Id",
+      "type": "string"
+    },
+    "report_version": {
+      "minimum": 1,
+      "title": "Report Version",
+      "type": "integer"
+    },
+    "isin": {
+      "maxLength": 12,
+      "minLength": 12,
+      "title": "Isin",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 500,
+      "minLength": 3,
+      "title": "Question",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "CURRENT_WITH_HISTORY",
+        "POINT_IN_TIME"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "ISSUER_ONLY",
+        "ISSUER_PLUS_PRIVATE_RESEARCH"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "as_of": {
+      "format": "date-time",
+      "title": "As Of",
+      "type": "string"
+    },
+    "cutoff": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Cutoff"
+    },
+    "status": {
+      "enum": [
+        "READY_WITH_LIMITATIONS",
+        "READY_CHECKED_SCOPE",
+        "NEEDS_REVIEW",
+        "BLOCKED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "decision_notice": {
+      "const": "Research information only. The investor decides.",
+      "title": "Decision Notice",
+      "type": "string"
+    },
+    "coverage": {
+      "$ref": "#/$defs/CoverageMatrix"
+    },
+    "sections": {
+      "items": {
+        "$ref": "#/$defs/Section"
+      },
+      "maxItems": 9,
+      "minItems": 9,
+      "title": "Sections",
+      "type": "array"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "maxItems": 2000,
+      "title": "Claims",
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/RegisteredSource"
+      },
+      "maxItems": 500,
+      "title": "Sources",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "$ref": "#/$defs/Limitation"
+      },
+      "maxItems": 200,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "check_receipts": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 50,
+      "title": "Check Receipts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "report_id",
+    "report_version",
+    "isin",
+    "question",
+    "mode",
+    "scope",
+    "as_of",
+    "cutoff",
+    "status",
+    "decision_notice",
+    "coverage",
+    "sections",
+    "claims",
+    "sources",
+    "limitations"
+  ],
+  "type": "object"
+}

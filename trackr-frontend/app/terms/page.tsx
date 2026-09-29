@@ -2,10 +2,23 @@
 
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
-import { CURRENT_TOS_VERSION } from "@/lib/terms";
+import {
+  CURRENT_TOS_VERSION,
+  TERMS_INTRO,
+  TERMS_SECTIONS,
+  type LegalBlock,
+  type LegalRun,
+} from "@trackr/core";
 
 /**
  * The Terms of Service and Privacy Policy a login accepts at registration.
+ *
+ * THE WORDS MOVED, THE APPEARANCE DID NOT. Every sentence now comes from `@trackr/core`'s
+ * `legal.ts`, because Trackr Workspace serves this page too and one backend with one
+ * `app_user.tos_version` column must not have two hand-maintained copies of its legal text --
+ * an edit applied to one app and not the other means two accounts agreed to different text
+ * under the same version string. What this file still owns is the rendering: Plus's tokens,
+ * Plus's type scale, Plus's spacing, all unchanged.
  *
  * ⚠️ NOT LEGALLY REVIEWED. Every statement below is drawn from what this codebase
  * actually does — docs/COMPLIANCE.md, docs/INGESTION.md, and the architectural rules in
@@ -23,7 +36,8 @@ import { CURRENT_TOS_VERSION } from "@/lib/terms";
  * VERSIONED, and the version is the point. `CURRENT_TOS_VERSION` is sent with the
  * registration and stamped onto `app_user.tos_version`, so an account records which text
  * it agreed to rather than a bare boolean. Change the text, bump the version — in
- * lib/terms.ts AND trackr-backend/app/terms.py, which the server checks against.
+ * packages/trackr-core/src/legal.ts AND trackr-backend/app/terms.py, which the server checks
+ * against. `@/lib/terms` re-exports the value, so existing import paths still work.
  */
 export default function TermsPage() {
   return (
@@ -48,113 +62,64 @@ export default function TermsPage() {
         Terms of Service &amp; Privacy Policy
       </h1>
       <p style={{ ...bodyStyle, marginTop: 12, color: "var(--text-secondary)" }}>
-        This is the agreement between you and Trackr+ about the software. It is separate
-        from the processing permission you are asked for inside the app — that one is
-        about a specific portfolio, and you can withdraw it at any time.
+        {TERMS_INTRO.map((run, index) => (
+          <Run key={index} run={run} />
+        ))}
       </p>
 
-      <Section title="1 · What this software is">
-        <p style={bodyStyle}>
-          Trackr+ is portfolio accounting and reporting software for Indian listed
-          equities. It records what you bought and sold, computes what you hold and how it
-          has performed, and shows you the result.
-        </p>
-        <p style={bodyStyle}>
-          <strong>It is not advice.</strong> Nothing it produces is a recommendation to
-          buy or sell anything. It does not place orders, and it has no ability to.
-          Everything it shows is a record of holdings and performance.
-        </p>
-        <p style={bodyStyle}>
-          <strong>It is not a broker and not an execution venue.</strong> It never
-          connects to your broker, depository or registrar.
-        </p>
-      </Section>
-
-      <Section title="2 · How your data gets in">
-        <p style={bodyStyle}>
-          You provide your own account statements — contract notes, tradebooks, broker
-          exports — by uploading them or by forwarding them from your email. That is the
-          only way data enters this system.
-        </p>
-        <p style={bodyStyle}>
-          <strong>We never ask for your broker password.</strong> No login, no OTP, no API
-          key. This is not a policy we could quietly relax: there is nowhere in the
-          database to put a broker credential, and the build fails if such a field is ever
-          added.
-        </p>
-      </Section>
-
-      <Section title="3 · What we hold, and for how long">
-        <List
-          items={[
-            <>
-              <strong>Your transactions and the documents you send.</strong> Kept while
-              your account is open. Records of advisory activity are retained for five
-              years, as SEBI requires of an investment adviser.
-            </>,
-            <>
-              <strong>Your PAN, if you give us one.</strong> Encrypted at rest and used
-              for one purpose: unlocking password-protected contract-note PDFs, which
-              brokers lock with it. Never shown back to you in full, never logged.
-            </>,
-            <>
-              <strong>An audit trail</strong> of what was imported, promoted and changed —
-              which is what makes every number on screen reproducible.
-            </>,
-            <>
-              <strong>Never your broker credentials</strong>, because they are never
-              collected.
-            </>,
-          ]}
-        />
-      </Section>
-
-      <Section title="4 · Your rights over it">
-        <p style={bodyStyle}>
-          Under the Digital Personal Data Protection Act, 2023, you can export everything
-          held about a portfolio, or permanently delete it, from the{" "}
-          <Link href="/privacy">Privacy &amp; data</Link> page inside the app. Deletion is
-          irreversible and we do not keep a shadow copy — except where a legal hold or the
-          five-year retention obligation above requires a record to be kept, in which case
-          the app tells you so rather than silently declining.
-        </p>
-        <p style={bodyStyle}>
-          You can withdraw processing permission for a portfolio at any time in Settings.
-          Processing stops immediately; erasing what is already stored is the separate
-          action above.
-        </p>
-      </Section>
-
-      <Section title="5 · Accuracy, and what it depends on">
-        <p style={bodyStyle}>
-          Every figure is computed from the transactions in your ledger, every time it is
-          shown. That means it is exactly as accurate as what you gave us: a missing
-          contract note is a missing cost, and a missing year is a missing history.
-        </p>
-        <p style={bodyStyle}>
-          Where a price is unavailable we say so and refuse to value that holding, rather
-          than treating it as worth nothing. Nothing here is a valuation for tax, audit or
-          regulatory filing, and you should check figures against your broker&apos;s own
-          statements before relying on them.
-        </p>
-      </Section>
-
-      <Section title="6 · Changes">
-        <p style={bodyStyle}>
-          If these terms change materially, you will be asked to accept the new version.
-          Your account records which version you accepted — currently{" "}
-          <code style={{ font: "var(--type-mono)", color: "var(--text-primary)" }}>
-            {CURRENT_TOS_VERSION}
-          </code>
-          .
-        </p>
-      </Section>
+      {TERMS_SECTIONS.map((section) => (
+        <Section key={section.title} title={section.title}>
+          {section.blocks.map((block, index) => (
+            <Block key={index} block={block} />
+          ))}
+        </Section>
+      ))}
 
       <p style={{ ...bodyStyle, marginTop: 32, color: "var(--text-tertiary)" }}>
         <Link href="/register">← Back to sign up</Link>
       </p>
     </main>
   );
+}
+
+function Block({ block }: { block: LegalBlock }) {
+  if (block.kind === "list") {
+    return (
+      <List
+        items={block.runs.map((item, index) => (
+          <span key={index}>
+            {item.map((run, runIndex) => (
+              <Run key={runIndex} run={run} />
+            ))}
+          </span>
+        ))}
+      />
+    );
+  }
+  return (
+    <p style={bodyStyle}>
+      {block.runs[0]?.map((run, index) => (
+        <Run key={index} run={run} />
+      ))}
+    </p>
+  );
+}
+
+/**
+ * One run of text.
+ *
+ * `link` is always an internal path — the shared content carries no external or cross-product
+ * URLs — so it is safe to hand straight to `next/link` and stays on this origin.
+ */
+function Run({ run }: { run: LegalRun }) {
+  if (run.link) return <Link href={run.link}>{run.text}</Link>;
+  if (run.code) {
+    return (
+      <code style={{ font: "var(--type-mono)", color: "var(--text-primary)" }}>{run.text}</code>
+    );
+  }
+  if (run.emphasis) return <strong>{run.text}</strong>;
+  return <>{run.text}</>;
 }
 
 const eyebrowStyle: CSSProperties = {

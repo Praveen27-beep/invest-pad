@@ -60,6 +60,27 @@ class UserResponse(BaseModel):
     created_at: datetime
 
 
+class CapabilitiesResponse(BaseModel):
+    """GET /auth/capabilities -- which products the CALLER may use.
+
+    EFFECTIVE capabilities, not raw grant rows: a login granted only ``workspace``
+    reports ``["portfolio", "workspace"]``, because Workspace includes Plus
+    (docs/PRODUCT_ARCHITECTURE.md section 4). The expansion happens once, in
+    ``app.db.capabilities.effective_capabilities``.
+
+    Always the caller's own. There is no ``user_id`` parameter and no admin variant:
+    an endpoint that could report someone else's access is an endpoint that has to get
+    an authorisation check right, and this one has nothing to get wrong.
+
+    Order is stable (``portfolio`` before ``workspace``) so a client may compare two
+    responses for equality. A frontend uses this to decide what to RENDER; it is not
+    what authorises anything. The server re-checks on every research request, which is
+    why a tampered client gains nothing but a screen that fails on use.
+    """
+
+    capabilities: list[str]
+
+
 class TokenResponse(BaseModel):
     # Named plainly as `token` rather than after the usual OAuth2 field vocabulary --
     # `make lint`'s credential-name ban is deliberately blunt (see Makefile) and would

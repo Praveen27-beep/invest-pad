@@ -5,7 +5,7 @@ import { api, ApiError } from "@/lib/api-client";
 import { CONSENT_NOTICE_TEXT } from "@/lib/consent";
 import { openOnboarding } from "@/lib/onboarding";
 import type { ConsentStatusOut } from "@/lib/api-types";
-import { Banner, Button, Icon } from "./ds";
+import { Banner, Button, Icon, Skeleton } from "./ds";
 
 /**
  * Consent, in Settings: status and withdrawal. Never a second way to grant it.
@@ -87,13 +87,11 @@ export function ConsentCapture({
   }
 
   if (status === null) {
-    return error ? (
-      <Banner tone="negative">{error}</Banner>
-    ) : (
-      <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-        Checking consent status…
-      </p>
-    );
+    // A placeholder the shape of the panel that replaces it, rather than a line of text:
+    // the sentence was a different height from the panel, so the card around this resized
+    // the instant the status arrived. Shape first, content a moment later -- the same thing
+    // the dashboard does with its figures.
+    return error ? <Banner tone="negative">{error}</Banner> : <Skeleton height={64} />;
   }
 
   return (
@@ -133,7 +131,7 @@ export function ConsentCapture({
             </p>
             <p style={{ margin: "2px 0 0", font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
               Withdrawing stops us processing anything new, immediately. It does not delete
-              what is already stored — that is on the Privacy page, on purpose.
+              what is already stored. That is on the Privacy page, on purpose.
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={() => void handleWithdraw()} disabled={busy}>

@@ -31,7 +31,7 @@
       "description": "(end_value - start_value) - net_flow. The rupee contribution to the portfolio's total gain over the period."
     },
     "pct_of_total": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "gain / total_gain across every Contribution in the same response. Null only when total_gain is exactly zero. Shown uncapped otherwise -- including negative and above-100% values when holdings offset -- never normalised or clipped."
     }
   }

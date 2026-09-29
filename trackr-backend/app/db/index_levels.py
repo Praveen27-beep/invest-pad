@@ -85,3 +85,27 @@ def get_index_levels(
         if best is not None:
             resolved[target] = best[1]
     return resolved
+
+
+def list_index_levels(
+    conn: Any, index_name: str, start: date, end: date
+) -> list[tuple[date, Decimal]]:
+    """Every stored level for one index in ``[start, end]``, ascending.
+
+    Deliberately NOT ``get_index_levels``. That function answers "what was this index
+    worth on each of these specific dates", carrying a staleness window and resolving
+    most-recent-on-or-before, because its caller holds a handful of cash-flow dates
+    spanning years. This one answers "what does the archive hold across this span" and
+    resolves nothing: a plotted line wants the real published points and a gap it can
+    draw a break through, not a carried-forward value repeated until the next close.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT level_date, close FROM index_level
+            WHERE index_name = %s AND level_date BETWEEN %s AND %s
+            ORDER BY level_date ASC
+            """,
+            (index_name, start, end),
+        )
+        return [(row[0], row[1]) for row in cur.fetchall()]

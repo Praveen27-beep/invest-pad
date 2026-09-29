@@ -17,13 +17,13 @@ class HoldingOut(BaseModel):
     last_price: str | None = None
     market_value: str | None = None
     unrealised: str | None = None
-    unrealised_pct: float | None = None
-    weight_pct: float | None = None
-    cagr: float | None = None
+    unrealised_pct: str | None = None
+    weight_pct: str | None = None
+    cagr: str | None = None
     #: Move since the previous close, as a fraction. Answers "how did this do today",
     #: which is a different question from `unrealised_pct`'s "how has this done since I
     #: bought it". None when there is no earlier close to compare against.
-    day_change_pct: float | None = None
+    day_change_pct: str | None = None
     cost_estimated: bool = False
     #: True when `last_price` came from the intraday cache (app.prices.live), not
     #: bhavcopy -- only ever set for as_of == today, before tonight's bhavcopy settles.
@@ -34,7 +34,7 @@ class TotalsOut(BaseModel):
     invested: str | None
     market_value: str | None
     unrealised: str | None
-    unrealised_pct: float | None = None
+    unrealised_pct: str | None = None
     cost_estimated: bool = False
 
 
@@ -69,7 +69,7 @@ class AllocationGroupOut(BaseModel):
     asset_class: str
     label: str
     market_value: str | None
-    weight_pct: float | None = None
+    weight_pct: str | None = None
     children: list[HoldingOut]
 
 
@@ -77,7 +77,7 @@ class SectorAllocationGroupOut(BaseModel):
     sector: str | None
     label: str
     market_value: str | None
-    weight_pct: float | None = None
+    weight_pct: str | None = None
     children: list[HoldingOut]
 
 
@@ -85,7 +85,7 @@ class MarketCapAllocationGroupOut(BaseModel):
     market_cap_bucket: str | None
     label: str
     market_value: str | None
-    weight_pct: float | None = None
+    weight_pct: str | None = None
     children: list[HoldingOut]
 
 
@@ -106,7 +106,7 @@ class SummaryResponse(BaseModel):
     invested: str | None
     market_value: str | None
     unrealised: str | None
-    unrealised_pct: float | None = None
+    unrealised_pct: str | None = None
     cost_estimated: bool = False
     unpriced: UnpricedOut
     skipped: list[SkippedHoldingOut] = []

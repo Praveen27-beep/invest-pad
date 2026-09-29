@@ -11,7 +11,7 @@ export default function ImportPage() {
         title="Import"
         subtitle="Bring trades in from a file or a forwarded contract note. Rows land in a staging batch you approve before they touch the ledger."
       />
-      <PageBody>
+      <PageBody column>
         <ImportTab />
       </PageBody>
     </>

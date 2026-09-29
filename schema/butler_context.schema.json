@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/butler_context.schema.json",
+  "title": "ButlerContext",
+  "description": "butler.context.v1 -- the MODEL-FACING part of a sealed Butler evidence packet (docs/BUTLER_ARCHITECTURE.md sections 3-4). Built only by trackr-backend/app/research/butler_context.py after authorization, ritual, rights and cutoff filtering. Identifiers are packet-local (b1, x1, o1, r1): database ids, account ids and tokens never appear here -- the server keeps the authority map that resolves them, and re-checks scope from authentication at submission. The browser's copy of a packet is never authority. Numbers are decimal STRINGS computed by the engine or counted by SQL; a model is never asked to calculate. Every text field is source/user data, delimited as data, never an instruction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "packet_id", "as_of", "intent", "subject", "belief_refs", "excerpts", "observations", "coverage", "allowed_question_ids", "allowed_lesson_ids", "allowed_output"],
+  "properties": {
+    "schema_version": { "const": "butler.context.v1" },
+    "packet_id": { "$ref": "#/$defs/packet_id" },
+    "as_of": { "type": "string", "format": "date-time", "description": "Known-at cutoff. Nothing recorded, published or retrieved after this instant is in the packet (no hindsight leakage)." },
+    "intent": { "enum": ["review_evidence", "new_material", "checkpoint", "decision_review"] },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["security_isin", "symbol", "name"],
+      "properties": {
+        "security_isin": { "type": "string", "pattern": "^IN[A-Z0-9]{10}$" },
+        "symbol": { "type": ["string", "null"], "maxLength": 32, "description": "Display only; never a key." },
+        "name": { "type": ["string", "null"], "maxLength": 200 }
+      }
+    },
+    "belief_refs": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "author_kind", "record_kind", "recorded_at", "excerpt_id", "explicitly_remembered"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^b[0-9]{1,3}$" },
+          "author_kind": { "enum": ["user", "accepted_assistant", "assistant"], "description": "Read from the saved record (note.authorship, chat_message.role). Assistant text is never a user belief." },
+          "record_kind": { "enum": ["note", "thesis", "answer", "chat"] },
+          "recorded_at": { "type": "string", "format": "date-time" },
+          "excerpt_id": { "$ref": "#/$defs/excerpt_id" },
+          "explicitly_remembered": { "type": "boolean" }
+        }
+      }
+    },
+    "excerpts": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source_version_id", "locator", "text", "content_hash", "trust", "stance", "recorded_at", "published_on"],
+        "properties": {
+          "id": { "$ref": "#/$defs/excerpt_id" },
+          "source_version_id": { "type": "string", "pattern": "^r[0-9]{1,3}$" },
+          "locator": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end"],
+            "properties": {
+              "start": { "type": "integer", "minimum": 0 },
+              "end": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "text": { "type": "string", "minLength": 1, "maxLength": 1200 },
+          "content_hash": { "$ref": "#/$defs/sha256" },
+          "trust": { "enum": ["USER_HYPOTHESIS", "USER_STATEMENT", "ACCEPTED_ASSISTANT_TEXT", "ASSISTANT_SUGGESTION", "SOURCE_STATEMENT"] },
+          "stance": { "enum": ["SUPPORTING", "CONTRARY", "UNLINKED"], "description": "From an explicit saved note_link relation only. UNLINKED means no relation was recorded, not 'neutral'." },
+          "recorded_at": { "type": "string", "format": "date-time" },
+          "published_on": { "type": ["string", "null"], "format": "date" }
+        }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "maxItems": 24,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "metric_id", "value", "unit", "basis", "window_start", "window_end", "period_start", "period_end", "verification", "provenance_ref", "known_at"],
+        "properties": {
+          "id": { "$ref": "#/$defs/observation_id" },
+          "kind": { "enum": ["recorded_activity", "sourced_fact", "evaluation_state", "source_available"] },
+          "metric_id": { "type": "string", "pattern": "^[a-z0-9_.:-]{1,64}$" },
+          "value": {
+            "description": "A decimal string (never a JSON number) or an upper-case state token.",
+            "type": "string",
+            "pattern": "^(-?[0-9]{1,14}(\\.[0-9]{1,6})?|[A-Z][A-Z_]{1,31}|true|false)$"
+          },
+          "unit": { "type": "string", "pattern": "^[A-Za-z0-9_%/ .-]{1,32}$" },
+          "basis": { "type": "string", "pattern": "^[A-Za-z0-9_ .:-]{1,64}$" },
+          "window_start": { "type": ["string", "null"], "format": "date-time" },
+          "window_end": { "type": ["string", "null"], "format": "date-time" },
+          "period_start": { "type": ["string", "null"], "format": "date" },
+          "period_end": { "type": ["string", "null"], "format": "date" },
+          "verification": { "enum": ["VERIFIED", "UNVERIFIED", "RECORDED", "ENGINE"] },
+          "provenance_ref": { "type": "string", "pattern": "^r[0-9]{1,3}$" },
+          "known_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["saved_workspace_records", "external_sources", "source_text", "truncated", "limitations"],
+      "properties": {
+        "saved_workspace_records": { "enum": ["COMPLETE_FOR_QUERY", "PARTIAL"] },
+        "external_sources": { "enum": ["NOT_CHECKED", "CHECKED_PARTIAL", "CHECKED"] },
+        "source_text": { "enum": ["NOT_DISCLOSED", "PARTIAL", "INCLUDED"] },
+        "truncated": { "type": "boolean" },
+        "limitations": {
+          "type": "array",
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/limitation" }
+        }
+      }
+    },
+    "allowed_question_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/question_id" } },
+    "allowed_lesson_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/lesson_id" } },
+    "allowed_output": { "const": "butler.proposal.v1" }
+  },
+  "$defs": {
+    "packet_id": { "type": "string", "pattern": "^packet-[a-f0-9]{24}$" },
+    "excerpt_id": { "type": "string", "pattern": "^x[0-9]{1,3}$" },
+    "observation_id": { "type": "string", "pattern": "^o[0-9]{1,3}$" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "question_id": { "enum": ["EVIDENCE_FOR_BELIEF", "ALTERNATIVE_EXPLANATION", "WHAT_WOULD_CHANGE_YOUR_MIND", "NEXT_EVIDENCE_MILESTONE", "HORIZON_STILL_APPLIES", "COMPARE_TWO_PASSAGES", "SOURCE_COVERAGE_GAP"] },
+    "lesson_id": { "enum": ["RESEARCH_PROGRESS_VS_PRICE_RETURN", "CORRELATION_VS_CAUSATION", "SUNK_COST_QUESTION"] },
+    "limitation": {
+      "enum": [
+        "OUTSIDE_WORKSPACE_RESEARCH_UNKNOWN",
+        "NO_EXTERNAL_FEED_CONFIGURED",
+        "SOURCE_TEXT_NOT_DISCLOSED",
+        "SOURCE_TEXT_UNAVAILABLE",
+        "PRICE_NOT_INCLUDED",
+        "TIME_SPENT_NOT_TRACKED",
+        "TRUNCATED_TO_BUDGET",
+        "COUNTEREVIDENCE_DID_NOT_FIT",
+        "RETRACTED_SOURCE_EXCLUDED",
+        "FORGOTTEN_MEMORY_EXCLUDED",
+        "RIGHTS_UNDECIDED_EXCLUDED",
+        "NO_ACTIVE_THESIS"
+      ]
+    }
+  }
+}

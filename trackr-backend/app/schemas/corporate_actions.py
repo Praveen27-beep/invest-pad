@@ -5,10 +5,10 @@ turned into a staged transaction instead of only a text hint)."""
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.decimals import OptionalDecimalText
 from app.schemas.reconcile import DeclaredHoldingIn
 
 
@@ -27,8 +27,11 @@ class CorporateActionIn(BaseModel):
     bonus_for: int | None = None
 
     # --- SPLIT -----------------------------------------------------------------
-    face_value_before: Decimal | None = None
-    face_value_after: Decimal | None = None
+    # Exact decimal text or null -- app/schemas/decimals.py. A face value is the SPLIT
+    # RATIO's own numerator and denominator (10 -> 2 is a five-for-one), so a rounded one
+    # is a wrong ratio applied to every lot the security has.
+    face_value_before: OptionalDecimalText = None
+    face_value_after: OptionalDecimalText = None
 
     # --- DEMERGER: quantity leg only --------------------------------------------
     resulting_isin: str | None = Field(default=None, pattern=r"^IN[A-Z0-9]{10}$")
@@ -37,8 +40,8 @@ class CorporateActionIn(BaseModel):
 
     # --- audit: mandatory for BONUS/SPLIT, the only automatic defence against an
     # inverted ratio ---------------------------------------------------------
-    price_cum: Decimal | None = None
-    price_ex: Decimal | None = None
+    price_cum: OptionalDecimalText = None
+    price_ex: OptionalDecimalText = None
 
     source: str
     source_url: str

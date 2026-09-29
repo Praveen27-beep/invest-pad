@@ -1,11 +1,11 @@
-"""Filesystem-backed document store, for development.
+"""Filesystem-backed document store for development or explicitly configured self-hosting.
 
 Signs its URLs with an HMAC over key and expiry so it behaves like the S3 backend in the
 ways that matter -- a URL that expires, and a URL that cannot be edited to point somewhere
 else. Without that, development would exercise a permission model production does not have.
 
-NOT for production. There is no replication, no lifecycle policy, and no provider-side
-encryption; it is a local directory.
+Self-hosting requires an operator-managed persistent volume, backups, retention and
+disk encryption. This store provides none of those infrastructure properties itself.
 """
 
 from __future__ import annotations

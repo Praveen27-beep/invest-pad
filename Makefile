@@ -3,7 +3,7 @@ PYTHON ?= $(shell if [ -f $(VENV)/bin/python3.12 ]; then echo $(VENV)/bin/python
 PYTEST ?= $(shell if [ -f $(VENV)/bin/pytest ]; then echo $(VENV)/bin/pytest; else command -v pytest 2>/dev/null; fi)
 RUFF ?= $(shell if [ -f $(VENV)/bin/ruff ]; then echo $(VENV)/bin/ruff; else command -v ruff 2>/dev/null; fi)
 
-.PHONY: test test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint fmt install dev seed-demo install-hooks
+.PHONY: test test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint fmt install dev seed-demo install-hooks approve-research-policy research-policy-status
 
 # Runtime code lives under trackr-backend/app/ (see docs/structure_revamp_plan.md).
 # trackr-backend is installed editable into the same venv as this root package's dev
@@ -13,7 +13,7 @@ install:
 	pip install -e ".[dev]"
 	pip install -e "trackr-backend[dev]"
 
-test: test-engine test-contribution test-tax test-golden test-demo-fixture test-analytics test-narrative lint
+test: test-engine test-contribution test-tax test-golden test-demo-fixture lint
 
 test-engine:          ## hand-computed cases from ENGINE_SPEC.md
 	$(PYTEST) tests/test_engine_cases.py -v
@@ -34,23 +34,19 @@ test-golden:          ## the real 324-trade portfolio
 test-demo-fixture:    ## fixtures/demo_portfolio.json replayed through the real engine
 	$(PYTEST) tests/test_demo_fixture.py -v
 
-# app/analytics/ had NO tests at all until these -- including verdict.py, the module its
-# own docstring calls "THE HIGHEST-RISK COMPONENT", and whose line 37 claimed the weights
-# summing to 1.0 was "asserted by the tests". Wired into `test` rather than left to
-# `pytest tests/` because CLAUDE.md is explicit that those are different signals, and a
-# published letter grade belongs behind the acceptance gate.
-test-analytics:       ## the health grade, the insight rules, the derived block, behaviour
-	$(PYTEST) tests/test_analytics_verdict.py tests/test_analytics_derived.py \
-	       tests/test_analytics_behaviour.py -v
-
-# The fact pack is what a generated sentence is allowed to know. Its acceptance test is
-# that it can still supply every number the hand-written prose used to quote -- if it
-# cannot, a generated sentence would have to omit the figure or invent it, and the
-# second is the failure the whole package exists to prevent. That belongs behind the
-# gate, not in the wider suite.
-test-narrative:       ## the fact pack, the relation vocabulary, the verifier, the cache key
-	$(PYTEST) tests/test_narrative_factpack.py tests/test_narrative_select_egress.py \
-	       tests/test_narrative_verify.py tests/test_narrative_digest_client_chat.py -v
+# REMOVED 2026-09-24: `test-analytics` and `test-narrative` named seven test files that
+# were never written. `git log --all -- 'tests/test_analytics*' 'tests/test_narrative*'`
+# is empty on every branch, and none are on disk. Both targets were added by 8066d8c --
+# the targets landed, the tests did not -- so `make test` has aborted at test-analytics
+# ever since, which means the acceptance gate this Makefile documents has not run since
+# that commit.
+#
+# THE GAP THEY WERE MEANT TO CLOSE IS REAL AND STILL OPEN. Nothing under tests/ imports
+# app.analytics (7 modules, including verdict.py, whose own docstring calls it "THE
+# HIGHEST-RISK COMPONENT") or app.narrative (13 modules, including verify.py, the check
+# that stops a generated sentence inventing a figure). Removing these targets is what
+# makes the gate runnable again; it is NOT what makes those modules tested. Restore a
+# target here when the tests behind it actually exist -- not before.
 
 lint:                 ## the architecture rules, enforced
 	@echo "checking: no float in app/engine/"
@@ -70,6 +66,25 @@ lint:                 ## the architecture rules, enforced
 # incapable of doing so rather than merely not doing so today.
 	@echo "checking: only app/narrative/client.py may reach a model"
 	@! grep -rnE "^[[:space:]]*(from|import) app\.ai\b" trackr-backend/app/narrative/ --include="*.py" --exclude=client.py || (echo "FAIL: narrative must not import app.ai outside client.py" && exit 1)
+# BE 18/21: the research context builder, read tools and proposal guardrails decide what a
+# model is shown and whether its output is recorded. None may hold a float, issue a SQL
+# mutation or reach a model/provider: they read, compute and judge, and nothing else.
+	@echo "checking: research context/tools/guardrails -- no float, no SQL mutation, no model"
+	@! grep -nE "float\(|: float|-> float" trackr-backend/app/research/context.py trackr-backend/app/research/tools.py trackr-backend/app/research/guardrails.py || (echo "FAIL: float in research boundary" && exit 1)
+	@! grep -niE "\b(INSERT[[:space:]]+INTO|UPDATE[[:space:]]+[a-z_]+[[:space:]]+SET|DELETE[[:space:]]+FROM|TRUNCATE)\b" trackr-backend/app/research/context.py trackr-backend/app/research/tools.py trackr-backend/app/research/guardrails.py || (echo "FAIL: SQL mutation in research boundary" && exit 1)
+	@! grep -nE "^[[:space:]]*(from|import) (app\.(ai|narrative|ingest)|anthropic|openai|google\.generativeai|httpx|requests)\b" trackr-backend/app/research/context.py trackr-backend/app/research/tools.py trackr-backend/app/research/guardrails.py || (echo "FAIL: model or network import in research boundary" && exit 1)
+# BT-P02 (RP 01): the operator's platform inference credential is named in exactly two files --
+# app/config.py (where the runtime environment is read) and app/research/platform_inference.py
+# (the only module that uses it, inside the worker). Narrow on purpose: this ADDS a rule rather
+# than relaxing the credential ban below, which still refuses broker/API secrets everywhere.
+	@echo "checking: platform inference credential confined to config + adapter"
+	@! grep -rn "platform_inference_key" trackr-backend/app --include="*.py" | grep -vE "^trackr-backend/app/(config\.py|research/platform_inference\.py):" || (echo "FAIL: platform credential referenced outside its two authorised files" && exit 1)
+# BUTLER_INVESTOR_MEMORY s.7 / BUTLER_REPORTS s.9: no report module may reach the investor
+# notebook. The hosted worker imports reflection lazily, inside its reflection branch only.
+	@echo "checking: report path does not import investor-notebook code"
+	@! grep -nE "^[[:space:]]*(from|import) app\.(db\.butler_notebook|db\.butler_episodes|research\.butler_notebook_policy|research\.butler_episodes|research\.butler_reflection|schemas\.butler_notebook)\b|from app\.(db|research|schemas) import .*\b(butler_notebook|butler_episodes|butler_reflection|butler_notebook_policy)\b" trackr-backend/app/research/report_contract.py trackr-backend/app/research/report_corpus.py trackr-backend/app/routers/reports.py trackr-backend/app/schemas/reports.py trackr-backend/app/db/hosted_jobs.py || (echo "FAIL: report path imports notebook code" && exit 1)
+	@echo "checking: Trackr+ ships no notebook client"
+	@! grep -rnE "butler/notebook|Understanding you" trackr-frontend/app trackr-frontend/lib packages --include="*.ts" --include="*.tsx" 2>/dev/null || (echo "FAIL: notebook code in the Plus app or shared packages" && exit 1)
 	@echo "checking: no credential storage"
 # NARROW, NAMED EXCEPTION: app/ingest/gmail_oauth.py only. That module handles a
 # revocable, Google-mediated OAuth grant over the DEVELOPER'S OWN mailbox - read-only, no
@@ -123,6 +138,13 @@ lint:                 ## the architecture rules, enforced
 	@DATABASE_URL="$$(sed -n 's/^DATABASE_URL=//p' trackr-backend/.env 2>/dev/null | head -1)" \
 		$(PYTHON) scripts/check_migration_drift.py
 	$(RUFF) check .
+
+approve-research-policy: ## owner: approve BE-Q04 source rights + BE-Q05 retention draft in one step
+	@test -n "$(BY)" || (echo 'usage: make approve-research-policy BY="Owner Name"' && exit 2)
+	cd trackr-backend && ../.venv/bin/python -m app.research.policy_approval approve --by "$(BY)"
+
+research-policy-status: ## APPROVED | NOT_APPROVED | STALE for the drafted research policy
+	cd trackr-backend && ../.venv/bin/python -m app.research.policy_approval status
 
 fmt:
 	$(RUFF) format .

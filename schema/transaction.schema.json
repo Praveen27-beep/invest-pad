@@ -99,6 +99,11 @@
       "type": "string",
       "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
       "description": "An exact decimal carried as a string. Maps to Python decimal.Decimal and Postgres NUMERIC(20,6)."
+    },
+    "nullableDecimal": {
+      "type": ["string", "null"],
+      "pattern": "^-?[0-9]+(\\.[0-9]+)?$",
+      "description": "The same exact decimal string, where null is a legitimate answer meaning NOT AVAILABLE -- an undefined ratio, a rate the solver could not resolve, a figure with no basis to compute it from. Null is never a stand-in for zero: zero is a value, and a caller must be able to tell 'no return' from 'return unknown'. Used for every rate and ratio on the wire (unrealised_pct, weight_pct, cagr, day_change_pct, every XIRR/TWRR variant, absolute_return, pct_of_total, a reconciliation ratio). Rates USED to be JSON numbers here; see the encoding note in performance.schema.json for what that cost."
     }
   }
 }

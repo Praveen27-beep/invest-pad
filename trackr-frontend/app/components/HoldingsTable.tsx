@@ -14,7 +14,7 @@ export function HoldingsTable({ holdings, dense = false }: { holdings: HoldingOu
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-navy-100 text-left text-[11px] uppercase tracking-wide text-navy-400">
+          <tr className="text-left text-[11px] uppercase tracking-wide text-navy-400">
             <th className={`${pad} pr-3 font-medium`}>Security</th>
             <th className={`${pad} pr-3 font-medium text-right`}>Qty</th>
             <th className={`${pad} pr-3 font-medium text-right`}>Avg cost</th>

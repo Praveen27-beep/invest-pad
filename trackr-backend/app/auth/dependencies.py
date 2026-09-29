@@ -13,6 +13,11 @@ from app.auth import service
 from app.auth.service import InvalidTokenError
 from app.config import Settings, get_settings
 from app.database import get_conn
+from app.db.capabilities import (
+    CAPABILITY_WORKSPACE,
+    WorkspaceCapabilityRequiredError,
+    has_capability,
+)
 from app.db.repository import get_investor_owner, investor_exists
 
 _bearer = HTTPBearer(auto_error=False)
@@ -69,6 +74,44 @@ def require_owned_investor(
     ``investor_id`` from the path -- or the query string, for endpoints like
     /privacy/export that scope by query parameter instead."""
     _authorise(conn, current_user, investor_id)
+
+
+def require_workspace_access(
+    conn: Any = Depends(get_conn),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Route-level guard: the authenticated user must hold the ``workspace`` capability.
+
+    **This is a product gate, not an ownership gate, and it replaces neither.** Holding
+    Workspace says which application a login may use; it says nothing whatever about
+    whose ledger, notes or theses it may touch. Every investor-scoped research route
+    declares BOTH this and ``require_owned_investor``:
+
+        @router.get(
+            "/{investor_id}/research/...",
+            dependencies=[Depends(require_workspace_access), Depends(require_owned_investor)],
+        )
+
+    Two dependencies rather than one combined helper, deliberately. A single
+    ``require_workspace_investor`` would read like it covered both and would be one
+    careless edit away from letting a Workspace subscriber open a stranger's portfolio.
+    Ownership semantics and their existing 403/404 split are untouched by this function.
+
+    Resolved from the database on every request, never from a token claim -- see
+    ``app/db/capabilities.py``. Revocation therefore takes effect on the caller's very
+    next request, not whenever their current token happens to expire.
+
+    Missing or invalid credentials raise 401 from ``get_current_user`` before this runs.
+    A valid login without the capability raises ``WorkspaceCapabilityRequiredError``,
+    which ``app/main.py`` renders as 403 with the stable
+    ``workspace_capability_required`` code.
+
+    Returns the user dict, so a handler that needs the caller can depend on this
+    directly instead of also depending on ``get_current_user``.
+    """
+    if not has_capability(conn, str(current_user["id"]), CAPABILITY_WORKSPACE):
+        raise WorkspaceCapabilityRequiredError(str(current_user["id"]))
+    return current_user
 
 
 def require_owned_batch(

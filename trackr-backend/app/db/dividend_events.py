@@ -599,6 +599,7 @@ def refresh_dividend_feed(
     end: date,
     source: Any | None = None,
     actor_uid: str | None = None,
+    jev_client: Any = None,
 ) -> dict[str, Any]:
     """Fetch NSE's notices for ``[start, end]`` and land every dividend among them.
 
@@ -610,6 +611,12 @@ def refresh_dividend_feed(
 
     Never raises on a routine failure -- a fetch or parse problem is logged and returned in
     the result dict, the same way a daily job should behave.
+
+    ``jev_client`` is passed straight through to ``parse_dividend_feed`` -- an
+    ``app.ai.jev.JevClient`` or ``None``, constructed by the caller from ``Settings`` so
+    this module needs no Settings import of its own. See that function's docstring for
+    what it is used for and what ``None`` (the ordinary state absent a configured key)
+    preserves unchanged.
 
     NOTE what this does NOT do, unlike its corporate-action counterpart: there is no
     retry loop over pending ``DRAFT`` rows. A DRAFT corporate action is waiting for a PRICE
@@ -632,7 +639,7 @@ def refresh_dividend_feed(
         return {"fetched": 0, "error": str(exc)}
 
     try:
-        rows = parse_dividend_feed(payload)
+        rows = parse_dividend_feed(payload, jev_client=jev_client)
     except CorporateActionFeedFormatError as exc:
         logger.warning("dividend feed format changed for %s..%s: %s", start, end, exc)
         return {"fetched": 0, "error": str(exc)}
