@@ -225,3 +225,18 @@ class DiscoverDividendsYfinanceOut(BaseModel):
     unchanged: int = 0
     failed: int = 0
     errors: dict[str, str] = {}
+
+
+class ReconcileDividendsOut(BaseModel):
+    """Result of one second-pass run -- see ``app.db.dividend_reconcile``. ``pending`` is
+    the leftover DRAFT events a holder was eligible for; the rest count what happened to
+    the ones processed this run (bounded, so a backlog drains across days)."""
+
+    pending: int = 0
+    verified: int = 0
+    disputed: int = 0
+    no_nse_row: int = 0
+    ambiguous: int = 0
+    no_bhavcopy: int = 0
+    identity_unproven: int = 0
+    failed: int = 0

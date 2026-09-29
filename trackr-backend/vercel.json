@@ -38,6 +38,10 @@
       "schedule": "45 11 * * 0"
     },
     {
+      "path": "/ops/dividends/reconcile-cron",
+      "schedule": "55 11 * * *"
+    },
+    {
       "path": "/ops/cron/jobs-drain",
       "schedule": "20 11 * * *"
     }
