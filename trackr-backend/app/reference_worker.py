@@ -151,6 +151,12 @@ def _verify_action(conn, action_id, source=None):
 def process(conn, kind: str, key: str, payload: dict, settings: Settings) -> dict | None:
     """Return a checkpoint for more work, or None when this task is complete."""
     if kind == "NSDL":
+        if len(payload["query"]) != 12:
+            # Legacy issuer-prefix task. NSDL's prefix pagination overlaps and skips rows,
+            # so it can never complete; exact-ISIN tasks replace it. Retiring it records
+            # nothing: unresolved identities are derived from security_reference itself.
+            logger.info("Retiring legacy NSDL prefix task %s", key)
+            return None
         page_no = payload["page"]
         if page_no > settings.reference_nsdl_max_pages:
             raise ValueError("NSDL pagination exceeded configured page limit")

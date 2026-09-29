@@ -28,13 +28,16 @@ class EvidencePending(ValueError):
 def schedule_identity(conn) -> None:
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT DISTINCT t.account_id::text, c.circular_number
+            """SELECT DISTINCT t.account_id::text, c.circular_number, c.new_isin
                FROM isin_change_circular c JOIN transaction t
                    ON left(t.isin,7)=left(c.new_isin,7)
                WHERE c.ex_date IS NOT NULL AND c.pdf_sha256 IS NOT NULL"""
         )
         pairs = cur.fetchall()
-    for account, number in pairs:
+    for account, number, new_isin in pairs:
+        # resolve_split needs NSDL's exact record for the NEW ISIN, which no holding
+        # names yet -- so reference_sync.schedule (held ISINs only) would never fetch it.
+        enqueue(conn, "NSDL", f"{new_isin}:circular", {"query": new_isin, "page": 1, "seen": []})
         enqueue(conn, "IDENTITY", number, {"circular_number": number})
         with conn.cursor() as cur:
             cur.execute(

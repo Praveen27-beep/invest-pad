@@ -41,10 +41,13 @@ def schedule(conn, today: date | None = None) -> None:
     for account_id, start, isins, requested, scheduled in accounts:
         changed = scheduled is None or requested > scheduled
         dependencies = []
-        for prefix in sorted({isin[:7] for isin in isins if isin.startswith("IN")}):
-            # A new daily key makes the observation date explicit. Old tasks/retries survive.
-            key = f"{prefix}:{today.isoformat()}"
-            enqueue(conn, "NSDL", key, {"query": prefix, "page": 1, "seen": []})
+        for isin in sorted({isin for isin in isins if isin.startswith("IN")}):
+            # Exact ISIN, never an issuer prefix: NSDL's offset pagination is unstable
+            # (observed 2026-09-29: INE423A reported 684 rows, a full walk returned only
+            # 413 distinct), so a prefix traversal can never reconcile. A full-ISIN
+            # query is one page. A new daily key makes the observation date explicit.
+            key = f"{isin}:{today.isoformat()}"
+            enqueue(conn, "NSDL", key, {"query": isin, "page": 1, "seen": []})
             dependencies.append((account_id, "NSDL", key))
         cursor = start.replace(day=1)
         while cursor <= today:
