@@ -60,6 +60,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# BT-P02 hosted report/reflection worker only (app/research/platform_inference.py). Optional
+# and NOT installed by default: without it, hosted jobs are refused at admission with
+# PROVIDER_SDK_NOT_INSTALLED rather than failing mid-job. The web process never needs it.
+hosted = [
+  "anthropic>=1.0",
+]
 dev = [
   "pytest>=8.0",
   "ruff>=0.6",

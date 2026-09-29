@@ -3,16 +3,20 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import type { AccountOut } from "@/lib/api-types";
 import { Banner, Icon } from "../ds";
+import { ForwardingCode } from "../EmailForwardingSetup";
 
 /**
  * Gmail's own steps, honestly.
  *
  * TWO OF THE OLD FOUR WERE FALSE, and both mattered. Step 3 said "Gmail sends a
  * confirmation. We handle it — nothing for you to click", and nothing handled it: the
- * webhook loops over attachments and never reads the message body, so the confirmation
- * code is silently discarded and forwarding cannot be completed by anyone, ever. Saying
- * so is not a nice admission, but a person who follows an instruction that cannot work
- * concludes the product is broken rather than that the instruction was wrong.
+ * webhook looped over attachments and never read the message body, so the code was
+ * silently discarded and forwarding could not be completed by anyone, ever. It was then
+ * rewritten to admit that plainly, which was honest but still left the feature dead. The
+ * webhook now recognises Gmail's verification mail and `ForwardingCode` shows the code,
+ * so the step finally describes something that works -- and it says "paste this" rather
+ * than "we handled it", because following the confirmation link on someone's behalf is
+ * granting a mail permission for them.
  *
  * Step 4 said "Forward a copy of INCOMING MAIL", which is the entire inbox — flatly
  * contradicting the promise made two screens earlier that you decide what reaches us.
@@ -22,17 +26,17 @@ import { Banner, Icon } from "../ds";
 const INSTRUCTIONS: ReactNode[] = [
   <>Open an email your broker sent you, in Gmail.</>,
   <>
-    Click the three-dot menu on that email and choose{" "}
-    <strong>Filter messages like this</strong> — so only your broker&apos;s mail is ever
-    forwarded, not your inbox.
+    Click the three dot menu on that email and choose{" "}
+    <strong>Filter messages like this</strong>. That way only your broker&apos;s mail is
+    forwarded, never the rest of your inbox.
   </>,
   <>
     Tick <strong>Forward it to</strong>, add the address above, and create the filter.
   </>,
   <>
-    Gmail emails a confirmation code to that address before it will forward anything.{" "}
-    <strong>We can&apos;t collect that code for you yet</strong>, so forwarding will not
-    activate until we can. Everything else here works today.
+    Gmail sends a confirmation code to that address before it will forward anything. We
+    catch that email and show you the code here — paste it into Gmail under{" "}
+    <strong>Settings → Forwarding and POP/IMAP</strong> and click <strong>Verify</strong>.
   </>,
 ];
 
@@ -58,9 +62,8 @@ export function GmailForwardStep({ accounts }: { accounts: AccountOut[] }) {
   if (withAddresses.length === 0) {
     return (
       <Banner tone="info" title="No forwarding address for your brokers yet">
-        Forwarding only works for brokers we can read email from, and none of yours is one
-        today. Uploading files works exactly as well — this step is a convenience, not a
-        requirement.
+        Forwarding works only for brokers whose email we can read, and none of yours is one
+        today. Uploading files works just as well, so you can skip this step.
       </Banner>
     );
   }
@@ -79,6 +82,8 @@ export function GmailForwardStep({ accounts }: { accounts: AccountOut[] }) {
           confirmation per broker.
         </p>
       )}
+
+      {withAddresses[0] && <ForwardingCode investorId={withAddresses[0].investor_id} />}
 
       <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
         {INSTRUCTIONS.map((instruction, index) => (
@@ -107,20 +112,9 @@ export function GmailForwardStep({ accounts }: { accounts: AccountOut[] }) {
       </ol>
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <p
-          style={{
-            margin: "0 0 4px",
-            font: "var(--type-body-sm)",
-            fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
-            color: "var(--text-primary)",
-          }}
-        >
-          And your past mail
-        </p>
         <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-          Forwarding only catches new mail. For everything before today, download from your
-          broker&apos;s console and upload it on the Import page — that is the complete and
-          reliable route.
+          Forwarding picks up new mail only. For anything from before today, download the
+          files from your broker and upload them on the Import page.
         </p>
       </div>
     </div>

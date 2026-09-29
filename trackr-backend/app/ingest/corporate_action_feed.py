@@ -39,7 +39,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from app.ai.jev import JevResponseError, JevUnavailable
 from app.engine.corporate_actions import CorpActionType
-from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS, _ssl_context
+from app.ingest.nse_session import cookie_session
+from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS
 
 #: NSE's interactive corporate-filings page -- confirmed live, 2026-09-10, that the
 #: underlying API 403s without a warmed session cookie AND this exact Referer.
@@ -74,23 +75,20 @@ class NseCorporateActionFeedSource:
     caller, when a licensed feed is in place."""
 
     def __init__(self, opener: Any = None):
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener if opener is not None else cookie_session().open
 
     def fetch(self, start: date, end: date) -> bytes:
-        ctx = _ssl_context()
-        # Warm a session cookie against the homepage first -- confirmed live that the
-        # API 403s a cold request even with browser headers. The cookie jar is carried
-        # via a shared urllib opener with a CookieProcessor when this runs for real;
-        # tests inject their own ``opener`` and skip this entirely.
+        # Both calls use the same private cookie jar. Plain urlopen does not retain
+        # the warm-up response's Set-Cookie headers for the API request.
         try:
             warmup = urllib.request.Request(NSE_HOMEPAGE_URL, headers=BROWSER_HEADERS)
-            self._opener(warmup, timeout=TIMEOUT_SECONDS, context=ctx).close()
+            self._opener(warmup, timeout=TIMEOUT_SECONDS).close()
 
             request = urllib.request.Request(
                 NSE_CORP_ACTIONS_URL.format(start=start, end=end),
                 headers={**BROWSER_HEADERS, "Referer": NSE_REFERER, "Accept": "application/json"},
             )
-            with self._opener(request, timeout=TIMEOUT_SECONDS, context=ctx) as response:
+            with self._opener(request, timeout=TIMEOUT_SECONDS) as response:
                 return response.read()
         except urllib.error.HTTPError as exc:
             raise CorporateActionFeedFetchFailed(f"NSE corporate actions: HTTP {exc.code}") from exc

@@ -82,6 +82,16 @@ def _replay(
                     )
                 )
 
+        elif txn.txn_type is TxnType.SPLIT_ADJ:
+            held = sum((lot.quantity for lot in queue), ZERO)
+            if held <= ZERO:
+                raise DemergerAdjustmentError(txn.isin)
+            multiplier = (held + txn.quantity) / held
+            for lot in queue:
+                lot.quantity *= multiplier
+                lot.cost_per_unit /= multiplier
+                lot.stt_per_unit /= multiplier
+
         elif txn.txn_type in FREE_SHARE_TYPES:
             # Cost 0, dated the corporate-action date. This is what makes bonus-stripping
             # rules computable later. DEMERGER_IN follows the same rule and stays at cost

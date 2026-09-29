@@ -52,7 +52,7 @@ function tier1(file: File): Rejected | null {
     return {
       filename: file.name,
       reason: `This file is ${(file.size / 1024 / 1024).toFixed(0)}MB, which is larger than we accept.`,
-      hint: "Export a shorter date range — one financial year per file works well.",
+      hint: "Export a shorter date range. One financial year per file works well.",
     };
   }
   return null;
@@ -90,7 +90,6 @@ export function FileUploadStep({
   brokers,
   onStaged,
   onBusyChange,
-  onTypeInstead,
 }: {
   accounts: AccountOut[];
   /** The registry, for per-broker "where do I find these files" steps. */
@@ -99,8 +98,6 @@ export function FileUploadStep({
    * the ledger, matching the server route it calls. */
   onStaged: (batchIds: string[]) => void;
   onBusyChange?: (busy: boolean) => void;
-  /** "I'd rather type them in" — closes the wizard onto the transactions screen. */
-  onTypeInstead: () => void;
 }) {
   const { investorId, token } = useAuth();
   const [accountId, setAccountId] = useState<string>("");
@@ -190,7 +187,8 @@ export function FileUploadStep({
     // flow, and saying so beats a disabled drop zone with no explanation.
     return (
       <Banner tone="warning" title="No account to put these in yet">
-        Go back one step and pick the brokers you use — files need somewhere to land.
+        Open Brokers at the top and pick the brokers you use. Your files need somewhere to
+        land.
       </Banner>
     );
   }
@@ -225,7 +223,7 @@ export function FileUploadStep({
             }))}
           />
           <span style={{ color: "var(--text-tertiary)" }}>
-            — upload one broker&apos;s files, then switch and do the next.
+            Upload one broker&apos;s files, then switch and do the next.
           </span>
         </label>
       )}
@@ -268,7 +266,7 @@ export function FileUploadStep({
           {uploading ? "Reading your files…" : "Drop your broker files here"}
         </p>
         <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)", maxWidth: "46ch" }}>
-          Pick as many as you like, all at once — contract notes, tradebooks, PDFs or
+          Pick as many as you like, all at once. Contract notes, tradebooks, PDFs or
           spreadsheets. We work out what each one is.
         </p>
         <input
@@ -337,8 +335,6 @@ export function FileUploadStep({
       )}
 
       <WhereToFindFiles accounts={accounts} brokers={brokers} />
-
-      <TypeThemInstead onClick={onTypeInstead} />
     </div>
   );
 }
@@ -417,9 +413,10 @@ function PanUnlock({
         password-protected
       </p>
       <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>
-        {brokerName} locks these with your PAN{passwordRule ? ` — ${passwordRule.toLowerCase()}` : ""}.
-        Add it once and we&apos;ll open this one and every future one. It&apos;s encrypted, used
-        only to unlock documents, and never shown back to you.
+        {brokerName} locks these files. The password is{" "}
+        {(passwordRule || "Your PAN").replace(/^Your/, "your")}. Add it once and we will open
+        this file and every future one. We keep it encrypted, use it only to open your
+        documents, and never show it back to you.
       </p>
       {error && (
         <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--negative)" }}>{error}</p>
@@ -455,46 +452,6 @@ function PanUnlock({
   );
 }
 
-/**
- * The escape hatch for someone with no files at all.
- *
- * A person who bought three stocks through an app that gives them nothing downloadable is
- * not an edge case, and the wizard used to have no answer for them beyond "skip" — which
- * left an empty portfolio and read as the product not working. `TransactionForm` has
- * existed on /transactions the whole time; the wizard simply never mentioned it.
- */
-function TypeThemInstead({ onClick }: { onClick: () => void }) {
-  return (
-    <p
-      style={{
-        margin: 0,
-        paddingTop: 12,
-        borderTop: "1px solid var(--border)",
-        font: "var(--type-body-sm)",
-        color: "var(--text-tertiary)",
-      }}
-    >
-      No files to hand?{" "}
-      <button
-        type="button"
-        onClick={onClick}
-        style={{
-          padding: 0,
-          border: "none",
-          background: "none",
-          font: "inherit",
-          color: "var(--text-primary)",
-          textDecoration: "underline",
-          cursor: "pointer",
-        }}
-      >
-        Type your trades in by hand
-      </button>{" "}
-      — a few positions takes a minute, and you can always add files later.
-    </p>
-  );
-}
-
 /** What an accepted file turned out to be, said in the person's words rather than the
  * adapter's. `document` is the server's classification, so this never guesses. */
 function describe(outcome: FileOutcomeOut): string {
@@ -504,8 +461,8 @@ function describe(outcome: FileOutcomeOut): string {
       : outcome.document === "contract_note_pdf" || outcome.document === "contract_note_xlsx"
         ? "Contract note"
         : "File";
-  if (outcome.parsed === 0) return `${kind} — no new trades in this one`;
-  return `${kind} — ${outcome.parsed.toLocaleString("en-IN")} trade${outcome.parsed === 1 ? "" : "s"} found`;
+  if (outcome.parsed === 0) return `${kind}: no new trades in this one`;
+  return `${kind}: ${outcome.parsed.toLocaleString("en-IN")} trade${outcome.parsed === 1 ? "" : "s"} found`;
 }
 
 function OutcomeRow({
@@ -627,7 +584,7 @@ function passwordRuleOf(brokers: BrokerOut[], code: string): string {
 
 function friendly(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 403) return "You need to grant permission first — go back to the first step.";
+    if (err.status === 403) return "You need to give permission first. Open Permission at the top.";
     if (err.status === 413) return "Those files are too large together. Try a few at a time.";
     if (err.status >= 500) return "Our server had trouble reading those. Try again in a moment.";
     return err.message;

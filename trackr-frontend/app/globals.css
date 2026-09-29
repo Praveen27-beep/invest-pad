@@ -204,6 +204,10 @@
   --page-padding-x: var(--space-8);
   --page-padding-y: var(--space-6);
   --content-max: 1180px;
+  /* The single-column screens -- Import, Reconcile, Settings, Privacy. Forms and prose,
+     not tables, so they are read at one width and centred instead of stretched to the
+     window. One variable, so the four cannot drift apart. */
+  --page-column: 860px;
 
   /* ---- Radius ---- */
   --radius-xs: 4px;
@@ -271,18 +275,21 @@
   --ink-700: #d4d3cf;
   --ink-600: #ada9a3;
   --ink-400: #8e8b86;
-  --ink-300: #6f6e69;
-  --ink-200: #4a4a47;
-  --ink-100: #373735;
-  --ink-50: #2a2a28;
+  --ink-300: #61605c;
+  --ink-200: #2a2a28;
+  --ink-100: #1c1c1b;
+  --ink-50: #131312;
 
-  --page: #191918;
-  --surface: #232322;
-  --surface-raised: #2a2a28;
-  --surface-sunken: #1f1f1e;
-  --surface-hover: #2c2c2b;
-  --surface-active: #373735;
-  --overlay-scrim: rgb(10 10 10 / 0.6);
+  /* Surfaces sit near-black. Structure is carried entirely by the 1px rules below, so
+     the gaps between them are deliberately hairline — a wider surface step would read as
+     elevation on a palette that has no other depth cue. */
+  --page: #0a0a09;
+  --surface: #131312;
+  --surface-raised: #1b1b1a;
+  --surface-sunken: #0e0e0d;
+  --surface-hover: #1e1e1d;
+  --surface-active: #282827;
+  --overlay-scrim: rgb(0 0 0 / 0.72);
 
   --text-primary: #f0efed;
   --text-secondary: #d4d3cf;
@@ -290,14 +297,23 @@
   --text-inverse: #191918;
   --text-link: #6f9dff;
 
-  --border: #373735;
-  --border-strong: #4a4a47;
+  /* Near-black fills leave the 1px rules to carry all the structure, so the rules are
+     the load-bearing value here, not the surface step between page and card. Kept at
+     roughly their original visual weight — the fills moved, the lines did not have to. */
+  --border: #333331;
+  --border-strong: #434340;
   --border-focus: #f0efed;
 
-  --positive: #34b076;
-  --positive-tint: #1c2b23;
-  --negative: #e15c52;
-  --negative-tint: #2e1f1d;
+  /* On near-black, a sign colour is read as HUE first and lightness second, so both are
+     pushed for purity rather than muted for restraint: the old red carried 143 more blue
+     than red and the green 66 more blue than red, which is why they read as salmon and
+     sea-green rather than as loss and gain. Checked against all six surfaces --
+     --surface-active is the binding one at 4.85:1, and the old red was already failing
+     AA there at 4.11:1, so this is a fix rather than a lateral move. */
+  --positive: #3ecf6e;
+  --positive-tint: #17291d;
+  --negative: #ff5c52;
+  --negative-tint: #331d1a;
   --warning: #d9b168;
   --warning-tint: #2b2519;
   --info: #6f9dff;
@@ -328,9 +344,9 @@
   --chart-mono-3: #ada9a3;
   --chart-mono-4: #8e8b86;
   --chart-mono-5: #5f5e59;
-  --chart-mono-6: #3d3d3b;
+  --chart-mono-6: #323230;
 
-  --chart-grid: #373735;
+  --chart-grid: #2a2a28;
   --chart-axis-text: #8e8b86;
 
   --alloc-1: #e6e3dc;
@@ -351,28 +367,34 @@
   --ledger-ink: #f7f5f1;
   --ledger-ink-soft: #c8c3b8;
   --ledger-ink-faint: #9c9689;
-  --ledger-ink-negative: #f0958a;
-  --ledger-ink-positive: #86ce9c;
-  --ledger-rule: #565b54;
-  --ledger-chip-text: #191918;
+  /* The ledger register: the same red/green family as --negative/--positive, a step
+     quieter so a ruled slip still reads as a slip. Held at ~0.65 saturation against the
+     main pair's ~0.69 — close enough to be one system, far enough to keep the register. */
+  --ledger-ink-negative: #f85f57;
+  --ledger-ink-positive: #46c85a;
+  --ledger-rule: #4d524a;
+  --ledger-chip-text: #0a0a09;
 
   --data-received: #6fae9f;
 
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
-  --skeleton: #33332f;
+  --skeleton: #262625;
   --shadow-slip: 0 0 0 1px var(--border), 0 2px 5px rgb(0 0 0 / 0.28);
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 28px -8px rgb(0 0 0 / 0.55);
   --shadow-menu: 0 12px 32px -12px rgb(0 0 0 / 0.6);
   --shadow-overlay: 0 20px 44px -16px rgb(0 0 0 / 0.6);
 
+  /* navy-900/700/600 and cream-100/50 are an INVERSE pair — a light solid button fill
+     carrying dark text — so they stay light here. Darkening them would make the label
+     and its own background the same value. Only the structural steps drop. */
   --color-navy-900: 240 239 237;
   --color-navy-700: 212 211 207;
   --color-navy-600: 173 169 163;
   --color-navy-400: 142 139 134;
-  --color-navy-100: 55 55 53;
-  --color-navy-50: 42 42 40;
+  --color-navy-100: 51 51 49;
+  --color-navy-50: 38 38 36;
 
-  --color-cream-200: 55 55 53;
+  --color-cream-200: 38 38 36;
   --color-cream-100: 25 25 24;
   --color-cream-50: 31 31 30;
 
@@ -381,10 +403,10 @@
   --color-brass-400: 220 176 105;
   --color-brass-50: 43 37 25;
 
-  --color-surface: 35 35 34;
-  --color-surface-raised: 42 42 40;
-  --color-positive: 52 176 118;
-  --color-negative: 225 92 82;
+  --color-surface: 19 19 18;
+  --color-surface-raised: 27 27 26;
+  --color-positive: 62 207 110;
+  --color-negative: 255 92 82;
 
   color-scheme: dark;
 }

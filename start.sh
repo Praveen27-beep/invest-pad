@@ -144,23 +144,60 @@ section "Step 2 — Database migrations"
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-(cd "$BACKEND_DIR" && python - <<'PYEOF'
-import sys, os, psycopg
-from app.db.migrate import migrate
-url = os.environ["DATABASE_URL"]
+# MIGRATIONS RUN AS THE MIGRATION IDENTITY, not as whatever DATABASE_URL happens to be.
+# The identity that runs DDL owns the tables it creates, and a table owner can drop the
+# append-only triggers migration 044 installs -- so the connection that serves requests
+# must not be the connection that migrates. app.db.migrate.migration_url() prefers
+# MIGRATION_DATABASE_URL and falls back to DATABASE_URL, which is what a single-role dev
+# box does; the fallback is PRINTED rather than silent, and Settings refuses it outright
+# once WORKSPACE_ENABLED is true.
+#
+# One commit, after the whole run. The six-file 040–045 workspace bundle applies atomically
+# or not at all; committing per file would make a failure in 045 a permanent deployment
+# with unguarded research tables.
+if ! (cd "$BACKEND_DIR" && python - <<'PYEOF'
+import sys, psycopg
+from app.db.migrate import migrate, migration_url
+try:
+    url, separate = migration_url()
+except Exception as exc:
+    print(f"  FAILED: {exc}", file=sys.stderr); sys.exit(1)
+
+if separate:
+    print("  migrating as MIGRATION_DATABASE_URL (separate schema owner)")
+else:
+    print("  migrating as DATABASE_URL — no separate migration identity configured.")
+    print("    Fine for development. Required before WORKSPACE_ENABLED=true:")
+    print("    see docs/DEPLOYMENT.md, 'Workspace database identities'.")
+
 try:
     conn = psycopg.connect(url)
+except Exception as exc:
+    # Redacted: psycopg quotes the DSN it failed on, password included.
+    from app.db.connection import redact
+    print(f"  FAILED to connect to {redact(url)}: {exc}", file=sys.stderr); sys.exit(1)
+
+try:
     applied = migrate(conn)
-    conn.commit(); conn.close()
+    conn.commit()
     if applied:
         print(f"  applied {len(applied)} migration(s):")
         for f in applied: print(f"    ✓ {f}")
     else:
         print("  schema is up to date — nothing to apply")
 except Exception as exc:
+    conn.rollback()
     print(f"  FAILED: {exc}", file=sys.stderr); sys.exit(1)
+finally:
+    conn.close()
 PYEOF
-)
+); then
+    # Startup STOPS here. A schema that did not migrate is not a degraded start: the
+    # incomplete-bundle fence refusing is the system telling you the workspace tables
+    # would land half-guarded, and booting anyway would apply nothing and serve against a
+    # schema nobody has checked.
+    die "migrations failed — see the message above. The stack was not started."
+fi
 ok "migrations complete"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -208,6 +245,31 @@ else
     done
     ok "backend healthy (${elapsed}s)"
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REFERENCE WORKER — durable upload-triggered NSDL/NSE reconciliation
+# ─────────────────────────────────────────────────────────────────────────────
+section "Reference worker"
+if [[ -f "$PID_DIR/reference-worker.pid" ]]; then
+    reference_pid=$(cat "$PID_DIR/reference-worker.pid")
+    kill -0 "$reference_pid" 2>/dev/null || rm -f "$PID_DIR/reference-worker.pid"
+fi
+if [[ ! -f "$PID_DIR/reference-worker.pid" ]]; then
+    (
+        cd "$BACKEND_DIR"
+        if command -v setsid &>/dev/null; then
+            exec setsid "$VENV_DIR/bin/python" -m app.reference_worker \
+                </dev/null >> "$LOG_DIR/reference-worker.log" 2>&1
+        else
+            exec "$VENV_DIR/bin/python" -m app.reference_worker \
+                </dev/null >> "$LOG_DIR/reference-worker.log" 2>&1
+        fi
+    ) &
+    reference_pid=$!
+    disown "$reference_pid" 2>/dev/null || true
+    echo "$reference_pid" > "$PID_DIR/reference-worker.pid"
+fi
+step "reference worker PID $(cat "$PID_DIR/reference-worker.pid") → $LOG_DIR/reference-worker.log"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 3.5 — DAILY SNAPSHOTS

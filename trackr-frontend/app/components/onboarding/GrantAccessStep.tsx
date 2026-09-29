@@ -117,7 +117,7 @@ export function GrantAccessStep({
           }}
         >
           <Icon name="check" size={14} />
-          Permission already on file — nothing to do here.
+          You have already given permission.
         </p>
       )}
     </div>

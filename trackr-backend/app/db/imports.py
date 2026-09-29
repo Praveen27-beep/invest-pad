@@ -232,6 +232,8 @@ def stage_batch(
     actor_uid: str | None = None,
     doctype: str = "TRADEBOOK",
     content_type: str = "text/csv",
+    delivery_id: str | None = None,
+    email_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Parse a file into staged rows. Writes NOTHING to ``transaction``.
 
@@ -312,6 +314,7 @@ def stage_batch(
             content_type=content_type,
             account_id=account_id,
             actor_uid=actor_uid,
+            email_meta=email_meta,
         )
         document_id = str(stored["id"])
 
@@ -319,8 +322,9 @@ def stage_batch(
         cur.execute(
             """
             INSERT INTO import_batch (investor_id, account_id, adapter, filename, sha256,
-                                      document_id, row_count, rejected_count, notes)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                                      document_id, row_count, rejected_count, notes,
+                                      delivery_id)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
             """,
             (
@@ -333,38 +337,51 @@ def stage_batch(
                 result.parsed,
                 result.rejected,
                 json.dumps(result.notes + identity_notes),
+                delivery_id,
             ),
         )
         batch_id = str(cur.fetchone()[0])
 
-        for staged in result.rows:
-            cur.execute(
+        # ONE ROUND TRIP PER STATEMENT, NOT PER ROW. This was a `for` loop around
+        # `cur.execute`, which is 365 sequential round trips for one year's tradebook.
+        # Parsing that file takes ~6 ms; staging it that way cost 0.7-3.7 s against a
+        # remote Postgres -- a hundred times the parse, and the dominant term in the whole
+        # ingestion path. `executemany` sends the batch in one exchange.
+        # Measured and written up in docs/BACKFILL_PIPELINE.md section 4.0.
+        if result.rows:
+            cur.executemany(
                 """
                 INSERT INTO import_row (batch_id, row_number, confidence, dedupe_key, payload)
                 VALUES (%s,%s,%s,%s,%s)
                 """,
-                (
-                    batch_id,
-                    staged.row_number,
-                    staged.confidence,
-                    make_dedupe_key(staged.transaction),
-                    json.dumps(
-                        {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
-                    ),
-                ),
+                [
+                    (
+                        batch_id,
+                        staged.row_number,
+                        staged.confidence,
+                        make_dedupe_key(staged.transaction),
+                        json.dumps(
+                            {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
+                        ),
+                    )
+                    for staged in result.rows
+                ],
             )
-        for rejection in result.rejections:
-            cur.execute(
+        if result.rejections:
+            cur.executemany(
                 """
                 INSERT INTO import_row (batch_id, row_number, status, payload, reason)
                 VALUES (%s,%s,'REJECTED',%s,%s)
                 """,
-                (
-                    batch_id,
-                    rejection.row_number,
-                    json.dumps({"raw": rejection.raw}),
-                    rejection.reason,
-                ),
+                [
+                    (
+                        batch_id,
+                        rejection.row_number,
+                        json.dumps({"raw": rejection.raw}),
+                        rejection.reason,
+                    )
+                    for rejection in result.rejections
+                ],
             )
 
     audit.record(
@@ -463,34 +480,41 @@ def reparse_batch(
         # STAGED-only guard above means nothing here has been promoted, so no row
         # being removed is the ledger's provenance record for anything live.
         cur.execute("DELETE FROM import_row WHERE batch_id = %s", (batch_id,))
-        for staged in result.rows:
-            cur.execute(
+        # Batched for the same reason as stage_batch's -- see the comment there.
+        if result.rows:
+            cur.executemany(
                 """
                 INSERT INTO import_row (batch_id, row_number, confidence, dedupe_key, payload)
                 VALUES (%s,%s,%s,%s,%s)
                 """,
-                (
-                    batch_id,
-                    staged.row_number,
-                    staged.confidence,
-                    make_dedupe_key(staged.transaction),
-                    json.dumps(
-                        {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
-                    ),
-                ),
+                [
+                    (
+                        batch_id,
+                        staged.row_number,
+                        staged.confidence,
+                        make_dedupe_key(staged.transaction),
+                        json.dumps(
+                            {"transaction": _txn_to_payload(staged.transaction), "raw": staged.raw}
+                        ),
+                    )
+                    for staged in result.rows
+                ],
             )
-        for rejection in result.rejections:
-            cur.execute(
+        if result.rejections:
+            cur.executemany(
                 """
                 INSERT INTO import_row (batch_id, row_number, status, payload, reason)
                 VALUES (%s,%s,'REJECTED',%s,%s)
                 """,
-                (
-                    batch_id,
-                    rejection.row_number,
-                    json.dumps({"raw": rejection.raw}),
-                    rejection.reason,
-                ),
+                [
+                    (
+                        batch_id,
+                        rejection.row_number,
+                        json.dumps({"raw": rejection.raw}),
+                        rejection.reason,
+                    )
+                    for rejection in result.rejections
+                ],
             )
         cur.execute(
             "UPDATE import_batch SET row_count = %s, rejected_count = %s, notes = %s WHERE id = %s",

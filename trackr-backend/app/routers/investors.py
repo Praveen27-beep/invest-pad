@@ -22,12 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth.dependencies import get_current_user, require_owned_investor
 from app.config import Settings, get_settings
 from app.database import get_conn
-from app.db import consent, repository
+from app.db import consent, forwarding_confirmation, repository
 from app.db.repository import create_account, create_investor, set_investor_pan
 from app.ingest.addresses import forwarding_addresses, forwarding_enabled
 from app.schemas.investors import (
     AccountIn,
     AccountOut,
+    ForwardingCodeOut,
     InvestorIn,
     InvestorOut,
     OnboardingStateOut,
@@ -35,6 +36,28 @@ from app.schemas.investors import (
 )
 
 router = APIRouter(prefix="/investors", tags=["onboarding"])
+
+
+@router.get("", response_model=list[InvestorOut])
+def list_investors(
+    connection: Any = Depends(get_conn),
+    current_user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """Every portfolio this login owns, oldest first.
+
+    THE ENDPOINT THAT MAKES SWITCHING POSSIBLE. Creating a second investor has always
+    worked, and /auth/login has always echoed back exactly one -- the oldest
+    (``first_investor_id_for_user``). With no way to enumerate the rest, a login that
+    owned two portfolios could reach the second only in the browser session that created
+    it: log out, log back in, and the session snapped to the first with the second
+    unreachable from any screen. Nothing was lost, and nothing would admit it was there.
+
+    Scoped by ownership rather than by a path parameter, so there is no investor id to
+    authorise -- the query itself is the authorisation, and a login sees its own rows or
+    an empty list. That is why this is the one investor route with no
+    ``require_owned_investor``.
+    """
+    return repository.list_investors_for_user(connection, str(current_user["id"]))
 
 
 @router.post("", response_model=InvestorOut, status_code=status.HTTP_201_CREATED)
@@ -79,6 +102,29 @@ def list_accounts(
         )
         account["investor_id"] = investor_id
     return accounts
+
+
+@router.get(
+    "/{investor_id}/forwarding-code",
+    response_model=list[ForwardingCodeOut],
+    dependencies=[Depends(require_owned_investor)],
+)
+def forwarding_codes(
+    investor_id: str,
+    connection: Any = Depends(get_conn),
+) -> list[dict[str, Any]]:
+    """Gmail forwarding verification codes caught for this investor, newest per address.
+
+    Gmail mails a numeric code to a forwarding address and refuses to forward anything
+    until that code is pasted back into Gmail's settings. The inbound webhook catches it
+    (app/ingest/webhook.py) and this hands it back to the only person who can use it.
+
+    An empty list is the normal answer almost all of the time -- before a filter has been
+    created, and after the code has aged out -- so it is not a 404. Codes older than
+    ``MAX_CODE_AGE_HOURS`` are omitted rather than shown stale: sending someone to paste
+    a value Gmail has already forgotten is worse than showing nothing.
+    """
+    return forwarding_confirmation.latest_confirmation_codes(connection, investor_id)
 
 
 @router.get(

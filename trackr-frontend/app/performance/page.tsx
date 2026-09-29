@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 // Commented out 2026-09-08. Every figure this page showed -- both XIRR variants,
 // absolute return, benchmark comparison -- already lives on the Dashboard
@@ -29,11 +29,23 @@ import { useRouter } from "next/navigation";
 // }
 
 /** Sends anyone who still has this URL saved to the Dashboard, where the same numbers
- *  live now. */
+ *  live now.
+ *
+ *  THE QUERY STRING SURVIVES THE REDIRECT. This used to be a bare `router.replace("/")`,
+ *  which threw it away -- so a saved `/performance?range=1y` landed on an unfiltered
+ *  Dashboard, and the only interesting part of the bookmark was silently discarded. A
+ *  compatibility redirect that loses the parameters is not compatibility.
+ *
+ *  Forwarded verbatim rather than translated: the Dashboard reads whichever parameters it
+ *  understands and ignores the rest, which is a better contract than a hand-maintained
+ *  mapping that would need editing every time either page grew a parameter. `/portfolio`
+ *  does translate, because its `?tab=` named a route that no longer exists. */
 export default function PerformancePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   useEffect(() => {
-    router.replace("/");
-  }, [router]);
+    const query = searchParams.toString();
+    router.replace(query ? `/?${query}` : "/");
+  }, [router, searchParams]);
   return null;
 }

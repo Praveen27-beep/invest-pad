@@ -6,24 +6,24 @@ import { Chevron } from "./icons";
 
 const FAQS = [
   {
-    q: "Do I have to hand over my broker login?",
-    a: "No — and there is nowhere to put one if you wanted to. No passwords, no API tokens, no OTP secrets. You bring a file or forward an email, and that is the whole integration surface.",
+    q: "Do you need my broker login?",
+    a: "No, and there is nowhere to put one. No passwords, no API keys, no OTPs. You upload a file or forward an email, and that is the whole setup.",
   },
   {
-    q: "What happens to my cost basis after a split or bonus?",
-    a: "It carries across at the original lot cost, so the pool is unchanged and your holding period is never reset. The action is verified against your own ledger before it is trusted, and quarantined for review if it does not reconcile.",
+    q: "What happens to my cost after a bonus or split?",
+    a: "Your cost stays the same and your holding period is not reset. We check the action against your own trades first. If the numbers do not add up, we hold it for you to review instead of guessing.",
   },
   {
-    q: "Which assets does Trackr+ cover?",
-    a: "Indian listed equities on NSE and BSE — deliberately one asset class, done properly. Mutual funds, bonds and the rest are out of scope today; the data model leaves room for them without a migration.",
+    q: "What can I track here?",
+    a: "Indian listed shares on NSE and BSE. One thing, done properly. Mutual funds, bonds and the rest are not covered yet.",
   },
   {
     q: "Is Trackr+ a broker or an adviser?",
-    a: "Neither. Trackr+ is portfolio analytics. It does not place orders, hold your money, or tell you what to buy. It tells you — precisely and reproducibly — what your own history already amounts to.",
+    a: "Neither. We do not place orders, hold your money, or tell you what to buy. We show you what your own trades add up to.",
   },
   {
     q: "Can I get my data out again?",
-    a: "Yes. Your ledger exports in full, and erasure removes it rather than hiding it. Everything the engine computes is derived from that export, so nothing of yours is locked inside the product.",
+    a: "Yes. You can export your full trade history at any time. Delete really deletes it, it does not just hide it.",
   },
 ];
 
@@ -34,9 +34,9 @@ export function LandingFaq() {
     <section id="faq" className="l-section">
       <div className="l-container l-split">
         <Reveal className="l-split-text">
-          <h2 className="l-h2" style={{ marginTop: 0 }}>Questions worth asking.</h2>
+          <h2 className="l-h2" style={{ marginTop: 0 }}>Common questions.</h2>
           <p style={{ margin: "16px 0 0", fontSize: 15, lineHeight: 1.6, color: "var(--l-text-3)" }}>
-            Still unsure about something? <a href="#contact" style={{ color: "var(--l-accent)" }}>Talk to us</a> — a person replies.
+            Still not sure about something? <a href="#contact" style={{ color: "var(--l-accent)" }}>Talk to us</a>. A person replies.
           </p>
         </Reveal>
 

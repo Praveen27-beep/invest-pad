@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/report_request.schema.json",
+  "title": "ReportRequestIn",
+  "description": "An explicit, owned, bounded request. The person decides afterwards; nothing here asks\nfor, or can carry, a recommendation.",
+  "additionalProperties": false,
+  "properties": {
+    "isin": {
+      "maxLength": 12,
+      "minLength": 12,
+      "title": "Isin",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 500,
+      "minLength": 3,
+      "title": "Question",
+      "type": "string"
+    },
+    "mode": {
+      "default": "CURRENT_WITH_HISTORY",
+      "enum": [
+        "CURRENT_WITH_HISTORY",
+        "POINT_IN_TIME"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "cutoff": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cutoff"
+    },
+    "window_years": {
+      "default": 10,
+      "maximum": 10,
+      "minimum": 1,
+      "title": "Window Years",
+      "type": "integer"
+    },
+    "statements": {
+      "items": {
+        "enum": [
+          "INCOME_STATEMENT",
+          "BALANCE_SHEET",
+          "CASH_FLOW",
+          "SEGMENTS",
+          "SHAREHOLDING",
+          "AUDITOR_REPORT"
+        ],
+        "type": "string"
+      },
+      "maxItems": 6,
+      "minItems": 1,
+      "title": "Statements",
+      "type": "array"
+    },
+    "basis": {
+      "default": "CONSOLIDATED",
+      "enum": [
+        "CONSOLIDATED",
+        "STANDALONE"
+      ],
+      "title": "Basis",
+      "type": "string"
+    },
+    "scope": {
+      "default": "ISSUER_ONLY",
+      "enum": [
+        "ISSUER_ONLY",
+        "ISSUER_PLUS_PRIVATE_RESEARCH"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "budget": {
+      "pattern": "^(0|[1-9][0-9]{0,17})(\\.[0-9]{1,6})?$",
+      "title": "Budget",
+      "type": "string"
+    },
+    "deadline_minutes": {
+      "default": 240,
+      "maximum": 240,
+      "minimum": 5,
+      "title": "Deadline Minutes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "isin",
+    "question",
+    "budget"
+  ],
+  "type": "object"
+}

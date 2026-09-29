@@ -27,6 +27,7 @@ exactly where migration 027 already put them.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import UTC, date, datetime
 from typing import Any
@@ -171,6 +172,7 @@ def _upsert_circular(
     old_isin: str | None,
     alias_created: bool,
     skip_reason: str | None,
+    pdf_sha256: str | None = None,
 ) -> None:
     with conn.cursor() as cur:
         cur.execute(
@@ -178,9 +180,19 @@ def _upsert_circular(
             INSERT INTO isin_change_circular
                 (circular_number, circular_ref, circular_date, subject_raw, symbol,
                  new_isin, remarks_raw, reason_class, reason_confidence, wef_date,
-                 ex_date, source_url, old_isin, alias_created, skip_reason)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (circular_number) DO NOTHING
+                 ex_date, source_url, old_isin, alias_created, skip_reason, pdf_sha256,
+                 attempts, next_retry_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    1, now() + interval '1 hour')
+            ON CONFLICT (circular_number) DO UPDATE SET
+                symbol=EXCLUDED.symbol, new_isin=EXCLUDED.new_isin,
+                remarks_raw=EXCLUDED.remarks_raw, ex_date=EXCLUDED.ex_date,
+                wef_date=EXCLUDED.wef_date, source_url=EXCLUDED.source_url,
+                old_isin=EXCLUDED.old_isin, alias_created=EXCLUDED.alias_created,
+                skip_reason=EXCLUDED.skip_reason, pdf_sha256=EXCLUDED.pdf_sha256,
+                attempts=isin_change_circular.attempts+1,
+                next_retry_at=EXCLUDED.next_retry_at
+            WHERE NOT isin_change_circular.alias_created
             """,
             (
                 listing.circular_number,
@@ -198,6 +210,7 @@ def _upsert_circular(
                 old_isin,
                 alias_created,
                 skip_reason,
+                pdf_sha256,
             ),
         )
     conn.commit()
@@ -209,6 +222,7 @@ def refresh_isin_change_feed(
     end: date,
     source: Any | None = None,
     actor_uid: str | None = None,
+    max_documents: int = 20,
 ) -> dict[str, Any]:
     """Poll NSE's "Change in ISIN" circulars for ``[start, end]`` and write a DRAFT
     ``security_alias`` row for every one whose symbol resolves to exactly one known
@@ -247,9 +261,20 @@ def refresh_isin_change_feed(
         }
 
     with conn.cursor() as cur:
-        cur.execute("SELECT circular_number FROM isin_change_circular")
+        cur.execute(
+            "SELECT circular_number FROM isin_change_circular "
+            "WHERE alias_created OR next_retry_at > now()"
+        )
         already_seen = {row[0] for row in cur.fetchall()}
-    new_listings = [row for row in listings if row.circular_number not in already_seen]
+        cur.execute(
+            "SELECT circular_number, circular_ref, circular_date, subject_raw, source_url "
+            "FROM isin_change_circular WHERE NOT alias_created "
+            "AND (next_retry_at IS NULL OR next_retry_at <= now()) ORDER BY fetched_at"
+        )
+        retry_listings = [CircularListing(*row) for row in cur.fetchall()]
+    by_number = {row.circular_number: row for row in retry_listings + listings}
+    eligible = [r for r in by_number.values() if r.circular_number not in already_seen]
+    new_listings = eligible[:max_documents]
 
     aliases_created = 0
     skipped = 0
@@ -321,6 +346,7 @@ def refresh_isin_change_feed(
             _upsert_circular(
                 conn, listing, parsed, old_isin=old_isin,
                 alias_created=alias_created, skip_reason=skip_reason,
+                pdf_sha256=hashlib.sha256(pdf_bytes).hexdigest(),
             )
         except psycopg.errors.UniqueViolation:
             conn.rollback()
@@ -331,10 +357,13 @@ def refresh_isin_change_feed(
             skipped += 1
 
     _record_attempt(conn, FEED_NAME, succeeded=True)
-    return {
+    result = {
         "fetched": len(new_listings),
         "aliases_created": aliases_created,
         "skipped": skipped,
         "breaker_open": False,
         "error": None,
     }
+    if len(eligible) > len(new_listings):
+        result["remaining"] = len(eligible) - len(new_listings)
+    return result

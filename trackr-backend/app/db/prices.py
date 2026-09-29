@@ -20,6 +20,60 @@ from typing import Any
 from app.engine.holdings import MAX_PRICE_STALENESS_DAYS
 
 
+def adjusted_price_series(
+    conn: Any, isins: Sequence[str], start: date, end: date
+) -> dict[str, list[tuple[date, Decimal]]]:
+    """Price-return series across evidenced identifiers, adjusted for verified splits/bonuses.
+
+    Stored exchange closes remain untouched. This is not a dividend total-return series.
+    Ambiguous same-date action records suppress the affected series instead of applying
+    an arbitrary adjustment twice.
+    """
+    from app.db.corporate_actions import list_corporate_actions
+    from app.db.security_alias import verified_map
+    from app.engine.corporate_actions import CorpActionType, Verification
+
+    if not isins:
+        return {}
+    aliases = verified_map(conn, end)
+    wanted = set(isins)
+    expanded = sorted(wanted | {old for old, new in aliases.items() if new in wanted})
+    raw = price_series(conn, expanded, start, end)
+    events: dict[str, dict[date, Decimal]] = {}
+    ambiguous = set()
+    for action in list_corporate_actions(conn, expanded, Verification.VERIFIED):
+        if action.action_type not in (CorpActionType.SPLIT, CorpActionType.BONUS):
+            continue
+        if not start < action.ex_date <= end:
+            continue
+        isin = aliases.get(action.isin, action.isin)
+        by_date = events.setdefault(isin, {})
+        if action.ex_date in by_date:
+            ambiguous.add(isin)
+        multiplier = action.multiplier()
+        by_date[action.ex_date] = Decimal(multiplier.numerator) / Decimal(multiplier.denominator)
+    combined: dict[str, dict[date, Decimal]] = {}
+    for source_isin, points in raw.items():
+        isin = aliases.get(source_isin, source_isin)
+        if isin not in wanted or isin in ambiguous:
+            continue
+        target = combined.setdefault(isin, {})
+        for on, close in points:
+            # Overlap between retired/current histories is ambiguous; don't silently
+            # select whichever record happens to be returned first.
+            factor = Decimal(1)
+            for ex_date, multiplier in events.get(isin, {}).items():
+                if on < ex_date:
+                    factor *= multiplier
+            adjusted = close / factor
+            if on in target and target[on] != adjusted:
+                ambiguous.add(isin)
+            target[on] = adjusted
+    return {
+        isin: sorted(points.items()) for isin, points in combined.items() if isin not in ambiguous
+    }
+
+
 def upsert_prices(conn: Any, prices: list[Any]) -> int:
     """Store merged prices. Idempotent: re-running a day changes nothing.
 
@@ -68,7 +122,36 @@ def latest_prices(
             """,
             (list(isins), as_of, floor),
         )
-        return {row[0]: row[1] for row in cur.fetchall()}
+        result = {row[0]: row[1] for row in cur.fetchall()}
+        missing = [isin for isin in isins if isin not in result]
+        if missing:
+            # Some archives print the retired ISIN on the ex-date (Tata Steel 2022).
+            # Use only that exact observed quote, tied to a verified dated evidence
+            # record. Never carry a pre-split old-ISIN quote into new share units.
+            cur.execute(
+                """SELECT e.current_isin,b.close FROM security_alias_evidence e
+                   JOIN security_alias a ON a.old_isin=e.old_isin
+                       AND a.current_isin=e.current_isin AND a.verification='VERIFIED'
+                       AND a.effective_date=e.effective_date
+                   JOIN reference_bhavcopy_security b
+                       ON b.isin=e.evidence->>'ex_price_isin'
+                       AND b.price_date=(e.evidence->'after'->>'date')::date
+                       AND b.series=e.evidence->>'series'
+                   WHERE e.current_isin=ANY(%s) AND e.effective_date <= %s
+                       AND b.price_date BETWEEN %s AND %s""",
+                (missing, as_of, floor, as_of),
+            )
+            observations: dict[str, set[Decimal]] = {}
+            for isin, close in cur.fetchall():
+                observations.setdefault(isin, set()).add(close)
+            result.update(
+                {
+                    isin: next(iter(values))
+                    for isin, values in observations.items()
+                    if len(values) == 1
+                }
+            )
+        return result
 
 
 def price_series(

@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
 import { useFetch } from "@/lib/use-fetch";
 import type { AccountOut, BatchSummaryOut, BrokerOut, ConsentStatusOut, StageResultOut } from "@/lib/api-types";
-import { Banner, Button, Card, Input } from "../ds";
+import { Banner, Card, Skeleton } from "../ds";
 import { ConsentCapture } from "../ConsentCapture";
 import { StagingBatch } from "../StagingBatch";
 import { FileUploadStep } from "../onboarding/FileUploadStep";
@@ -34,12 +33,16 @@ function summaryFromBatchRow(row: BatchSummaryOut): StageResultOut {
  * registry (`GET /brokers`) instead of naming brokers in this component, so a broker
  * added there needs no change here. Reusing it rather than re-solving the same problem
  * a second time is also what keeps the two screens from drifting apart.
+ *
+ * THERE IS NO "LOOK UP A BATCH BY ID" FORM. It asked for a UUID, which is a debugging
+ * affordance wearing a product's clothes: nobody has a batch id to hand, and the one place
+ * they used to come from -- a staged batch the page had forgotten -- is exactly what
+ * `GET /ingest/batches` fixed. The list below shows every STAGED batch this investor has,
+ * from the server, so there is nothing left for a person to paste in.
  */
 export function ImportTab() {
   const { investorId, token } = useAuth();
-  const router = useRouter();
   const [batches, setBatches] = useState<StageResultOut[]>([]);
-  const [searchBatchId, setSearchBatchId] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [hasLiveConsent, setHasLiveConsent] = useState<boolean | null>(null);
 
@@ -93,24 +96,9 @@ export function ImportTab() {
     );
   }
 
-  function handleLoadBatch(e: React.FormEvent) {
-    e.preventDefault();
-    const trimmed = searchBatchId.trim();
-    if (!trimmed) return;
-    setBatches((prev) => {
-      if (prev.some((b) => b.batch_id === trimmed)) return prev;
-      return [
-        { batch_id: trimmed, parsed: 0, rejected: 0, sha256: "", document_id: null, notes: [] },
-        ...prev,
-      ];
-    });
-    setSearchBatchId("");
-    setLoadError(null);
-  }
-
   return (
     <div style={{ display: "grid", gap: 20 }}>
-      <Card title="Upload a statement" subtitle="From any broker — we work out what each file is.">
+      <Card title="Upload a statement" subtitle="From any broker. We work out what each file is.">
         <div style={{ display: "grid", gap: 16 }}>
           {hasLiveConsent === false && (
             <Banner tone="warning" title="One step first: record consent for this investor">
@@ -126,14 +114,23 @@ export function ImportTab() {
             </Banner>
           )}
 
-          {hasLiveConsent !== false && (
-            <FileUploadStep
-              accounts={accounts.data ?? []}
-              brokers={brokers.data ?? []}
-              onStaged={() => void refreshBatches()}
-              onTypeInstead={() => router.push("/transactions")}
-            />
-          )}
+          {/* Until the accounts land, `accounts.data` is undefined and FileUploadStep's
+              honest answer to "no accounts" is a warning banner -- which flashed up on
+              every visit and vanished a moment later. A placeholder of the right shape is
+              the truthful thing to show while we do not know yet. */}
+          {hasLiveConsent !== false &&
+            (accounts.loading || brokers.loading ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <Skeleton height={112} />
+                <Skeleton height={12} width="52%" />
+              </div>
+            ) : (
+              <FileUploadStep
+                accounts={accounts.data ?? []}
+                brokers={brokers.data ?? []}
+                onStaged={() => void refreshBatches()}
+              />
+            ))}
         </div>
       </Card>
 
@@ -141,7 +138,7 @@ export function ImportTab() {
         {loadError && <Banner tone="negative">{loadError}</Banner>}
         {batches.length === 0 ? (
           <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
-            Nothing staged yet — upload a file above, or look one up by batch ID below.
+            Nothing staged yet. Upload a file above and it will appear here.
           </p>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
@@ -150,22 +147,6 @@ export function ImportTab() {
             ))}
           </div>
         )}
-      </Card>
-
-      <Card title="Look up an existing batch" subtitle="Have a batch ID from somewhere else? Pull it in here.">
-        <form onSubmit={handleLoadBatch} style={{ display: "flex", gap: 10 }}>
-          <div style={{ flex: 1 }}>
-            <Input
-              value={searchBatchId}
-              onChange={setSearchBatchId}
-              placeholder="e.g. c195c00f-264c-4fae-ad45-d1135da22ed2"
-              style={{ fontFamily: "var(--font-mono)" }}
-            />
-          </div>
-          <Button type="submit" variant="secondary">
-            Load batch
-          </Button>
-        </form>
       </Card>
     </div>
   );

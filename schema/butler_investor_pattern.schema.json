@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mei.capital/schema/butler_investor_pattern.schema.json",
+  "title": "Pattern",
+  "description": "BT 12/13 -- one investor-notebook pattern as shown to the person it describes: catalogue id, exact supporting and counter episodes, alternatives, limitations, origin (CODE or MODEL), status and influence history. A tentative observation about recorded process, never a fact about the person. Never part of any report schema.",
+  "$defs": {
+    "Episode": {
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "catalogue_id": {
+          "title": "Catalogue Id",
+          "type": "string"
+        },
+        "polarity": {
+          "enum": [
+            "SUPPORTS",
+            "COUNTERS",
+            "UNDETERMINED"
+          ],
+          "title": "Polarity",
+          "type": "string"
+        },
+        "observation_code": {
+          "title": "Observation Code",
+          "type": "string"
+        },
+        "source_category": {
+          "title": "Source Category",
+          "type": "string"
+        },
+        "comparability_key": {
+          "title": "Comparability Key",
+          "type": "string"
+        },
+        "isin": {
+          "title": "Isin",
+          "type": "string"
+        },
+        "occurred_on": {
+          "format": "date",
+          "title": "Occurred On",
+          "type": "string"
+        },
+        "knowable_at": {
+          "format": "date-time",
+          "title": "Knowable At",
+          "type": "string"
+        },
+        "anchor_kind": {
+          "title": "Anchor Kind",
+          "type": "string"
+        },
+        "anchor_id": {
+          "title": "Anchor Id",
+          "type": "string"
+        },
+        "review_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Review Id"
+        },
+        "thesis_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Thesis Id"
+        },
+        "prior_thesis_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Prior Thesis Id"
+        },
+        "response_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Id"
+        },
+        "evaluation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evaluation Id"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "builder_version": {
+          "title": "Builder Version",
+          "type": "string"
+        },
+        "consent_version": {
+          "title": "Consent Version",
+          "type": "integer"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "corrected": {
+          "title": "Corrected",
+          "type": "boolean"
+        },
+        "correction_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Correction Code"
+        },
+        "origin": {
+          "const": "CODE",
+          "title": "Origin",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "catalogue_id",
+        "polarity",
+        "observation_code",
+        "source_category",
+        "comparability_key",
+        "isin",
+        "occurred_on",
+        "knowable_at",
+        "anchor_kind",
+        "anchor_id",
+        "review_id",
+        "thesis_id",
+        "prior_thesis_id",
+        "response_id",
+        "evaluation_id",
+        "limitations",
+        "builder_version",
+        "consent_version",
+        "recorded_at",
+        "corrected",
+        "correction_code",
+        "origin"
+      ],
+      "title": "Episode",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "pattern_id": {
+      "title": "Pattern Id",
+      "type": "string"
+    },
+    "catalogue_id": {
+      "title": "Catalogue Id",
+      "type": "string"
+    },
+    "catalogue_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Catalogue Version"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "eligible": {
+      "title": "Eligible",
+      "type": "string"
+    },
+    "comparison": {
+      "title": "Comparison",
+      "type": "string"
+    },
+    "positive": {
+      "title": "Positive",
+      "type": "boolean"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    },
+    "revision": {
+      "title": "Revision",
+      "type": "integer"
+    },
+    "revision_id": {
+      "title": "Revision Id",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "CODE",
+        "MODEL"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "stored_status": {
+      "title": "Stored Status",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "status_reason": {
+      "title": "Status Reason",
+      "type": "string"
+    },
+    "supporting": {
+      "items": {
+        "$ref": "#/$defs/Episode"
+      },
+      "title": "Supporting",
+      "type": "array"
+    },
+    "counterexamples": {
+      "items": {
+        "$ref": "#/$defs/Episode"
+      },
+      "title": "Counterexamples",
+      "type": "array"
+    },
+    "counts": {
+      "additionalProperties": true,
+      "title": "Counts",
+      "type": "object"
+    },
+    "window": {
+      "additionalProperties": {
+        "format": "date",
+        "type": "string"
+      },
+      "title": "Window",
+      "type": "object"
+    },
+    "alternatives": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "questions": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "limitations": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "user_state": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "User State",
+      "type": "object"
+    },
+    "user_notes": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "User Notes",
+      "type": "array"
+    },
+    "consent_version": {
+      "title": "Consent Version",
+      "type": "integer"
+    },
+    "reflection_job_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Reflection Job Id"
+    },
+    "rule_version": {
+      "title": "Rule Version",
+      "type": "string"
+    },
+    "last_evaluated_at": {
+      "format": "date-time",
+      "title": "Last Evaluated At",
+      "type": "string"
+    },
+    "influence": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Influence",
+      "type": "array"
+    },
+    "used_for_coaching": {
+      "title": "Used For Coaching",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "pattern_id",
+    "catalogue_id",
+    "catalogue_version",
+    "text",
+    "eligible",
+    "comparison",
+    "positive",
+    "scope",
+    "revision",
+    "revision_id",
+    "origin",
+    "stored_status",
+    "status",
+    "status_reason",
+    "supporting",
+    "counterexamples",
+    "counts",
+    "window",
+    "alternatives",
+    "questions",
+    "limitations",
+    "user_state",
+    "user_notes",
+    "consent_version",
+    "reflection_job_id",
+    "rule_version",
+    "last_evaluated_at",
+    "influence",
+    "used_for_coaching"
+  ],
+  "type": "object"
+}

@@ -41,6 +41,12 @@ const CSP = [
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // The shared packages ship TypeScript source, not a build artifact -- there is no
+  // separate compile step to keep in sync and no stale `dist/` to debug. Next compiles
+  // them with this app's own toolchain, which is also what keeps React a single
+  // instance across app and packages.
+  // https://nextjs.org/docs/app/api-reference/config/next-config-js/transpilePackages
+  transpilePackages: ["@trackr/core", "@trackr/portfolio"],
   async headers() {
     return [
       {

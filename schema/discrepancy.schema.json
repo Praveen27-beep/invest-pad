@@ -24,7 +24,7 @@
       "description": "declared_qty - computed_qty"
     },
     "ratio": {
-      "type": ["number", "null"],
+      "$ref": "transaction.schema.json#/$defs/nullableDecimal",
       "description": "declared_qty / computed_qty. Null when computed_qty is zero. The cause heuristics key off this: about 2 suggests a 1:1 bonus or 1:2 split, about 3 a 1:2 bonus or 1:3 split, about 5 or 10 a split."
     },
     "likely_cause": {

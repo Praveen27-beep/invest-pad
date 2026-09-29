@@ -11,7 +11,7 @@ export function DiscrepancyTable({ rows }: { rows: DiscrepancyOut[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="border-b border-navy-100 text-left text-[11px] uppercase tracking-wide text-navy-400">
+        <tr className="text-left text-[11px] uppercase tracking-wide text-navy-400">
           <th className="py-2 pr-3 font-medium">ISIN</th>
           <th className="py-2 pr-3 font-medium text-right">Computed</th>
           <th className="py-2 pr-3 font-medium text-right">Declared</th>

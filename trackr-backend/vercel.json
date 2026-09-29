@@ -6,6 +6,10 @@
       "schedule": "30 10 * * *"
     },
     {
+      "path": "/ops/cron/prices-backfill",
+      "schedule": "40 10 * * *"
+    },
+    {
       "path": "/ops/corporate-actions/refresh-cron",
       "schedule": "45 10 * * *"
     },
@@ -36,6 +40,18 @@
     {
       "path": "/ops/dividends/discover-yfinance-cron",
       "schedule": "45 11 * * 0"
+    },
+    {
+      "path": "/ops/dividends/reconcile-cron",
+      "schedule": "55 11 * * *"
+    },
+    {
+      "path": "/ops/cron/jobs-drain",
+      "schedule": "20 11 * * *"
+    },
+    {
+      "path": "/ops/reference-sync/run-cron",
+      "schedule": "35 11 * * *"
     }
   ]
 }

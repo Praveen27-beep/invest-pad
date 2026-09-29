@@ -95,6 +95,10 @@ class BrokerOut(BaseModel):
     #: True only when this broker has an email adapter AND this deployment has a
     #: mail-receiving domain. False means no address exists to show, not "not yet".
     forwarding: bool = False
+    #: Whether an email adapter exists for this broker at all, independent of the
+    #: deployment's mail domain. With ``forwarding`` false, this is what says whether the
+    #: missing address is our gap (no parser) or the deployment's (no inbound mail).
+    email_adapter: bool = False
     #: How this broker locks contract-note PDFs, in a sentence. "" when we have no
     #: documented rule for it -- which is a thing to say, not a thing to guess.
     pdf_password: str = ""
@@ -134,3 +138,22 @@ class OnboardingStateOut(BaseModel):
     #: The first unfinished step -- "permission", "brokers", "history" -- or None when
     #: complete. What the wizard opens on, so it resumes rather than restarts.
     next_step: str | None = None
+
+
+class ForwardingCodeOut(BaseModel):
+    """One Gmail forwarding verification code, for GET /investors/{id}/forwarding-code.
+
+    Gmail will not forward to an address until a code it mails to that address is pasted
+    back into Gmail's own settings. Nothing in this product can paste it for the person,
+    and auto-clicking the confirmation link would be us granting a mail permission on
+    their behalf -- so the honest shape is to catch the code and hand it straight back.
+    See migration 037 for why this is evidence rather than a credential.
+    """
+
+    #: Lowercase, as the address segments are parsed -- app.ingest.webhook.parse_to_address.
+    broker: str
+    doctype: str
+    code: str
+    #: When the verification mail arrived. Shown so a person can tell a code they are
+    #: waiting for from one left over from an earlier attempt.
+    received_at: datetime

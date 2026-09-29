@@ -2,14 +2,22 @@
 
 import Link from "next/link";
 import { Reveal } from "./Reveal";
-import { ArrowRight, BrandMark, Instagram, LinkedIn, XMark } from "./icons";
+import { BrandMark, Instagram, LinkedIn, XMark } from "./icons";
 
+/**
+ * Three columns, and no more.
+ *
+ * The closing statement and its "Get started" button are gone: the same call to action
+ * sits in the header, fixed, the whole way down the page, and a second one three lines
+ * above the copyright was competing with it rather than adding anything. The oversized
+ * wordmark went with them — it was taller than every link in the footer put together.
+ */
 const COLUMNS = [
   {
     head: "Product",
     links: [
       { label: "Overview", href: "#top" },
-      { label: "Security", href: "#security" },
+      { label: "How your data is handled", href: "#security" },
       { label: "Pricing", href: "/coming-soon?feature=Pricing" },
     ],
   },
@@ -38,25 +46,21 @@ export function LandingFooter() {
     <footer className="l-footer">
       <div className="l-container">
         <Reveal>
-          <div className="l-footer-statement">
-            <h2 className="l-h2" style={{ marginTop: 0 }}>The ledger is the source of truth.</h2>
-            <Link href="/register" className="l-btn l-btn-ghost" style={{ height: 48, flexShrink: 0 }}>
-              Get started <ArrowRight size={15} />
-            </Link>
-          </div>
-        </Reveal>
-
-        <Reveal>
           <div className="l-footer-cols">
             <div className="l-footer-brand">
               <span className="l-brand">
                 <span className="l-mark"><BrandMark /></span>
                 <span className="l-wordmark">Trackr+</span>
               </span>
-              <p style={{ margin: "16px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "var(--l-text-3)" }}>
-                Portfolio intelligence for Indian equity investors. Every number
-                reproducible from your own ledger.
+              <p style={{ margin: "14px 0 0", fontSize: 13.5, lineHeight: 1.6, color: "var(--l-text-3)" }}>
+                Stock portfolio tracking for Indian investors. Every number comes from your
+                own trades.
               </p>
+              <div className="l-social">
+                <a href="#linkedin" aria-label="Trackr+ on LinkedIn"><LinkedIn /></a>
+                <a href="#x" aria-label="Trackr+ on X"><XMark /></a>
+                <a href="#instagram" aria-label="Trackr+ on Instagram"><Instagram /></a>
+              </div>
             </div>
 
             <div className="l-footer-links">
@@ -76,24 +80,12 @@ export function LandingFooter() {
           </div>
         </Reveal>
 
-        <Reveal>
-          <div className="l-social">
-            <a href="#linkedin" aria-label="Trackr+ on LinkedIn"><LinkedIn /></a>
-            <a href="#x" aria-label="Trackr+ on X"><XMark /></a>
-            <a href="#instagram" aria-label="Trackr+ on Instagram"><Instagram /></a>
-          </div>
-        </Reveal>
-
-        <div className="l-bigmark" aria-hidden="true">
-          <span>Trackr+</span>
-        </div>
-
         <div className="l-footer-legal">
           <p>
-            Trackr+ is a portfolio analytics product. It is not a broker, an investment
-            adviser or an execution venue, it does not provide investment advice, and it
-            does not place orders or hold client funds. Indian listed equities only.
-            Figures shown throughout this page are illustrative sample data.
+            Trackr+ is a portfolio tracking product. It is not a broker, an investment
+            adviser or an exchange. It does not give investment advice, place orders or
+            hold your money. Indian listed shares only. Every figure shown on this page is
+            sample data.
           </p>
           <span>© {new Date().getFullYear()} Trackr+</span>
         </div>

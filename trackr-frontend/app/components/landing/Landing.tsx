@@ -10,10 +10,10 @@ import { LandingFooter } from "./LandingFooter";
 import { ArrowRight, Doc, Mail, Shield, Table } from "./icons";
 
 const INGESTION = [
-  { icon: <Table />, title: "Upload a file", body: "Drop in the CSV or tradebook your broker already gives you. Uploading the same file twice never creates duplicates." },
-  { icon: <Mail />, title: "Forward an email", body: "Send us your contract notes and we'll read the trades out of them automatically." },
-  { icon: <Doc />, title: "Share a PDF", body: "We read your contract notes and turn them into a clean transaction history — nothing more." },
-  { icon: <Shield />, title: "Delete anytime", body: "One click removes everything — your trades, your history, all of it. Not just your login." },
+  { icon: <Table />, title: "Upload a file", body: "Use the CSV or tradebook your broker already gives you. Upload the same file twice and nothing gets counted twice." },
+  { icon: <Mail />, title: "Forward an email", body: "Forward your contract notes to us. We read the trades out of them for you." },
+  { icon: <Doc />, title: "Share a PDF", body: "Send a contract note PDF. We turn it into a clean list of your trades." },
+  { icon: <Shield />, title: "Delete anytime", body: "One click deletes everything. Your trades, your history, your account." },
 ];
 
 export function Landing() {
@@ -25,15 +25,14 @@ export function Landing() {
       <section id="security" className="l-section l-section-alt">
         <div className="l-container l-split">
           <Reveal className="l-split-text">
-            <span className="l-eyebrow">Security</span>
-            <h2 className="l-h2">We never store your information.</h2>
+            <h2 className="l-h2" style={{ marginTop: 0 }}>We never ask for your broker password.</h2>
             <p className="l-body" style={{ marginTop: 18 }}>
-              We never ask for your broker password, and we couldn't store one even if we
-              wanted to — that option simply doesn't exist in our system. All we ever need is
-              a file you upload or an email you forward us. Nothing more.
+              There is nowhere in Trackr+ to keep a broker password, an API key or an OTP.
+              We could not store one if we tried. All we need is a file you upload or an
+              email you forward.
             </p>
             <Link href="/coming-soon?feature=Compliance" className="l-navlink" style={{ marginTop: 22, display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 500 }}>
-              Learn more about how we handle your data <ArrowRight size={15} />
+              How we handle your data <ArrowRight size={15} />
             </Link>
           </Reveal>
 

@@ -185,7 +185,7 @@ def list_aliases(conn: Any, verification: Verification | None = None) -> list[Se
         return [_row_to_alias(row) for row in cur.fetchall()]
 
 
-def verified_map(conn: Any) -> dict[str, str]:
+def verified_map(conn: Any, as_of: date | None = None) -> dict[str, str]:
     """Every VERIFIED alias, already resolved to its terminal ISIN.
 
     Returned fully collapsed (A -> C, not A -> B -> C) so the read path is a single dict
@@ -195,6 +195,7 @@ def verified_map(conn: Any) -> dict[str, str]:
     direct = {
         a.old_isin: a.current_isin
         for a in list_aliases(conn, verification=Verification.VERIFIED)
+        if a.effective_date <= (as_of or date.today())
     }
     resolved: dict[str, str] = {}
     for old in direct:
@@ -286,7 +287,7 @@ def reconcile_after_alias(
     from app.db.repository import load_transactions
     from app.engine.holdings import AVG_COST_PLACES, compute_holdings_partitioned
     from app.engine.lots import compute_lots
-    from app.engine.types import ZERO
+    from app.engine.types import ACQUIRING_TYPES, DISPOSING_TYPES, FREE_SHARE_TYPES, ZERO
 
     raw = load_transactions(conn, account_id=account_id, apply_aliases=False)
     before_lots = {
@@ -328,6 +329,10 @@ def reconcile_after_alias(
         if lot.isin == current_isin
     }
     known_dates = {d for (isin, d) in before_lots if isin in (old_isin, current_isin)}
+    known_dates.update(
+        t.txn_date for t in raw if t.isin in (old_isin, current_isin)
+        and t.txn_type in ACQUIRING_TYPES | FREE_SHARE_TYPES and t.txn_date <= as_of
+    )
     invented = after_dates - known_dates
     if invented:
         failures.append(
@@ -344,7 +349,11 @@ def reconcile_after_alias(
         (h.quantity for h in after_holdings if h.isin == current_isin), ZERO
     )
     tolerance = AVG_COST_PLACES * merged_quantity
-    if not failures and abs(before_pool - after_pool) > tolerance:
+    disposals = any(t.isin in (old_isin, current_isin) and t.txn_type in DISPOSING_TYPES
+                    and t.txn_date <= as_of for t in raw)
+    # Joining identifier histories can legitimately repair a previously unmatched sale
+    # or change the average cost assigned to it. Compare open pools only without sales.
+    if not failures and not disposals and abs(before_pool - after_pool) > tolerance:
         failures.append(f"cost pool moved: {before_pool} -> {after_pool}")
 
     return ReconcileResult(ok=not failures, failures=tuple(failures))
@@ -395,40 +404,28 @@ def _affected_accounts(conn: Any, old_isin: str, current_isin: str) -> list[tupl
 def promote_draft_aliases(
     conn: Any, as_of: date | None = None, actor_uid: str | None = None
 ) -> PromotionSummary:
-    """Run ``reconcile_after_alias`` against every account a DRAFT alias could affect,
-    and route the result to ``verify_alias`` or ``quarantine_alias``.
+    """Promote effective, evidenced drafts only after every affected account reconciles.
 
-    No check logic lives here -- ``reconcile_after_alias`` already implements all four
-    (unchanged transaction count, no new negative holding, no invented acquisition
-    dates, cost pool stable within Rule B's own rounding tolerance). This function only
-    decides what an alias's AGGREGATE result across every affected account means:
-
-      - zero affected accounts, or every one reconciling cleanly -> VERIFY. The zero
-        case is the common one in practice (an ISIN change for a company nothing in
-        this ledger holds) and is vacuously safe: nothing exists for the alias to break.
-      - any affected account failing -> QUARANTINE, immediately, on the first failure --
-        matching ``quarantine_alias``'s own stated philosophy that a ledger-breaking
-        alias is automatically wrong, not merely worth a second look. The reason string
-        names every failing account and check, so ``security_alias.notes`` tells a human
-        exactly what to fix before ever reopening it.
-      - ``reconcile_after_alias`` itself raising for some account -> LEAVE DRAFT. A
-        transport or database hiccup is not evidence the identity claim is wrong, and
-        ``verify_alias`` refuses to un-quarantine a DISPUTED row -- wrongly quarantining
-        on an unrelated failure would be a one-way door. Retried on the next run.
-
-    Scope is every DRAFT row, not only ones a particular feed created --
-    ``reconcile_after_alias`` doesn't care where an alias came from, and a hand-entered
-    DRAFT deserves the same automated promotion path as an automated one.
-
-    Idempotent by construction: an alias promoted or quarantined by an earlier run is no
-    longer DRAFT, so ``list_aliases(conn, verification=Verification.DRAFT)`` naturally
-    excludes it from every later run without any separate attempt-tracking needed.
+    Ledger arithmetic is a rejection gate, never proof of identity. Missing evidence
+    or incomplete personal history leaves a draft pending for subsequent retries.
+    DISPUTED aliases remain excluded and require an explicit correction.
     """
     as_of = as_of or date.today()
     verified = quarantined = inconclusive = 0
     details: list[str] = []
 
     for alias in list_aliases(conn, verification=Verification.DRAFT):
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM security_alias_evidence WHERE old_isin=%s "
+                "AND current_isin=%s AND effective_date=%s",
+                (alias.old_isin, alias.current_isin, alias.effective_date),
+            )
+            evidence = cur.fetchone()
+        if evidence is None or alias.effective_date > as_of:
+            inconclusive += 1
+            details.append(f"{alias.old_isin}: waiting for dated identity evidence")
+            continue
         affected = _affected_accounts(conn, alias.old_isin, alias.current_isin)
 
         failures: list[str] = []
@@ -466,10 +463,10 @@ def promote_draft_aliases(
 
         if failures:
             reason = "; ".join(failures)
-            quarantine_alias(conn, alias.old_isin, reason, actor_uid=actor_uid)
-            conn.commit()
-            quarantined += 1
-            details.append(f"{alias.old_isin} -> {alias.current_isin}: quarantined -- {reason}")
+            # Incomplete personal history can fail this gate without disproving the
+            # exchange's identity evidence. Retry after subsequent uploads.
+            inconclusive += 1
+            details.append(f"{alias.old_isin} -> {alias.current_isin}: pending -- {reason}")
         else:
             verify_alias(conn, alias.old_isin, actor_uid=actor_uid)
             conn.commit()

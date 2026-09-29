@@ -10,6 +10,21 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 from app.engine.types import Source, TxnType
+from app.schemas.decimals import DecimalText, NonNegativeDecimalText, OptionalDecimalText
+
+#: docs/DATA_MODEL.md's txn_type table: the only three types whose documented quantity
+#: effect is 0 -- DIVIDEND ("qty = 0, price = 0, amount in dividend_amount") and the
+#: DEMERGER_COST_OUT/IN pair ("a row whose quantity and price are both zero", the amount
+#: living in cost_transfer instead). Every other type has a real + or - quantity effect
+#: and must carry a genuine, positive quantity.
+_ZERO_QUANTITY_TYPES = frozenset(
+    {TxnType.DIVIDEND, TxnType.DEMERGER_COST_OUT, TxnType.DEMERGER_COST_IN}
+)
+
+#: Comfortably above any real single manual entry (the golden portfolio's largest line
+#: is 2,250 shares) and far below the range where the UI's numeric columns start
+#: overlapping -- a guard against a fat-fingered extra digit, not a real trading limit.
+_MAX_SANE_QUANTITY = Decimal("100000000")
 
 #: docs/DATA_MODEL.md's txn_type table: the only three types whose documented quantity
 #: effect is 0 -- DIVIDEND ("qty = 0, price = 0, amount in dividend_amount") and the
@@ -47,15 +62,21 @@ class TransactionIn(BaseModel):
     isin: str = Field(pattern=r"^IN[A-Z0-9]{10}$")
     txn_date: date
     txn_type: TxnType
-    quantity: Decimal = Field(ge=0, le=_MAX_SANE_QUANTITY)
-    price: Decimal = Field(ge=0)
-    charges: Decimal = Decimal("0")
-    stt: Decimal = Decimal("0")
-    dividend_amount: Decimal = Decimal("0")
+    # Every money/quantity field below takes exact decimal TEXT: a JSON number is
+    # refused at the boundary rather than silently widened into a float. See
+    # app/schemas/decimals.py -- this ledger is append-only, so a value that arrives
+    # wrong stays wrong. `NonNegative...` marks the two fields that already carried a
+    # `ge=0` bound; no field gains or loses one here.
+    quantity: NonNegativeDecimalText = Field(ge=0, le=_MAX_SANE_QUANTITY)
+    price: NonNegativeDecimalText = Field(ge=0)
+    charges: DecimalText = Decimal("0")
+    stt: DecimalText = Decimal("0")
+    dividend_amount: DecimalText = Decimal("0")
     # NET of tax withheld. None means UNKNOWN, not zero -- see migration 030. A manual
-    # dividend entry supplies this only when a document actually states it.
-    tds_amount: Decimal | None = None
-    cost_transfer: Decimal = Decimal("0")
+    # dividend entry supplies this only when a document actually states it. The default
+    # and an explicit `null` are both still accepted; only a NUMBER is not.
+    tds_amount: OptionalDecimalText = None
+    cost_transfer: DecimalText = Decimal("0")
     source: Source | None = None
     source_ref: str | None = None
     raw_payload: dict[str, Any] | None = None
@@ -218,3 +239,19 @@ class DiscoverDividendsYfinanceOut(BaseModel):
     unchanged: int = 0
     failed: int = 0
     errors: dict[str, str] = {}
+
+
+class ReconcileDividendsOut(BaseModel):
+    """Result of one second-pass run -- see ``app.db.dividend_reconcile``. ``pending`` is
+    the leftover DRAFT events a holder was eligible for; the rest count what happened to
+    the ones processed this run (bounded, so a backlog drains across days)."""
+
+    pending: int = 0
+    verified: int = 0
+    disputed: int = 0
+    no_nse_row: int = 0
+    ambiguous: int = 0
+    no_bhavcopy: int = 0
+    identity_unproven: int = 0
+    nse_sourced: int = 0
+    failed: int = 0

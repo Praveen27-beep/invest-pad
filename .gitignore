@@ -66,6 +66,14 @@ scratch/
 # trackr-frontend/ (Next.js)
 trackr-frontend/node_modules/
 trackr-frontend/.next/
+
+# The second frontend application, and the npm-workspaces root. `node_modules/` at the
+# root is where npm hoists shared dependencies once the workspaces are installed; the
+# two apps keep their own only for anything that cannot hoist.
+node_modules/
+trackr-workspace-frontend/node_modules/
+trackr-workspace-frontend/.next/
+packages/*/node_modules/
 trackr-frontend/out/
 trackr-frontend/next-env.d.ts
 trackr-frontend/*.tsbuildinfo

@@ -50,13 +50,15 @@ from __future__ import annotations
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol, runtime_checkable
 
-from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS, _ssl_context
+from app.ingest.nse_session import cookie_session
+from app.prices.sources import BROWSER_HEADERS, TIMEOUT_SECONDS
 
 NSE_HOMEPAGE_URL = "https://www.nseindia.com/"
 
@@ -154,10 +156,12 @@ class NseCircularListSource:
         self,
         opener: Any = None,
         sleep: Callable[[float], None] = time.sleep,
+        timeout: int = TIMEOUT_SECONDS,
     ) -> None:
-        self._opener = opener or urllib.request.urlopen
+        self._opener = opener if opener is not None else cookie_session().open
         self._bucket = _TokenBucket(_MAX_REQUESTS_PER_SECOND, sleep=sleep)
         self._sleep = sleep
+        self._timeout = timeout
 
     def _retrying(self, make_request: Callable[[], bytes], description: str) -> bytes:
         last_exc: BaseException | None = None
@@ -177,14 +181,14 @@ class NseCircularListSource:
         raise IsinChangeFeedFetchFailed(f"{description}: exhausted retries") from last_exc
 
     def list_circulars(self, start: date, end: date) -> bytes:
-        ctx = _ssl_context()
+        def _warmup() -> bytes:
+            warmup = urllib.request.Request(NSE_HOMEPAGE_URL, headers=BROWSER_HEADERS)
+            self._opener(warmup, timeout=self._timeout).close()
+            return b""
+
+        self._retrying(_warmup, "NSE session warm-up")
 
         def _list() -> bytes:
-            # Warm a session cookie first -- same confirmed-live requirement as
-            # corporate_action_feed's NSE_HOMEPAGE_URL warm-up.
-            warmup = urllib.request.Request(NSE_HOMEPAGE_URL, headers=BROWSER_HEADERS)
-            self._opener(warmup, timeout=TIMEOUT_SECONDS, context=ctx).close()
-
             request = urllib.request.Request(
                 NSE_CIRCULARS_URL.format(start=start, end=end),
                 headers={
@@ -193,20 +197,26 @@ class NseCircularListSource:
                     "Accept": "application/json",
                 },
             )
-            with self._opener(request, timeout=TIMEOUT_SECONDS, context=ctx) as response:
+            with self._opener(request, timeout=self._timeout) as response:
                 return response.read()
 
         return self._retrying(_list, "NSE circulars list")
 
     def fetch_pdf(self, url: str) -> bytes:
-        ctx = _ssl_context()
-
+        parsed_url = urllib.parse.urlsplit(url)
+        if (parsed_url.scheme != "https" or parsed_url.hostname not in {
+            "nsearchives.nseindia.com", "archives.nseindia.com", "www.nseindia.com",
+        } or parsed_url.username or parsed_url.password or parsed_url.port not in (None, 443)):
+            raise IsinChangeFeedFetchFailed("Circular URL is not an HTTPS NSE source")
         def _fetch() -> bytes:
             request = urllib.request.Request(
                 url, headers={**BROWSER_HEADERS, "Referer": NSE_HOMEPAGE_URL}
             )
-            with self._opener(request, timeout=TIMEOUT_SECONDS, context=ctx) as response:
-                return response.read()
+            with self._opener(request, timeout=self._timeout) as response:
+                payload = response.read(12 * 1024 * 1024 + 1)
+            if len(payload) > 12 * 1024 * 1024:
+                raise IsinChangeFeedFetchFailed("Circular PDF exceeds size limit")
+            return payload
 
         return self._retrying(_fetch, f"NSE circular PDF {url}")
 

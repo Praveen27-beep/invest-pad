@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import type { LauncherState } from "@trackr/core";
 import { NAV_GROUPS } from "./nav";
 
 /**
@@ -11,28 +12,31 @@ import { NAV_GROUPS } from "./nav";
  * loses only its top border. Rendered always (not conditionally) so the open/close
  * transition has something to animate between; `pointerEvents` and `aria-hidden` carry
  * the closed state instead of unmounting.
+ *
+ * APPEARANCE ONLY. Every behaviour a keyboard or screen-reader user depends on -- the dialog
+ * role and name, focus containment, Escape and backdrop close, and returning focus to the
+ * actual invoker -- now comes from `@trackr/core`'s `useLauncher`, which Workspace uses too.
+ * This file decides what it looks like and nothing else. The visual design below is unchanged.
+ *
+ * ROWS ARE REAL LINKS NOW, not buttons. That is the one substantive change: a `<button>` with
+ * an onClick cannot be cmd-clicked into a new tab, so the launcher was the only navigation in
+ * the app where that did not work. `rowProps` gives each row an href and intercepts only a
+ * plain left click.
  */
 export function SectionMapModal({
-  open,
-  onClose,
+  launcher,
   activeHref,
 }: {
-  open: boolean;
-  onClose: () => void;
+  launcher: LauncherState;
   activeHref: string;
 }) {
-  const router = useRouter();
-
-  function go(href: string) {
-    onClose();
-    router.push(href);
-  }
+  const { open, backdropProps, panelProps, rowProps } = launcher;
 
   return (
     <>
       {open && (
         <div
-          onClick={onClose}
+          {...backdropProps}
           style={{
             position: "fixed",
             inset: 0,
@@ -43,7 +47,8 @@ export function SectionMapModal({
         />
       )}
       <div
-        aria-hidden={!open}
+        {...panelProps}
+        tabIndex={-1}
         style={{
           position: "fixed",
           left: "50%",
@@ -82,10 +87,10 @@ export function SectionMapModal({
               {g.items.map((i) => {
                 const isActive = i.href === activeHref;
                 return (
-                  <button
+                  <Link
                     key={i.href}
-                    type="button"
-                    onClick={() => go(i.href)}
+                    {...rowProps(i.href)}
+                    aria-current={isActive ? "page" : undefined}
                     style={{
                       display: "flex",
                       width: "100%",
@@ -103,7 +108,7 @@ export function SectionMapModal({
                   >
                     {i.label}
                     <span style={{ color: "var(--text-tertiary)" }}>{i.meta ?? ""}</span>
-                  </button>
+                  </Link>
                 );
               })}
             </div>

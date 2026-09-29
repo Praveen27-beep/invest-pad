@@ -1,0 +1,22 @@
+{
+  "description": "STORED SAMPLE for isolated demo/test investors only (settings.workspace_sample_investors). Loaded by sample_ref through the ordinary result and review path and permanently labelled STORED_SAMPLE. It is not a model output and says nothing about any company. '@N' is replaced with the task's Nth context id at load time.",
+  "sample_ref": "sample_uncertainties",
+  "proposal": {
+    "schema_version": "1",
+    "summary_template": "Stored demonstration sample. It was written in advance and describes no company.",
+    "sections": [
+      {
+        "heading": "UNCERTAINTIES",
+        "paragraphs": [
+          {
+            "text_template": "This stored sample was not produced from the evidence pinned in this task, so it establishes nothing about it.",
+            "classification": "UNKNOWN",
+            "context_ids": [],
+            "value_refs": [],
+            "exact_quotes": []
+          }
+        ]
+      }
+    ]
+  }
+}

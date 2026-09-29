@@ -8,7 +8,7 @@ import type { DeclaredHoldingIn, DiscrepancyOut } from "@/lib/api-types";
 import { NoInvestorState } from "../components/PageState";
 import { PageHeader } from "../components/PageHeader";
 import { PageBody } from "../components/Shell";
-import { EMPTY_VALUE } from "@/lib/format";
+import { EMPTY_VALUE, parseDecimal } from "@/lib/format";
 import {
   Badge,
   Banner,
@@ -41,7 +41,7 @@ export default function ReconcilePage() {
     return (
       <>
         <PageHeader title="Reconcile" subtitle="Compare computed holdings against a statement." />
-        <PageBody>
+        <PageBody column>
           <NoInvestorState />
         </PageBody>
       </>
@@ -63,18 +63,56 @@ export default function ReconcilePage() {
         json: { as_of: reconcileAsOf || undefined, source: source || undefined, holdings },
         token,
       });
+      /*
+        A MALFORMED RESPONSE IS A FAILURE, not a reconciliation.
+
+        Every quantity on every row has to be readable exact decimal text before any of
+        this is shown. Without the check, an unreadable `computed_qty` fell through
+        `Number(...) === 0` as NaN, counted as quantity DRIFT, and drew a confident
+        outcome chart -- a specific claim about a specific security, made from a value the
+        page could not read. The previous run's chart must not survive either; `results`
+        is cleared so the page cannot describe an attempt that did not succeed.
+      */
+      const unreadable = res.find(
+        (r) =>
+          parseDecimal(r.computed_qty) === null ||
+          parseDecimal(r.declared_qty) === null ||
+          parseDecimal(r.difference) === null
+      );
+      if (unreadable) {
+        setResults(null);
+        setError(
+          `The server returned a quantity this page cannot read (${unreadable.isin}). ` +
+            "Nothing is shown rather than a figure that might be wrong."
+        );
+        return;
+      }
       setResults(res);
     } catch (err) {
+      setResults(null);
       setError(err instanceof ApiError ? err.message : "Reconciliation failed");
     } finally {
       setSubmitting(false);
     }
   }
 
-  // Outcome split, computed from the response rather than assumed: a row the engine
-  // returned is a discrepancy; everything declared and not returned matched exactly.
+  /*
+    Outcome split, computed from the response rather than assumed: a row the engine
+    returned is a discrepancy; everything declared and not returned matched exactly.
+
+    "Missing locally" means the computed quantity is EXACTLY ZERO -- the ledger has no
+    position at all, as opposed to the wrong one. Compared in Decimal: `"0"`, `"0.0000"`
+    and `"-0"` are all zero, while `"0.0000000000000000001"` is a real fractional holding
+    and is quantity drift. `Number(qty) === 0` got the first three right and the fourth
+    wrong, and silently classified an unreadable quantity as drift; the response is
+    validated above, so by here every quantity parses.
+
+    The three counts stay INTEGERS. They are array lengths, and the PieChart that draws
+    them is counting positions, not money.
+  */
   const matched = results ? Math.max(0, declaredCount - results.length) : 0;
-  const missingLocally = results?.filter((r) => Number(r.computed_qty) === 0).length ?? 0;
+  const missingLocally =
+    results?.filter((r) => parseDecimal(r.computed_qty)?.isZero() === true).length ?? 0;
   const drift = results ? results.length - missingLocally : 0;
 
   const outcomeSlices: Slice[] = [
@@ -90,7 +128,7 @@ export default function ReconcilePage() {
         subtitle="Compare holdings computed from your ledger against a broker or depository statement."
       />
 
-      <PageBody>
+      <PageBody column>
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap-section)" }}>
           <Card title="Declared holdings" subtitle="Quantities as they appear on your statement">
             <Banner tone="info" title="Nothing is fetched automatically">
@@ -166,11 +204,13 @@ export default function ReconcilePage() {
             </form>
           </Card>
 
+          {/* Results stack, not side by side: in a `--page-column` measure the two-column
+              version left the six-column discrepancy table about 480px to work in. */}
           {results && (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(320px, 1fr) minmax(0, 1.6fr)",
+                gridTemplateColumns: "minmax(0, 1fr)",
                 gap: "var(--gap-grid)",
                 alignItems: "start",
               }}

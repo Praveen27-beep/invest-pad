@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { formatDate, formatPercent, signClass } from "@/lib/format";
 
-type TrailingWindow = { key: string; label: string; value: number | null; twrr: number | null };
+// Rates are exact decimal strings on the wire (BE 02) and stay strings here: a window
+// switcher shows and colours them, and neither needs a number to do it.
+type TrailingWindow = { key: string; label: string; value: string | null; twrr: string | null };
 
 /**
  * XIRR by trailing window -- FY, 1Y, 3Y, 5Y -- with TWRR beside the selected one.
@@ -38,15 +40,15 @@ export function XirrWindowCard({
   periodXirr,
   periodStart,
 }: {
-  fyXirr: number | null;
-  xirr1y: number | null;
-  xirr3y: number | null;
-  xirr5y: number | null;
-  fyTwrr: number | null;
-  twrr1y: number | null;
-  twrr3y: number | null;
-  twrr5y: number | null;
-  periodXirr: number | null;
+  fyXirr: string | null;
+  xirr1y: string | null;
+  xirr3y: string | null;
+  xirr5y: string | null;
+  fyTwrr: string | null;
+  twrr1y: string | null;
+  twrr3y: string | null;
+  twrr5y: string | null;
+  periodXirr: string | null;
   periodStart: string | null;
 }) {
   const windows: TrailingWindow[] = [

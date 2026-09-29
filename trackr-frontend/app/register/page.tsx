@@ -46,6 +46,12 @@ export default function RegisterPage() {
       setError("Passwords don't match");
       return;
     }
+    // `required` on the input rejects an empty value but not a space, and a name that is
+    // only whitespace would be stored and then shown back as a blank.
+    if (!displayName.trim()) {
+      setError("Please enter your name");
+      return;
+    }
     if (!acceptedTerms) {
       setError("Please accept the Terms and Privacy Policy to continue");
       return;
@@ -56,7 +62,7 @@ export default function RegisterPage() {
       await register({
         email,
         password,
-        display_name: displayName || null,
+        display_name: displayName.trim(),
         tos_version: CURRENT_TOS_VERSION,
       });
       // The dashboard, not Settings. The wizard opens over it (components/Shell.tsx),
@@ -74,8 +80,8 @@ export default function RegisterPage() {
     <AuthLayout title="Create an account" subtitle="Trackr+ portfolio intelligence">
       <form onSubmit={onSubmit} style={authFormStyle}>
         <AuthError message={error} />
-        <Field label="Name" hint="Optional." htmlFor="name">
-          <Input id="name" value={displayName} onChange={setDisplayName} />
+        <Field label="Name" htmlFor="name">
+          <Input id="name" required autoComplete="name" value={displayName} onChange={setDisplayName} />
         </Field>
         <Field label="Email" htmlFor="email">
           <Input id="email" type="email" required autoComplete="email" value={email} onChange={setEmail} />

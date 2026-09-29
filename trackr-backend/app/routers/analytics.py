@@ -34,7 +34,8 @@ from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db.fundamentals import latest as latest_fundamentals
 from app.db.index_levels import get_index_levels
-from app.db.prices import held_isins, latest_prices, price_series
+from app.db.prices import adjusted_price_series as price_series
+from app.db.prices import held_isins, latest_prices
 from app.db.repository import load_transactions
 from app.db.universe import DEFAULT_UNIVERSE, current_universe_isins
 from app.engine.holdings import compute_holdings_partitioned
@@ -81,7 +82,7 @@ def analytics(
 ) -> dict[str, Any]:
     """Everything the analytics screen renders, from one replay of the ledger."""
     on = as_of or date.today()
-    transactions = load_transactions(connection, investor_id, advised_only=advised_only)
+    transactions = load_transactions(connection, investor_id, advised_only=advised_only, date_to=on)
 
     # Partitioned, not raw: a segment that does not reconcile is carried out as a named
     # exception rather than silently producing a negative holding.
@@ -307,7 +308,7 @@ def analytics(
         "coverage": _coverage(positions, total_value, history, shared_dates),
         "sources": {
             "quantity_and_cost": "Trackr+ ledger, replayed by app.engine.holdings (FIFO)",
-            "prices": "NSE/BSE bhavcopy via app.prices.pipe",
+            "prices": "NSE/BSE bhavcopy; verified split/bonus-adjusted price-return series",
             "fundamentals": "Yahoo Finance via yfinance (unofficial endpoint), cached",
             "market_cap_bucket": "AMFI half-yearly categorisation, ISIN-keyed",
             "sector": "NSE industry classification, ISIN-keyed",

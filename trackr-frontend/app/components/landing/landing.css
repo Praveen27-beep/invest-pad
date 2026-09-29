@@ -27,6 +27,12 @@
   --l-accent: #dcb069;
   --l-accent-dim: #d9b168;
   --l-accent-tint: #2b2519;
+
+  /* Mirrors the app's own `--page` from `:root.dark` in globals.css. Repeated as a
+   * literal only because the screenshot's bottom fade has to name that colour with an
+   * alpha of 0 at one end, and `transparent` ramps through transparent BLACK in Safari,
+   * which puts a dark band across the middle of the fade. */
+  --l-shot-page: #0a0a09;
   --l-pos: #34b076;
   --l-pos-tint: #1c2b23;
 
@@ -36,6 +42,10 @@
   color: var(--l-text);
   font-family: Inter, system-ui, sans-serif;
   min-height: 100vh;
+  /* The second window overhangs the frame's right edge by a few pixels at the narrow end
+     of the widest breakpoint. `clip` refuses the scrollbar without making this a scroll
+     container, which `hidden` would. */
+  overflow-x: clip;
 }
 
 .l-root *,
@@ -78,8 +88,6 @@ html[data-session="1"] .l-session-hold {
   0%, 100% { opacity: 0.5; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.07); }
 }
-@keyframes l-draw { to { stroke-dashoffset: 0; } }
-@keyframes l-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 
 @media (prefers-reduced-motion: no-preference) {
   .l-rise { animation: l-rise-up 0.9s var(--l-ease) both; }
@@ -92,8 +100,6 @@ html[data-session="1"] .l-session-hold {
   .l-reveal.l-in { opacity: 1; transform: none; }
 
   .l-breathe { animation: l-breathe 8s ease-in-out infinite; }
-  .l-blink { animation: l-blink 2.4s ease-in-out infinite; }
-  .l-draw { stroke-dasharray: 1400; stroke-dashoffset: 1400; animation: l-draw 2.4s var(--l-ease) 0.35s forwards; }
 }
 
 /* ── Header ─────────────────────────────────────────────────────────────────── */
@@ -107,7 +113,7 @@ html[data-session="1"] .l-session-hold {
   backdrop-filter: blur(14px);
 }
 .l-header-inner {
-  height: 72px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -176,16 +182,12 @@ html[data-session="1"] .l-session-hold {
 
 /* ── Type ───────────────────────────────────────────────────────────────────── */
 
-.l-eyebrow {
-  font-family: Archivo, system-ui, sans-serif;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.13em; text-transform: uppercase;
-  color: var(--l-accent);
-}
 .l-h1 {
-  margin: 24px 0 0;
+  /* No top margin: the h1 is the first thing in the hero, so its margin and the
+   * section's own padding were stacking into dead space above the headline. */
+  margin: 0;
+  font-size: clamp(36px, 4.6vw, 62px);
   font-family: Newsreader, Georgia, serif;
-  font-size: clamp(40px, 5.2vw, 74px);
   line-height: 1.06;
   font-weight: 500;
   letter-spacing: -0.022em;
@@ -199,61 +201,48 @@ html[data-session="1"] .l-session-hold {
   letter-spacing: -0.02em;
 }
 .l-lede {
-  margin: 20px 0 0;
-  font-size: clamp(15.5px, 1.3vw, 19px);
+  margin: 16px 0 0;
+  font-size: clamp(15.5px, 1.3vw, 18px);
   line-height: 1.62;
   color: var(--l-text-2);
 }
 .l-body { font-size: 16px; line-height: 1.62; color: var(--l-text-2); }
-
-.l-pill {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 32px; padding: 0 14px;
-  border: 1px solid var(--l-border); border-radius: 999px;
-  background: var(--l-sunken);
-  font-family: Archivo, system-ui, sans-serif;
-  font-size: 11px; font-weight: 600;
-  letter-spacing: 0.09em; text-transform: uppercase;
-  color: var(--l-text-2);
-}
-.l-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--l-pos); flex-shrink: 0; }
 
 /* ── Sections ───────────────────────────────────────────────────────────────── */
 
 .l-section { padding: clamp(56px, 7vw, 92px) 0; }
 .l-section-alt { background: var(--l-sunken); border-top: 1px solid var(--l-border); border-bottom: 1px solid var(--l-border); }
 .l-center { text-align: center; display: flex; flex-direction: column; align-items: center; }
-.l-measure { max-width: 700px; }
 
-.l-hero { padding: clamp(56px, 7vw, 110px) 0 clamp(56px, 6vw, 90px); }
+.l-hero { padding: clamp(26px, 3.2vw, 44px) 0 clamp(44px, 5vw, 72px); }
 .l-trust {
-  margin-top: 20px;
+  margin-top: 18px;
   display: flex; align-items: center; justify-content: center; gap: 8px;
   color: var(--l-text-3); font-size: 13px; text-align: center;
 }
-.l-cta-row { margin-top: 32px; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.l-cta-row { margin-top: 26px; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
 
 /* ── Cards ──────────────────────────────────────────────────────────────────── */
 
+/* These four wear the APP's card treatment, not the landing's: the near-black surface,
+   the ledger rule across the top, the square corner. The windows above them are the real
+   product and they are darker than anything else on this page, so a lighter card here
+   read as a different, duller product further down the same page. App tokens, not --l-*,
+   on purpose — this is the one place the marketing page quotes the product directly. */
 .l-card {
   padding: 20px 22px;
-  border: 1px solid var(--l-border);
-  border-radius: 10px;
-  background: var(--l-surface);
+  border: 1px solid var(--border);
+  border-top: 1px solid var(--ledger-rule);
+  border-radius: 0;
+  background: var(--surface);
   transition: transform 0.28s var(--l-ease), border-color 0.24s ease, background-color 0.24s ease;
 }
-.l-card:hover { transform: translateY(-3px); border-color: var(--l-border-2); background: var(--l-raised); }
+.l-card:hover { transform: translateY(-3px); border-color: var(--border-strong); background: var(--surface-raised); }
 .l-card-title { font-size: 14.5px; font-weight: 600; color: var(--l-text); }
 .l-card-body { margin: 8px 0 0; font-size: 13px; line-height: 1.55; color: var(--l-text-3); }
 
-.l-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.l-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 40px; }
 .l-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 
-@media (max-width: 900px) {
-  .l-grid-3 { grid-template-columns: 1fr; }
-  .l-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 20px; }
-}
 @media (max-width: 620px) {
   .l-grid-2 { grid-template-columns: 1fr; }
 }
@@ -292,14 +281,9 @@ html[data-session="1"] .l-session-hold {
 
 /* ── Footer ─────────────────────────────────────────────────────────────────── */
 
-.l-footer { border-top: 1px solid var(--l-border); padding-top: clamp(48px, 6vw, 72px); overflow: hidden; }
-.l-footer-statement { display: flex; align-items: center; justify-content: space-between; gap: 60px; }
-.l-footer-cols {
-  margin-top: 48px; padding-top: 44px;
-  border-top: 1px solid var(--l-border);
-  display: flex; gap: 90px;
-}
-.l-footer-brand { width: 320px; flex-shrink: 0; }
+.l-footer { border-top: 1px solid var(--l-border); padding-top: clamp(40px, 5vw, 56px); }
+.l-footer-cols { display: flex; gap: clamp(40px, 7vw, 96px); align-items: flex-start; }
+.l-footer-brand { width: 300px; flex-shrink: 0; }
 .l-footer-links { flex-grow: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
 .l-footer-col { display: flex; flex-direction: column; gap: 12px; }
 .l-footer-head {
@@ -315,9 +299,9 @@ html[data-session="1"] .l-session-hold {
 }
 .l-flink:hover { color: var(--l-text); transform: translateX(3px); }
 
-.l-social { margin-top: 40px; display: flex; align-items: center; gap: 10px; }
+.l-social { margin-top: 22px; display: flex; align-items: center; gap: 8px; }
 .l-social a {
-  width: 44px; height: 44px;
+  width: 38px; height: 38px;
   border: 1px solid var(--l-border); border-radius: 10px;
   background: var(--l-surface); color: var(--l-text-2);
   display: flex; align-items: center; justify-content: center;
@@ -325,26 +309,9 @@ html[data-session="1"] .l-session-hold {
 }
 .l-social a:hover { color: var(--l-page); background: var(--l-accent); border-color: var(--l-accent); transform: translateY(-2px); }
 
-.l-bigmark {
-  margin-top: 38px;
-  height: clamp(58px, 9.5vw, 136px);
-  overflow: hidden;
-}
-.l-bigmark span {
-  display: block;
-  font-family: Newsreader, Georgia, serif;
-  font-size: clamp(84px, 13.8vw, 196px);
-  line-height: 0.82;
-  font-weight: 500;
-  letter-spacing: -0.035em;
-  color: var(--l-surface);
-  white-space: nowrap;
-  user-select: none;
-}
-
 .l-footer-legal {
-  margin-top: 38px;
-  padding: 22px 0 26px;
+  margin-top: 44px;
+  padding: 20px 0 24px;
   border-top: 1px solid var(--l-border);
   display: flex; align-items: flex-start; justify-content: space-between; gap: 40px;
 }
@@ -352,24 +319,37 @@ html[data-session="1"] .l-session-hold {
 .l-footer-legal span { font-size: 12px; color: var(--l-text-4); white-space: nowrap; }
 
 @media (max-width: 980px) {
-  .l-footer-cols { flex-direction: column; gap: 40px; }
+  .l-footer-cols { flex-direction: column; gap: 36px; }
   .l-footer-brand { width: 100%; }
-  .l-footer-links { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
-  .l-footer-statement { flex-direction: column; align-items: flex-start; gap: 24px; }
+  .l-footer-links { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
   .l-footer-legal { flex-direction: column; gap: 12px; }
 }
+@media (max-width: 620px) {
+  .l-footer-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
-/* ── Product mockup ─────────────────────────────────────────────────────────── */
+/* ── The window stack ───────────────────────────────────────────────────────────
+ * Two equal-size app windows, offset: the screen being shown, and the next one behind
+ * it. The frames, the page background and the crops live here. NOTHING here styles the
+ * screens inside them — those are live renders of the real pages, built in
+ * LandingHero.tsx out of the app's own components and reading the app's own tokens.
+ *
+ * The rules this replaced drew a lookalike: its own KPI tiles, its own donut, its own
+ * table, a left sidebar the app does not have. Two sets of styles for one screen means
+ * the picture and the product drift apart, and the visitor finds that out after signing
+ * up.
+ * ------------------------------------------------------------------------------- */
 
-.l-mock-wrap { position: relative; margin-top: 56px; }
+.l-mock-wrap { position: relative; margin-top: 40px; }
 .l-mock-glow {
-  position: absolute; inset: 9% 8% 19% 8%;
+  position: absolute; inset: 9% 8% 12% 8%;
   border-radius: 999px;
   background: radial-gradient(ellipse at center, rgb(220 176 105 / 0.16), rgb(220 176 105 / 0) 70%);
   filter: blur(40px);
   pointer-events: none;
 }
-.l-mock {
+
+.l-win {
   position: relative;
   border: 1px solid var(--l-border-2);
   border-radius: 14px;
@@ -377,8 +357,33 @@ html[data-session="1"] .l-session-hold {
   overflow: hidden;
   box-shadow: 0 40px 90px -30px rgb(0 0 0 / 0.85);
 }
+/* ONLY the page fades. The frame, the chrome and the ribbon are the same elements
+   throughout, so nothing about the window moves when the screen inside it changes — the
+   whole point of turning the page rather than swapping the picture. */
+@media (prefers-reduced-motion: no-preference) {
+  .l-win-page { animation: l-page-in 0.38s var(--l-ease) both; }
+}
+/* Never all the way down to nothing: a window that blanks between screens reads as a
+   page load, and the frame around it is meant to stay put. */
+@keyframes l-page-in {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+/* The tab treatment moves with the page, so it gets the same easing rather than snapping
+   a frame before the page it belongs to. The hover is faster: that one is a response to a
+   pointer, and a pointer expects an answer immediately. */
+.l-win-tab { transition: background-color 0.35s var(--l-ease), color 0.35s var(--l-ease); }
+/* `!important` because the resting colours are inline styles on the button — that is how
+   every ds/ component is written, and an inline style outranks this rule without it. */
+.l-win-tab:hover {
+  background: var(--surface-hover) !important;
+  color: var(--text-primary) !important;
+  transition-duration: 0.12s;
+}
+.l-win-tab:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 1px; }
+
 .l-mock-chrome {
-  height: 44px; padding: 0 16px;
+  height: 40px; padding: 0 16px;
   border-bottom: 1px solid var(--l-border);
   background: var(--l-raised);
   display: flex; align-items: center; gap: 8px;
@@ -392,52 +397,62 @@ html[data-session="1"] .l-session-hold {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px; color: var(--l-text-3);
 }
-.l-mock-body { padding: 24px; background: var(--l-sunken); display: flex; gap: 24px; }
-.l-mock-side { width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
-.l-mock-main { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 13px; }
-.l-mock-navitem { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; color: var(--l-text-3); font-size: 13px; }
-.l-mock-navitem-on { border-radius: 7px; background: var(--l-raised); color: var(--l-text); font-weight: 500; }
-
-.l-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-.l-kpi {
-  padding: 12px 14px;
-  border: 1px solid var(--l-border); border-radius: 9px;
-  background: var(--l-surface);
-  display: flex; flex-direction: column; gap: 6px;
-}
-.l-kpi-accent { border-color: var(--l-accent); background: var(--l-accent-tint); }
-.l-kpi-label {
-  font-family: Archivo, system-ui, sans-serif;
-  font-size: 9px; font-weight: 600;
-  letter-spacing: 0.11em; text-transform: uppercase;
+.l-mock-note {
+  margin: 18px 0 0;
+  text-align: center;
+  font-size: 12.5px;
   color: var(--l-text-3);
 }
-.l-kpi-fig { font-family: Petrona, Georgia, serif; font-size: 27px; font-weight: 600; line-height: 1; color: var(--l-text); }
-.l-kpi-note { font-size: 10px; color: var(--l-text-3); }
 
-.l-panels { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr); gap: 12px; }
-.l-panel { padding: 14px 16px; border: 1px solid var(--l-border); border-radius: 9px; background: var(--l-surface); }
-.l-panel-title { font-size: 12px; font-weight: 600; color: var(--l-text); }
-
-.l-ledger { display: grid; grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr)); gap: 0; }
-.l-ledger-head {
-  padding-bottom: 7px; border-bottom: 1px solid var(--l-border);
-  font-family: Archivo, system-ui, sans-serif;
-  font-size: 8.5px; font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: var(--l-text-3);
+/* The crop. A real page is taller than any hero image, so the screen is cut and the last
+   rows fade into the app's own background rather than stopping at a hard edge that reads
+   as a rendering bug. */
+.l-win-screen {
+  position: relative;
+  height: 730px;
+  overflow: hidden;
+  background: var(--l-shot-page);
 }
-.l-ledger-cell { padding: 8px 0; font-size: 11px; color: var(--l-text-2); border-bottom: 1px solid var(--l-raised); }
-.l-num { font-family: "JetBrains Mono", ui-monospace, monospace; text-align: right; }
+/* Full width on a desktop; a fixed desktop width, cropped, on a phone. */
+.l-win-inner { width: 100%; }
+.l-win-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+  padding: var(--page-padding-y) var(--page-padding-x);
+}
+.l-win-fade {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 72px;
+  background: linear-gradient(to bottom, rgb(10 10 9 / 0), var(--l-shot-page));
+  pointer-events: none;
+}
+/* Only on the narrow layout, where the screen is wider than the window. */
+.l-win-fade-right {
+  display: none;
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 72px;
+  background: linear-gradient(to right, rgb(10 10 9 / 0), var(--l-shot-page));
+  pointer-events: none;
+}
 
-/* The mockup is art, not a responsive app: below the desktop breakpoint it drops the
-   sidebar and the columns that stop being legible rather than reflowing into a mess. */
-@media (max-width: 860px) {
-  .l-mock-side { display: none; }
-  .l-mock-body { padding: 16px; }
-  .l-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .l-panels { grid-template-columns: 1fr; }
-  .l-ledger { grid-template-columns: 1.6fr 1fr 1fr; }
-  .l-ledger-col-hide { display: none; }
-  .l-mock-wrap { margin-top: 40px; }
+/* The skeletons stand for figures deliberately not shown here, not for figures still
+   arriving. Left pulsing, the hero would read as a screen stuck loading, so the animation
+   stops at the landing page's boundary — the geometry, which is the part that has to
+   match the app, is untouched. */
+.l-win .trackr-skeleton { animation: none; background: var(--surface-active); }
+
+@media (max-width: 900px) {
+  .l-win-screen { height: 460px; }
+  /* A phone-width reflow of a screen built for tables puts every KPI on its own row and
+     fills the whole hero with two of them, so the page keeps its desktop width and the
+     window simply shows less of it. */
+  .l-win-inner { width: 1040px; }
+  .l-win-fade-right { display: block; }
+}
+@media (max-width: 620px) {
+  .l-mock-wrap { margin-top: 28px; }
+  .l-win-screen { height: 380px; }
 }

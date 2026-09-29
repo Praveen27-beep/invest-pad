@@ -1,11 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useState, type CSSProperties } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
 import type { EraseResultOut, PrivacyExportOut } from "@/lib/api-types";
-import { Card, NoInvestorState } from "../components/PageState";
+import { NoInvestorState } from "../components/PageState";
+import { PageHeader } from "../components/PageHeader";
 import { PageBody } from "../components/Shell";
+import { Banner, Button, Card, Checkbox, Icon, Input } from "../components/ds";
 
 // Must be typed exactly, not just any non-empty text -- this is the type-to-confirm
 // gate in front of an irreversible delete (app/db/privacy.py erase_investor).
@@ -23,6 +26,27 @@ function downloadJson(payload: unknown, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+const bodyText: CSSProperties = { margin: 0, font: "var(--type-body)", color: "var(--text-secondary)" };
+const noteText: CSSProperties = { margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" };
+const mono: CSSProperties = { fontFamily: "var(--font-mono)" };
+
+/**
+ * Privacy: export everything, or delete everything.
+ *
+ * IT USED TO LOOK LIKE A DIFFERENT PRODUCT. This was the last screen written against the
+ * retired Tailwind names (`glass-card`, `navy-*`, `brass-*`, `rounded-lg`) and against
+ * PageState's `Card` rather than the design system's, and it drew its own `<h1>` in the body
+ * instead of using `PageHeader`. globals.css repoints those colours, so it resolved to
+ * roughly the right palette and the wrong shapes: 12px radii and glass panels, on a screen
+ * you reach from Settings, which is square panels and hairline rules. Moving between the two
+ * read as leaving the app. It is now the same chrome as every other screen -- a page header,
+ * one centred `--page-column`, design-system cards, buttons and fields.
+ *
+ * WHAT DID NOT CHANGE is any guard. The type-to-confirm phrase, the separately audited
+ * export of PAN and demat behind its own acknowledgement, the legal-hold refusal shown with
+ * its named reasons, and the erased-account screen that still renders after `investorId` is
+ * gone. Those are the screen. The rest was upholstery.
+ */
 export default function PrivacyPage() {
   const { investorId, token, setInvestorId } = useAuth();
 
@@ -45,7 +69,19 @@ export default function PrivacyPage() {
 
   // Erasure clears investorId (the record no longer exists), so the success screen
   // below must render even though the "no investor" guard would otherwise fire.
-  if (!investorId && !eraseResult) return <NoInvestorState />;
+  if (!investorId && !eraseResult) {
+    return (
+      <>
+        <PageHeader
+          title="Privacy & your data"
+          subtitle="Export everything held about a portfolio, or have it deleted."
+        />
+        <PageBody column>
+          <NoInvestorState />
+        </PageBody>
+      </>
+    );
+  }
 
   async function runExport(includeIdentifiers: boolean) {
     const setBusy = includeIdentifiers ? setExportingIdentifiers : setExporting;
@@ -79,7 +115,6 @@ export default function PrivacyPage() {
         query: { investor_id: investorId },
       });
       setEraseResult(res);
-      setErasePanelOpen(false);
       setInvestorId("");
     } catch (err) {
       if (err instanceof ApiError && err.status === 409 && err.reasons) {
@@ -95,252 +130,314 @@ export default function PrivacyPage() {
 
   if (eraseResult) {
     return (
-      <PageBody>
-      <div className="max-w-2xl space-y-6">
-        <Card title="Account erased">
-          <p className="text-sm text-navy-700">
-            This investor&apos;s data has been permanently deleted: {eraseResult.investors}{" "}
-            investor record, {eraseResult.transactions} transaction
-            {eraseResult.transactions === 1 ? "" : "s"} and {eraseResult.documents} stored
-            document{eraseResult.documents === 1 ? "" : "s"} removed.
-          </p>
-          <p className="mt-2 text-xs text-navy-400">
-            The audit trail of this erasure is kept, as DPDP and SEBI both require, but
-            it no longer carries any of the investor&apos;s data, only the fact that a
-            deletion happened.
-          </p>
-          <p className="mt-4 text-xs text-navy-400">
-            This browser no longer has an investor selected. Set a different investor ID
-            in{" "}
-            <a href="/settings" className="text-brass-600 underline">
-              Settings
-            </a>{" "}
-            to continue.
-          </p>
-        </Card>
-      </div>
-      </PageBody>
+      <>
+        <PageHeader title="Privacy & your data" subtitle="This portfolio has been deleted." />
+        <PageBody column>
+          <Card title="Portfolio erased">
+            <div style={{ display: "grid", gap: 10 }}>
+              <p style={bodyText}>
+                This investor&apos;s data has been permanently deleted: {eraseResult.investors} investor record,{" "}
+                {eraseResult.transactions} transaction{eraseResult.transactions === 1 ? "" : "s"} and{" "}
+                {eraseResult.documents} stored document{eraseResult.documents === 1 ? "" : "s"} removed.
+              </p>
+              <p style={noteText}>
+                The audit trail of this erasure is kept, as DPDP and SEBI both require, but it no longer carries any of
+                the investor&apos;s data, only the fact that a deletion happened.
+              </p>
+              <p style={noteText}>
+                This browser no longer has an investor selected. <Link href="/settings#portfolios">Open Settings</Link> to pick a
+                different one.
+              </p>
+            </div>
+          </Card>
+        </PageBody>
+      </>
     );
   }
 
   return (
-    <PageBody>
-      <div className="max-w-3xl space-y-6">
-      <div>
-        <h1 className="font-heading text-2xl text-navy-900">Privacy &amp; your data</h1>
-        <p className="mt-1 text-sm text-navy-400">
-          Your rights under the DPDP Act, 2023, for investor{" "}
-          <span className="font-mono text-navy-600">{investorId}</span>. See and export
-          everything held about them, or have it permanently deleted.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title="Privacy & your data"
+        subtitle="Your rights under the DPDP Act, 2023. Export everything held about this portfolio, or have it permanently deleted."
+      />
 
-      <Card title="Export your data">
-        <p className="mb-4 text-sm text-navy-600">
-          Downloads a full copy of everything held about this investor: accounts,
-          consents, the full transaction ledger, legal holds and stored-document
-          references, as JSON. This is a record of holdings and performance, not
-          investment advice.
-        </p>
-
-        {exportError && (
-          <p className="mb-4 rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">
-            {exportError}
-          </p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => runExport(false)}
-          disabled={exporting}
-          className="press-scale rounded-lg bg-navy-700 transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:bg-navy-600 disabled:opacity-60"
-        >
-          {exporting ? "Exporting…" : "Export my data"}
-        </button>
-
-        {exportResult && (
-          <div className="mt-5 space-y-3 rounded-lg border border-navy-100 bg-cream-50 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium text-navy-900">
-                Export ready{exportedIdentifiers ? ", includes PAN & demat" : ""}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowJson((v) => !v)}
-                  className="text-xs text-brass-600 underline"
-                >
-                  {showJson ? "Hide JSON" : "View JSON"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => downloadJson(exportResult, `trackr-export-${investorId}.json`)}
-                  className="press-scale rounded-lg border border-navy-100 px-3 py-1.5 text-xs font-medium text-navy-700 hover:bg-cream-200"
-                >
-                  Download JSON
-                </button>
-              </div>
-            </div>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs text-navy-600 sm:grid-cols-4">
-              <div>
-                <dt className="text-navy-400">Accounts</dt>
-                <dd className="tabular-nums">{exportResult.accounts.length}</dd>
-              </div>
-              <div>
-                <dt className="text-navy-400">Transactions</dt>
-                <dd className="tabular-nums">{exportResult.transactions.length}</dd>
-              </div>
-              <div>
-                <dt className="text-navy-400">Documents</dt>
-                <dd className="tabular-nums">{exportResult.documents.length}</dd>
-              </div>
-              <div>
-                <dt className="text-navy-400">Consents</dt>
-                <dd className="tabular-nums">{exportResult.consents.length}</dd>
-              </div>
-            </dl>
-            {showJson && (
-              <pre className="max-h-96 overflow-auto rounded-lg bg-navy-900 p-3 text-[11px] leading-relaxed text-cream-100">
-                {JSON.stringify(exportResult, null, 2)}
-              </pre>
-            )}
-          </div>
-        )}
-
-        <div className="mt-6 border-t border-dashed border-navy-100 pt-4">
-          {!identifiersPanelOpen ? (
-            <button
-              type="button"
-              onClick={() => setIdentifiersPanelOpen(true)}
-              className="text-xs text-navy-500 underline decoration-dotted"
+      <PageBody column>
+        <div style={{ display: "grid", gap: 20 }}>
+          {/* The way back. Settings is where the link into this screen lives, and this is
+              the one screen that can end with the active investor deleted, so leaving it
+              should never depend on finding it in the ribbon again. */}
+          <p style={{ margin: 0, font: "var(--type-body-sm)" }}>
+            <Link
+              href="/settings"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--text-tertiary)" }}
             >
-              Include PAN &amp; demat number in the export
-            </button>
-          ) : (
-            <div className="space-y-3 rounded-lg border border-brass-500/40 bg-brass-50 p-4">
-              <p className="text-xs text-navy-700">
-                This decrypts and includes the investor&apos;s PAN and demat number in the
-                exported file. It is logged as a separate, audited access event every time
-                it&apos;s used, distinct from the plain export above. Only do this if the
-                identifiers are actually needed in the file (e.g. moving records to
-                another adviser).
+              <Icon name="chevron-left" size={13} />
+              Back to settings
+            </Link>
+          </p>
+
+          <Card
+            title="Export your data"
+            subtitle={
+              <>
+                Investor <span style={mono}>{investorId}</span>
+              </>
+            }
+          >
+            <div style={{ display: "grid", gap: 14 }}>
+              <p style={bodyText}>
+                Downloads a full copy of everything held about this investor: accounts, consents, the whole transaction
+                ledger, legal holds and stored-document references, as JSON. This is a record of holdings and
+                performance, not investment advice.
               </p>
-              <label className="flex items-start gap-2 text-xs text-navy-700">
-                <input
-                  type="checkbox"
-                  checked={identifiersAck}
-                  onChange={(e) => setIdentifiersAck(e.target.checked)}
-                  className="mt-0.5"
-                />
-                I understand this decrypts the PAN and demat number and is separately
-                audited.
-              </label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={!identifiersAck || exportingIdentifiers}
-                  onClick={() => runExport(true)}
-                  className="press-scale rounded-lg bg-brass-600 transition-colors px-4 py-2 text-xs font-medium text-cream-50 hover:bg-brass-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {exportingIdentifiers ? "Exporting…" : "Export with PAN & demat"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIdentifiersPanelOpen(false);
-                    setIdentifiersAck(false);
+
+              {exportError && <Banner tone="negative">{exportError}</Banner>}
+
+              <div>
+                <Button onClick={() => runExport(false)} disabled={exporting}>
+                  {exporting ? "Exporting…" : "Export my data"}
+                </Button>
+              </div>
+
+              {exportResult && (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-sunken)",
+                    padding: 14,
                   }}
-                  className="px-3 py-2 text-xs text-navy-400 hover:text-navy-700"
                 >
-                  Cancel
-                </button>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        font: "var(--type-body-sm)",
+                        fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      Export ready{exportedIdentifiers ? ", includes PAN and demat" : ""}
+                    </p>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button variant="ghost" size="sm" onClick={() => setShowJson((v) => !v)}>
+                        {showJson ? "Hide JSON" : "View JSON"}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => downloadJson(exportResult, `trackr-export-${investorId}.json`)}
+                      >
+                        Download JSON
+                      </Button>
+                    </div>
+                  </div>
+
+                  <dl
+                    style={{
+                      margin: 0,
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    <Count label="Accounts" value={exportResult.accounts.length} />
+                    <Count label="Transactions" value={exportResult.transactions.length} />
+                    <Count label="Documents" value={exportResult.documents.length} />
+                    <Count label="Consents" value={exportResult.consents.length} />
+                  </dl>
+
+                  {showJson && (
+                    <pre
+                      style={{
+                        margin: 0,
+                        maxHeight: 340,
+                        overflow: "auto",
+                        background: "var(--ink-900)",
+                        color: "var(--text-inverse)",
+                        padding: 12,
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        lineHeight: 1.6,
+                      }}
+                    >
+                      {JSON.stringify(exportResult, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 14 }}>
+                {!identifiersPanelOpen ? (
+                  <Button variant="ghost" size="sm" onClick={() => setIdentifiersPanelOpen(true)}>
+                    Include PAN and demat number in the export
+                  </Button>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 12,
+                      border: "1px solid var(--border)",
+                      borderLeft: "2px solid var(--warning)",
+                      background: "var(--surface)",
+                      padding: 14,
+                    }}
+                  >
+                    <p style={{ ...bodyText, font: "var(--type-body-sm)" }}>
+                      This decrypts the investor&apos;s PAN and demat number and includes them in the exported file. It
+                      is logged as a separate, audited access event every time it is used, apart from the plain export
+                      above. Only do this if the identifiers are actually needed in the file, for example when moving
+                      records to another adviser.
+                    </p>
+                    <Checkbox
+                      id="privacy-identifiers-ack"
+                      checked={identifiersAck}
+                      onChange={setIdentifiersAck}
+                      label={
+                        <span style={{ font: "var(--type-body-sm)", color: "var(--text-secondary)" }}>
+                          I understand this decrypts the PAN and demat number, and is separately audited.
+                        </span>
+                      }
+                    />
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <Button
+                        size="sm"
+                        disabled={!identifiersAck || exportingIdentifiers}
+                        onClick={() => runExport(true)}
+                      >
+                        {exportingIdentifiers ? "Exporting…" : "Export with PAN and demat"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIdentifiersPanelOpen(false);
+                          setIdentifiersAck(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
-      </Card>
+          </Card>
 
-      <Card title="Delete your account">
-        <p className="mb-4 text-sm text-navy-600">
-          Permanently deletes this investor&apos;s accounts, stored documents and full
-          transaction ledger. This cannot be undone, and there will be nothing left to
-          reverse a mistake against.
-        </p>
+          <Card title="Delete this portfolio">
+            <div style={{ display: "grid", gap: 14 }}>
+              <p style={bodyText}>
+                Permanently deletes this investor&apos;s accounts, stored documents and whole transaction ledger. This
+                cannot be undone, and there will be nothing left to reverse a mistake against.
+              </p>
 
-        {eraseError && (
-          <p className="mb-4 rounded-lg bg-negative/10 px-3 py-2 text-sm text-negative">
-            {eraseError}
-          </p>
-        )}
+              {eraseError && <Banner tone="negative">{eraseError}</Banner>}
 
-        {legalHoldReasons && (
-          <div className="mb-4 rounded-lg border border-negative/30 bg-negative/10 p-4">
-            <p className="text-sm font-medium text-negative">
-              Erasure refused: open legal hold
-            </p>
-            <p className="mt-1 text-xs text-navy-600">
-              This investor&apos;s records are under a legal hold and can&apos;t be
-              self-service deleted right now. Where a dispute has been raised, records are
-              kept until it resolves or SEBI directs otherwise.
-            </p>
-            <ul className="mt-2 list-inside list-disc text-xs text-navy-700">
-              {legalHoldReasons.map((reason, i) => (
-                <li key={i}>{reason}</li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-navy-500">
-              Contact your adviser if you believe this hold should be reviewed or
-              released.
-            </p>
-          </div>
-        )}
+              {legalHoldReasons && (
+                <Banner tone="negative" title="Erasure refused: open legal hold">
+                  This investor&apos;s records are under a legal hold and cannot be deleted from here right now. Where a
+                  dispute has been raised, records are kept until it resolves or SEBI directs otherwise.
+                  <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                    {legalHoldReasons.map((reason, i) => (
+                      <li key={i}>{reason}</li>
+                    ))}
+                  </ul>
+                  <p style={{ margin: "8px 0 0" }}>
+                    Contact your adviser if you believe this hold should be reviewed or released.
+                  </p>
+                </Banner>
+              )}
 
-        {!erasePanelOpen ? (
-          <button
-            type="button"
-            onClick={() => setErasePanelOpen(true)}
-            className="press-scale rounded-lg bg-negative transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:opacity-90"
-          >
-            Delete my account
-          </button>
-        ) : (
-          <div className="space-y-3 rounded-lg border border-negative/30 bg-negative/5 p-4">
-            <p className="text-sm text-navy-700">
-              Type <span className="font-mono font-semibold">{ERASE_CONFIRM_PHRASE}</span>{" "}
-              to confirm. This deletes investor{" "}
-              <span className="font-mono">{investorId}</span> and everything linked to it,
-              right now.
-            </p>
-            <input
-              value={eraseConfirmText}
-              onChange={(e) => setEraseConfirmText(e.target.value)}
-              placeholder={ERASE_CONFIRM_PHRASE}
-              className="w-full rounded-lg border border-negative/40 bg-surface px-3 py-2 text-sm font-mono focus:border-negative focus:outline-none"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={eraseConfirmText !== ERASE_CONFIRM_PHRASE || erasing}
-                onClick={runErase}
-                className="press-scale rounded-lg bg-negative transition-colors px-4 py-2 text-sm font-medium text-cream-50 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {erasing ? "Deleting…" : "Permanently delete"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setErasePanelOpen(false);
-                  setEraseConfirmText("");
-                }}
-                className="px-3 py-2 text-sm text-navy-400 hover:text-navy-700"
-              >
-                Cancel
-              </button>
+              {!erasePanelOpen ? (
+                <div>
+                  <Button variant="danger" icon="trash" onClick={() => setErasePanelOpen(true)}>
+                    Delete this portfolio
+                  </Button>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    border: "1px solid var(--border)",
+                    borderLeft: "2px solid var(--negative)",
+                    background: "var(--surface)",
+                    padding: 14,
+                  }}
+                >
+                  <p style={{ ...bodyText, font: "var(--type-body-sm)" }}>
+                    Type <span style={{ ...mono, fontWeight: 600 }}>{ERASE_CONFIRM_PHRASE}</span> to confirm. This
+                    deletes investor <span style={mono}>{investorId}</span> and everything linked to it, right now.
+                  </p>
+                  <Input
+                    id="privacy-erase-confirm"
+                    value={eraseConfirmText}
+                    onChange={setEraseConfirmText}
+                    placeholder={ERASE_CONFIRM_PHRASE}
+                    style={{ ...mono, maxWidth: 280 }}
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button
+                      variant="danger"
+                      disabled={eraseConfirmText !== ERASE_CONFIRM_PHRASE || erasing}
+                      onClick={runErase}
+                    >
+                      {erasing ? "Deleting…" : "Permanently delete"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setErasePanelOpen(false);
+                        setEraseConfirmText("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
-      </Card>
+          </Card>
+        </div>
+      </PageBody>
+    </>
+  );
+}
+
+/** One figure from the export summary, labelled. */
+function Count({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt
+        style={{
+          font: "var(--type-label)",
+          textTransform: "uppercase",
+          letterSpacing: "var(--tracking-label)",
+          color: "var(--text-tertiary)",
+        }}
+      >
+        {label}
+      </dt>
+      <dd
+        style={{
+          margin: "2px 0 0",
+          font: "var(--type-body)",
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--text-primary)",
+        }}
+      >
+        {value.toLocaleString("en-IN")}
+      </dd>
     </div>
-    </PageBody>
   );
 }

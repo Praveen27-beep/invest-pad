@@ -29,7 +29,12 @@ from app.auth.ops import require_cron_secret, require_ops_key
 from app.config import Settings, get_settings
 from app.database import get_conn
 from app.db import dividend_events as de
-from app.schemas.transactions import DiscoverDividendsYfinanceOut, RefreshDividendFeedOut
+from app.db.dividend_reconcile import reconcile_pending_dividends
+from app.schemas.transactions import (
+    DiscoverDividendsYfinanceOut,
+    ReconcileDividendsOut,
+    RefreshDividendFeedOut,
+)
 
 ops_router = APIRouter(prefix="/ops/dividends", tags=["ops"])
 
@@ -149,3 +154,25 @@ def discover_dividends_yfinance_cron(conn: Any = Depends(get_conn)) -> dict[str,
     waiting on a same-day answer."""
     result = de.discover_dividends_from_yfinance(conn, isins=None)
     return {**_normalise(result), "errors": result.get("errors", {})}
+
+
+@ops_router.post(
+    "/reconcile",
+    response_model=ReconcileDividendsOut,
+    dependencies=[Depends(require_ops_key)],
+)
+def reconcile_dividends(conn: Any = Depends(get_conn)) -> dict[str, Any]:
+    """``X-Ops-Key``-gated second pass over DRAFT dividends the feeds left behind -- see
+    ``app.db.dividend_reconcile``."""
+    return reconcile_pending_dividends(conn)
+
+
+@ops_router.get(
+    "/reconcile-cron",
+    response_model=ReconcileDividendsOut,
+    dependencies=[Depends(require_cron_secret)],
+)
+def reconcile_dividends_cron(conn: Any = Depends(get_conn)) -> dict[str, Any]:
+    """Same pass for Vercel Cron. Scheduled daily AFTER ``/refresh-cron`` and after the
+    Sunday yfinance sweep, so each day's new leftovers are picked up automatically."""
+    return reconcile_pending_dividends(conn)

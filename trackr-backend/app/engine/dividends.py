@@ -198,8 +198,15 @@ def compute_expected_dividends(
     event given, which is what a caller listing upcoming dividends wants.
     """
     safe, failures = screen_events(events)
+    # Only events this holder was ELIGIBLE for are withheld-with-a-reason. A feed like
+    # yfinance returns a security's whole dividend history (back to 2000), so without this
+    # an unverified declaration from years before the first trade -- which could never
+    # apply -- was reported as outstanding: 607 of 627 for the real YSL473 ledger
+    # (2026-09-29). Same cutoff the projection itself uses, so the two cannot disagree.
     unprojectable = [
-        UnprojectableDividend(f.event.isin, f.event.ex_date, f.code, f.detail) for f in failures
+        UnprojectableDividend(f.event.isin, f.event.ex_date, f.code, f.detail)
+        for f in failures
+        if quantity_held_before(transactions, f.event.isin, f.event.ex_date) > ZERO
     ]
     already_realised = realised_event_ids(transactions)
     corporate_actions = actions or []

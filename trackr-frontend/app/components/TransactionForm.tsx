@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { TXN_TYPES, type TransactionIn, type TxnType } from "@/lib/api-types";
+import { parseDecimal } from "@/lib/format";
 
 const EMPTY: TransactionIn = {
   account_id: "",
@@ -62,15 +63,29 @@ export function TransactionForm({
   // genuine, positive quantity, mirroring app/schemas/transactions.py's validator.
   const isDividend = form.txn_type === "DIVIDEND";
 
+  /**
+   * Client-side checks, in Decimal, on the EXACT text the user typed.
+   *
+   * The fields stay text inputs and the submitted JSON carries those exact strings -- the
+   * backend refuses a JSON number for a money field outright (app/schemas/decimals.py), so
+   * parsing here is for VALIDATION only and the parsed value is never sent. `Number(...)`
+   * was doing the same job less exactly: an unreadable entry became NaN, `NaN > 0` is
+   * false, and the message blamed the quantity for being non-positive rather than
+   * unreadable.
+   *
+   * Mirrors app/schemas/transactions.py's validator, which remains the real gate.
+   */
   function validate(): string | null {
-    const qty = Number(form.quantity);
-    const price = Number(form.price);
+    const qty = parseDecimal(form.quantity);
+    const price = parseDecimal(form.price);
+    if (qty === null) return "Quantity must be a number, for example 100 or 12.5.";
+    if (price === null) return "Price must be a number, for example 1499.75.";
     if (isDividend) {
-      if (qty !== 0) return "DIVIDEND rows carry no quantity -- leave Quantity at 0.";
-      if (price !== 0) return "DIVIDEND rows carry no price -- leave Price at 0.";
+      if (!qty.isZero()) return "DIVIDEND rows carry no quantity -- leave Quantity at 0.";
+      if (!price.isZero()) return "DIVIDEND rows carry no price -- leave Price at 0.";
     } else {
-      if (!(qty > 0)) return "Quantity must be greater than 0.";
-      if (price < 0) return "Price cannot be negative.";
+      if (!qty.greaterThan(0)) return "Quantity must be greater than 0.";
+      if (price.isNegative()) return "Price cannot be negative.";
     }
     return null;
   }

@@ -18,6 +18,8 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
@@ -34,6 +36,8 @@ from app.auth.ops import (
 )
 from app.auth.service import EmailAlreadyRegisteredError, InvalidCredentialsError
 from app.config import get_settings
+from app.database import NonFiniteFinancialValueError
+from app.db.capabilities import WorkspaceCapabilityRequiredError
 from app.db.connection import DatabaseNotConfiguredError, connect
 from app.db.consent import ConsentMissingError
 from app.db.crypto import InvalidPANError
@@ -45,6 +49,7 @@ from app.engine.errors import MissingPriceError, NegativeHoldingError, Unparseab
 from app.ingest.webhook import (
     NoMatchingAccountError,
     NoSuchInvestorError,
+    TooManyAttachmentsError,
     UnroutableAddressError,
     UnsupportedDocumentError,
 )
@@ -54,12 +59,15 @@ from app.ingest.webhook_providers import (
     WebhookNotConfiguredError,
 )
 from app.rate_limit import limiter
+from app.research.errors import WorkspaceError
 from app.routers import (
     analytical,
     analytics,
     assistant,
     auth,
     brokers,
+    butler,
+    butler_notebook,
     consent,
     corporate_actions,
     demerger_watch,
@@ -68,12 +76,21 @@ from app.routers import (
     holdings,
     ingest,
     investors,
+    jobs_ops,
+    market,
+    monitors,
     narrative,
     privacy,
     reconcile,
+    reference_sync,
+    reports,
+    research,
     security_alias,
+    tasks,
     transactions,
+    workspace,
 )
+from app.storage.factory import get_store
 
 logger = logging.getLogger("app")
 
@@ -217,6 +234,10 @@ async def missing_price_handler(request: Request, exc: MissingPriceError) -> JSO
         "one or more held ISINs have no usable price within the staleness window",
         isins=exc.isins,
         names=_names_for(exc.isins),
+        # Which date was checked, when the caller knows (contribution checks two). The
+        # client (ApiError.asOf) already reads this; without it "no usable price" read as
+        # a contradiction of a Dashboard that prices the same holdings today.
+        as_of=exc.as_of.isoformat() if hasattr(exc.as_of, "isoformat") else exc.as_of,
     )
 
 
@@ -265,28 +286,62 @@ async def duplicate_upload_handler(request: Request, exc: DuplicateUploadError) 
 # --------------------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------------------
+# INBOUND-EMAIL ROUTING FAILURES ANSWER 406, NOT 4xx-ANYTHING-ELSE.
+#
+# Mailgun retries any non-200 at 10 min, 15 min, 30 min, 1 h, 2 h and 4 h -- eight hours
+# of retries -- and stops only on 200 or on 406, which its documentation defines as "the
+# POST is rejected and it will not be retried". Every exception below is PERMANENT: a
+# typo'd forwarding address, an investor or account that does not exist, no adapter for
+# that document type, more attachments than this deployment accepts. No retry can ever
+# turn one of them into a success, so the 422/404 these used to answer bought nothing and
+# cost six redeliveries each -- multiplied, for a bulk forward, by the size of the
+# delivery.
+#
+# Safe to apply globally rather than per-path: all four are raised ONLY inside
+# app/ingest/webhook.py, so no other route can reach these handlers. A transient failure
+# -- the database being unreachable -- is deliberately NOT in this list and still returns
+# 5xx, because that is the one case where retrying is exactly right.
+#
+# docs/BACKFILL_PIPELINE.md section 5, defect (1).
+# --------------------------------------------------------------------------------------
+
+#: What Mailgun (and Postmark) read as "rejected, never retry". See the block above.
+_WEBHOOK_PERMANENT = 406
+
+
 @app.exception_handler(UnroutableAddressError)
 async def unroutable_address_handler(request: Request, exc: UnroutableAddressError) -> JSONResponse:
-    return _error(request, 422, str(exc))
+    return _error(request, _WEBHOOK_PERMANENT, str(exc))
 
 
 @app.exception_handler(NoSuchInvestorError)
 async def no_such_investor_handler(request: Request, exc: NoSuchInvestorError) -> JSONResponse:
-    return _error(request, 404, f"no such investor: {exc}")
+    return _error(request, _WEBHOOK_PERMANENT, f"no such investor: {exc}")
 
 
 @app.exception_handler(NoMatchingAccountError)
 async def no_matching_account_handler(
     request: Request, exc: NoMatchingAccountError
 ) -> JSONResponse:
-    return _error(request, 404, str(exc))
+    return _error(request, _WEBHOOK_PERMANENT, str(exc))
 
 
 @app.exception_handler(UnsupportedDocumentError)
 async def unsupported_document_handler(
     request: Request, exc: UnsupportedDocumentError
 ) -> JSONResponse:
-    return _error(request, 422, str(exc))
+    return _error(request, _WEBHOOK_PERMANENT, str(exc))
+
+
+@app.exception_handler(TooManyAttachmentsError)
+async def too_many_attachments_handler(
+    request: Request, exc: TooManyAttachmentsError
+) -> JSONResponse:
+    """A mailbox bomb, or an over-eager select-all. Permanent by definition: the same
+    message will always carry the same number of attachments, so retrying it for eight
+    hours enqueues nothing and costs six more deliveries of the same oversized payload."""
+    return _error(request, _WEBHOOK_PERMANENT, str(exc))
 
 
 # --------------------------------------------------------------------------------------
@@ -480,6 +535,89 @@ async def invalid_credentials_handler(
 
 
 # --------------------------------------------------------------------------------------
+# product capabilities (app/db/capabilities.py) -- which PRODUCT, never whose DATA.
+# --------------------------------------------------------------------------------------
+
+
+@app.exception_handler(WorkspaceCapabilityRequiredError)
+async def workspace_capability_required_handler(
+    request: Request, exc: WorkspaceCapabilityRequiredError
+) -> JSONResponse:
+    """403 with a stable ``code``, never 401 and never 404.
+
+    401 would tell a correctly authenticated caller to log in again, which fixes
+    nothing and is what trains people to distrust a sign-in prompt. 404 would hide a
+    genuine routing bug behind a plausible-looking miss. The request was understood,
+    the caller is who they say they are, and the product they are asking for is not one
+    they have -- that is 403, exactly.
+
+    Clients branch on ``code``, not on the sentence: the wording here is free to
+    improve without breaking a frontend that uses it to decide whether to show an
+    upgrade panel. The user id goes to the log, never to the body.
+    """
+    logger.info(
+        "request_id=%s path=%s user=%s refused: no workspace capability",
+        getattr(request.state, "request_id", None),
+        request.url.path,
+        exc.user_id,
+    )
+    return _error(request, 403, str(exc), code=exc.code)
+
+
+# --------------------------------------------------------------------------------------
+# workspace research (app/routers/workspace.py, app/routers/research.py)
+# --------------------------------------------------------------------------------------
+
+
+@app.exception_handler(WorkspaceError)
+async def workspace_error_handler(request: Request, exc: WorkspaceError) -> JSONResponse:
+    """BLUEPRINT_BACKEND.md section 7.1's envelope for the research routes:
+    ``{"detail": {"code", "message", "fields", "request_id"}}``. Clients branch on ``code``.
+    Nothing from a request body or a database message beyond the documented sentence is
+    echoed; the log carries the request id, path and code only."""
+    request_id = getattr(request.state, "request_id", None)
+    logger.info("request_id=%s path=%s workspace_refused code=%s status=%s",
+                request_id, request.url.path, exc.code, exc.status)
+    return JSONResponse(
+        status_code=exc.status,
+        content={"detail": {"code": exc.code, "message": exc.message, "fields": exc.fields,
+                            "request_id": request_id}},
+    )
+
+
+#: Paths whose 422s must never echo a submitted value. Agent configuration is where a user
+#: might paste a provider key into the wrong field; a result submission carries model output.
+_REDACTED_VALIDATION_SEGMENTS = ("/workspace/", "/butler/")
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Research and Butler 422s in the section 7.1 envelope, WITHOUT input values.
+
+    FastAPI's default body includes each failing ``input`` -- so an ``api_key`` field sent to
+    POST /agents would be reflected straight back in the response, and into any log or trace
+    that captures response bodies. Here only the location and the error type survive: the
+    client learns WHICH field was refused (``api_key``: ``extra_forbidden``), never its value.
+    Other routes keep FastAPI's documented default unchanged.
+    """
+    if not any(seg in request.url.path for seg in _REDACTED_VALIDATION_SEGMENTS):
+        return await request_validation_exception_handler(request, exc)
+    request_id = getattr(request.state, "request_id", None)
+    fields: dict[str, str] = {}
+    for error in exc.errors():
+        loc = ".".join(str(part) for part in error.get("loc", ()) if part != "body") or "body"
+        fields.setdefault(loc[:120], str(error.get("type", "invalid"))[:60])
+    logger.info("request_id=%s path=%s workspace_refused code=INVALID_INPUT status=422 "
+                "fields=%s", request_id, request.url.path, sorted(fields))
+    return JSONResponse(
+        status_code=422,
+        content={"detail": {"code": "INVALID_INPUT",
+                            "message": "the request does not match the declared contract",
+                            "fields": fields, "request_id": request_id}},
+    )
+
+
+# --------------------------------------------------------------------------------------
 # onboarding (app/routers/investors.py, app/db/repository.py)
 # --------------------------------------------------------------------------------------
 
@@ -510,6 +648,29 @@ async def database_not_configured_handler(
     # The connection string is never in the client-facing message -- a 500 body is not
     # the place to confirm or deny what DATABASE_URL happens to be.
     return _error(request, 500, "the server is not configured correctly")
+
+
+@app.exception_handler(NonFiniteFinancialValueError)
+async def non_finite_financial_value_handler(
+    request: Request, exc: NonFiniteFinancialValueError
+) -> JSONResponse:
+    """A NaN or infinite figure reached the JSON boundary. That is a 500, on purpose.
+
+    500 rather than 200-with-null, because null on a financial field means "not
+    available" and this value IS available -- it is wrong. The alternative to failing
+    here is a screen that shows a blank where a rate should be, indistinguishable from
+    the legitimate blanks beside it (portfolio CAGR, an unpriced holding's weight). Loud
+    beats plausible: CLAUDE.md rule 4, applied to the last inch of the pipe.
+    """
+    request_id = getattr(request.state, "request_id", None)
+    logger.error(
+        "request_id=%s path=%s non-finite financial value: %s",
+        request_id,
+        request.url.path,
+        exc,
+        exc_info=True,
+    )
+    return _error(request, 500, "a computed financial value is not representable")
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -544,13 +705,33 @@ app.include_router(reconcile.router)
 app.include_router(corporate_actions.router)
 app.include_router(corporate_actions.ops_router)
 app.include_router(dividends_ops.ops_router)
+app.include_router(jobs_ops.ops_router)
 app.include_router(security_alias.ops_router)
+app.include_router(reference_sync.router)
 app.include_router(demerger_watch.ops_router)
 app.include_router(grievance.router)
 app.include_router(consent.router)
 app.include_router(assistant.router)
 app.include_router(narrative.router)
 app.include_router(narrative.ops_router)
+app.include_router(market.router)
+# Workspace research. Registered unconditionally; every route is guarded by
+# require_workspace_enabled (WORKSPACE_ENABLED + a ready schema) and every WRITE by
+# require_research_writes_ready (BE-Q04/BE-Q05), so registration enables nothing by itself.
+app.include_router(workspace.router)
+app.include_router(research.router)
+# Butler (BT 01-06): same guards plus 051_butler.sql applied. Workspace-only; no model.
+app.include_router(butler.router)
+# Agents, tasks, attempts, review and chat (BE 19-25). Same guards plus 052 applied. The server
+# never calls a model: the browser does, with a key the server never sees.
+app.include_router(tasks.router)
+# BT 12-15 notebook (053) and RP 01 report jobs (054). Same guards; each refuses with 503 until
+# its migration is applied, and report admission refuses until an operator configures pricing.
+app.include_router(butler_notebook.router)
+app.include_router(reports.router)
+# BE 36-37 monitor schedules and due history. Same guards plus 055/057 applied. Saves schedules
+# and shows blocked occurrences; nothing executes while BE-Q01 is open.
+app.include_router(monitors.router)
 
 
 @app.get("/health")
@@ -558,3 +739,49 @@ def health() -> dict[str, str]:
     """Liveness probe. No DB round trip -- a probe that touches the database turns a
     slow query into an outage."""
     return {"status": "ok"}
+
+
+@app.get("/health/storage")
+def health_storage() -> JSONResponse:
+    """Can we actually reach the document archive? Deliberately NOT part of ``/health``.
+
+    WHY THIS EXISTS. ``Settings`` can prove that a bucket and endpoint are configured but
+    not that a credential resolves, because only a real call can prove that and a config
+    validator must not make network calls. Meanwhile ``S3DocumentStore`` builds its boto3
+    client lazily, so without this the first proof that R2 works is a client's first
+    upload -- possibly days after a deploy, and after a key rotation, the first proof that
+    it has stopped working. One HEAD against the bucket moves that discovery to a probe
+    that can be called on purpose.
+
+    Answers 503 rather than 500 when the archive is unreachable: the process is alive and
+    the fault is a dependency, which is what a load balancer and a human both need to
+    distinguish. Never leaks the failure detail -- a boto3 error can carry the endpoint,
+    the bucket and part of a key id -- so the reason is logged and the response says only
+    which check failed.
+    """
+    settings_now = get_settings()
+    try:
+        store = get_store(settings_now)
+        reachable = store.exists("__health_probe__")
+    except Exception:  # noqa: BLE001 - a probe reports, it never propagates
+        logger.exception("storage health probe failed")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unavailable",
+                "check": "storage",
+                "backend": settings_now.storage_backend,
+            },
+        )
+    # `exists` returning False is a SUCCESS: the probe key is not meant to be there. What
+    # is being proven is that the call completed -- credentials resolved, the bucket
+    # answered, the endpoint was right.
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ok",
+            "check": "storage",
+            "backend": settings_now.storage_backend,
+            "probe_key_present": bool(reachable),
+        },
+    )

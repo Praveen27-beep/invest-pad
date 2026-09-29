@@ -26,43 +26,43 @@ interface StepDef {
   key: StepKey;
   rail: WizardStep;
   title: string;
-  subtitle: string;
+  /** Optional, and the broker step has none: a list of broker names with checkboxes needs
+   *  no sentence explaining that ticking one picks it. */
+  subtitle?: string;
 }
 
 const ALL_STEPS: StepDef[] = [
   {
     key: "access",
     rail: { label: "Permission" },
-    title: "Your permission, before anything else",
+    title: "First, your permission",
     subtitle:
-      "We need your OK to read the statements you send us. Here is exactly what that covers — and what it doesn't.",
+      "We read only the statements you send us. We never log in to your broker, and we never ask for your password. You can take this permission back any time in Settings.",
   },
   {
     key: "brokers",
     rail: { label: "Brokers" },
     title: "Where do you trade?",
-    subtitle:
-      "Tick every broker you use — each one gets its own place for files to land. You can add more at any time.",
   },
   {
     key: "files",
     rail: { label: "Your history" },
-    title: "Bring in your history",
+    title: "Bring in your past trades",
     subtitle:
-      "Any broker, any mix, all at once. Drop in whatever your broker gave you and we'll work out what each file is.",
+      "Drop in whatever your broker gave you. Any broker, any file, all at once. We work out what each file is.",
   },
   {
     key: "align",
     rail: { label: "Your numbers" },
     title: "Working out where you stand",
-    subtitle: "Pricing your holdings against today's market and comparing them to NIFTY.",
+    subtitle: "We are pricing what you hold at today's market rates and comparing it with NIFTY.",
   },
   {
     key: "forward",
     rail: { label: "Keep it current" },
-    title: "Keep it current",
+    title: "Keep it up to date",
     subtitle:
-      "Optional. Forward your broker's emails to your own Trackr+ address and new trades arrive on their own.",
+      "This step is optional. Forward your broker's emails to your own Trackr+ address, and new trades come in on their own.",
   },
 ];
 
@@ -83,6 +83,14 @@ const ALL_STEPS: StepDef[] = [
  * IT RESUMES RATHER THAN RESTARTS. The server names the first unfinished step and the
  * wizard opens there, so nobody re-walks screens they already got through — and the
  * dashboard checklist can deep-link straight into any one of them.
+ *
+ * THE RAIL IS THE NAVIGATION, and there is no Back button. Every step in the rail is a
+ * button once its prerequisite is met — permission before brokers, an account before files,
+ * something to value before the numbers — so moving between screens is one click in any
+ * direction instead of one step backwards at a time. `canGoTo` below is the whole rule, and
+ * a step it refuses is dimmed rather than hidden. The numbers step locks the rail while it
+ * runs, for the same reason it never had a Back link: it is a sequence of writes and reads
+ * that means nothing half-done.
  *
  * EVERY STEP IS SKIPPABLE, and skipping means one thing everywhere: close the wizard, keep
  * the checklist. There used to be two skips with the same words and different outcomes —
@@ -107,6 +115,10 @@ export function OnboardingWizard() {
   const [state, setState] = useState<OnboardingStateOut | null>(null);
   const [accounts, setAccounts] = useState<AccountOut[]>([]);
   const [brokers, setBrokers] = useState<BrokerOut[]>([]);
+
+  /** Something reached the ledger during this visit. Kept beside `batchIds` rather than
+   *  derived from it, because a promoted batch id is spent the moment it is used. */
+  const [hasImported, setHasImported] = useState(false);
 
   const [accessGranted, setAccessGranted] = useState(false);
   const [grantAction, setGrantAction] = useState<(() => void) | null>(null);
@@ -171,6 +183,7 @@ export function OnboardingWizard() {
   const reopen = useCallback(
     (step: OnboardingStep | null) => {
       setBatchIds([]);
+      setHasImported(false);
       setAlignSettled(false);
       setOpen(true);
       // A named step opens immediately — the checklist already knows where it is sending
@@ -247,6 +260,11 @@ export function OnboardingWizard() {
 
   const handleSettled = useCallback(() => setAlignSettled(true), []);
 
+  const handlePromoted = useCallback(() => {
+    setBatchIds([]);
+    setHasImported(true);
+  }, []);
+
   // Declared here, not inline in the JSX below: these steps are conditionally rendered,
   // and a hook created inside that branch would be called on some renders and not others.
   const handleAccessState = useCallback(
@@ -274,11 +292,6 @@ export function OnboardingWizard() {
     []
   );
 
-  const handleTypeInstead = useCallback(() => {
-    close();
-    router.push("/transactions");
-  }, [close, router]);
-
   if (!open) return null;
 
   /**
@@ -291,6 +304,41 @@ export function OnboardingWizard() {
    * primary action was the one that did nothing (loophole L1).
    */
   const primary = primaryAction();
+
+  /**
+   * Which steps the rail may jump to from here, and the only place that rule lives.
+   *
+   * It is about prerequisites, not about order: the point of a clickable rail is that
+   * someone who wants to add a second broker halfway through does not have to walk back
+   * through the flow. What it refuses are the screens that cannot work yet — brokers before
+   * consent (account creation itself is not consent-gated, but every write after it is:
+   * `require_consent` refuses uploads and manual transactions with a 403, so an account made
+   * first only defers the same wall), files with nowhere to land, numbers with nothing in the
+   * ledger to value — because a click that lands on a dead screen is worse than one the rail
+   * visibly declined.
+   */
+  function canGoTo(key: StepKey): boolean {
+    if (key === step.key) return false;
+    // A save or an upload is mid-flight; leaving now would throw away its result.
+    if (busy) return false;
+    // The numbers step is doing the work. It is the one screen you finish before leaving.
+    if (step.key === "align" && !alignSettled) return false;
+    switch (key) {
+      case "access":
+        return true;
+      case "brokers":
+        return accessGranted;
+      case "files":
+        return accessGranted && accounts.length > 0;
+      case "align":
+        return (
+          accessGranted &&
+          (batchIds.length > 0 || hasImported || (state?.transactions ?? 0) > 0)
+        );
+      case "forward":
+        return accessGranted && accounts.length > 0;
+    }
+  }
 
   function primaryAction(): { label: string; disabled: boolean; onClick: () => void } {
     switch (step.key) {
@@ -308,12 +356,12 @@ export function OnboardingWizard() {
         };
       case "files":
         return {
-          label: batchIds.length > 0 ? "Line up my numbers" : "Skip for now",
+          label: batchIds.length > 0 || hasImported ? "Show me my numbers" : "Skip for now",
           disabled: busy,
           // Nothing uploaded means nothing to price, promote or benchmark: the numbers
           // step would be four ticks reporting on an empty ledger, which reads as the
           // product failing rather than as the person having chosen to skip.
-          onClick: () => (batchIds.length > 0 ? goTo("align") : finish()),
+          onClick: () => (batchIds.length > 0 || hasImported ? goTo("align") : finish()),
         };
       case "align":
         return {
@@ -330,13 +378,9 @@ export function OnboardingWizard() {
     <WizardShell
       title={step.title}
       subtitle={step.subtitle}
-      steps={steps.map((s) => s.rail)}
+      steps={steps.map((s) => ({ ...s.rail, enabled: canGoTo(s.key) }))}
       stepIndex={stepIndex}
-      onBack={
-        stepIndex > 0 && step.key !== "align"
-          ? () => setStepKey(steps[stepIndex - 1]!.key)
-          : undefined
-      }
+      onStepSelect={(i) => goTo(steps[i]!.key)}
       onSkip={close}
       // Every skip in this wizard now closes it, and the dashboard checklist is the way
       // back into any step. The numbers step has nothing to skip past — it is already
@@ -373,10 +417,15 @@ export function OnboardingWizard() {
           brokers={brokers}
           onStaged={handleStaged}
           onBusyChange={setBusy}
-          onTypeInstead={handleTypeInstead}
         />
       )}
-      {step.key === "align" && <MarketAlignStep batchIds={batchIds} onSettled={handleSettled} />}
+      {step.key === "align" && (
+        <MarketAlignStep
+          batchIds={batchIds}
+          onPromoted={handlePromoted}
+          onSettled={handleSettled}
+        />
+      )}
       {step.key === "forward" && <GmailForwardStep accounts={accounts} />}
     </WizardShell>
   );

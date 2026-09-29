@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db import audit, crypto, documents
+from app.db import audit, crypto, documents, workspace_privacy
 
 #: Session flag the append-only trigger checks. Erasure is the ONE path allowed to delete
-#: from the ledger, and it has to announce itself to do so -- see 001_core.sql.
+#: from the ledger, and it has to announce itself to do so -- see 001_core.sql. Migration 044's
+#: ``ws_append_only`` reads the same setting, so the ledger and the twenty-five workspace tables
+#: agree on one word for "this transaction is an authorised erasure" rather than having two.
 ERASURE_FLAG = "app.erasure_authorised"
+
+#: Transaction-local tenant scope. Workspace tables are under RLS (migration 045), so a read or
+#: a delete with this unset sees nothing -- which is safe but indistinguishable from an investor
+#: with no research, and is therefore checked explicitly rather than relied on.
+TENANT_SETTING = "app.workspace_investor"
 
 
 class LegalHoldError(PermissionError):
@@ -131,6 +138,26 @@ def export_investor(
     # that then travels by email. The list plus a signed URL is the safer shape.
     export["documents"] = documents.documents_for_investor(conn, investor_id)
 
+    # RESEARCH, when this database has the schema for it. Added in place rather than behind a
+    # second endpoint: portability is one right, and an investor should not have to know that
+    # their notes live in different tables from their trades to get a complete copy.
+    #
+    # Skipped silently ONLY when the workspace schema is absent, which is every deployment
+    # today. That is not an omission of data -- there is no data -- and the alternative, raising
+    # on a database that has never had research, would break the existing export.
+    research_rows = 0
+    if _workspace_schema_present(conn):
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config(%s, %s, true)", (TENANT_SETTING, str(investor_id))
+            )
+        research = workspace_privacy.export_workspace(conn, investor_id)
+        export.update(research)
+        research_rows = sum(
+            len(v) for k, v in research.items()
+            if isinstance(v, list) and k != "research_export_exclusions"
+        )
+
     audit.record(
         conn,
         audit.ACTION_EXPORT,
@@ -142,9 +169,29 @@ def export_investor(
             "include_identifiers": include_identifiers,
             "transactions": len(export["transactions"]),
             "accounts": len(export["accounts"]),
+            # Counts, never content. An audit row recording what an export CONTAINED would be a
+            # second copy of it in the one table erasure deliberately does not delete.
+            "research_rows": research_rows,
+            "research_exclusions": len(export.get("research_export_exclusions", [])),
         },
     )
     return export
+
+
+def _workspace_schema_present(conn: Any) -> bool:
+    """Does this database have the workspace tables at all?
+
+    One cheap catalogue read, not a migration-state check. ``app/db/migrate.py`` owns whether
+    the bundle is complete and deployable; this only answers "is there anywhere for research
+    rows to be", so that export and erasure work unchanged on the databases that have no
+    research schema -- which is all of them today.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = 'note')"
+        )
+        return bool(cur.fetchone()[0])
 
 
 def erase_investor(
@@ -185,8 +232,33 @@ def erase_investor(
             f"investor {investor_id} has {doc_count} stored documents but no store was "
             "given. Refusing to erase database rows while leaving the files behind."
         )
+
+    workspace_present = _workspace_schema_present(conn)
+    workspace_counts: dict[str, int] = {}
+    if workspace_present:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config(%s, %s, true)", (TENANT_SETTING, str(investor_id))
+            )
+        workspace_counts = workspace_privacy.workspace_row_counts(conn, investor_id)
+
     if store is not None:
-        docs_removed = documents.delete_documents_for_investor(
+        # BYTES ONLY. ``delete_documents_for_investor`` used to delete the storage objects AND
+        # the `document` rows, then let `DELETE FROM investor` cascade the rest. That order
+        # BREAKS as soon as research exists: `research_source.document_id` references
+        # `document (investor_id, id)` with no ON DELETE action, so deleting document rows while
+        # a research source cites one fails with a foreign-key violation -- verified, not
+        # theorised.
+        #
+        # The fix is to separate artifact deletion from row deletion. Objects go now; the
+        # `document` rows go in the SAME cascading statement as `research_source` below.
+        # PostgreSQL checks NO ACTION constraints at end of statement rather than per row, so
+        # both disappear together and no intermediate orphan is ever visible.
+        #
+        # What is NOT done: nulling `research_source.document_id`, or relabelling a document's
+        # parse state to make it deletable. Either would rewrite an immutable research record to
+        # make a deletion convenient.
+        docs_removed = documents.delete_artifacts_for_investor(
             conn, store, investor_id, investor_code, actor_uid
         )
 
@@ -198,14 +270,67 @@ def erase_investor(
         )
         txn_count = cur.fetchone()[0]
 
+        # RE-CHECK THE HOLD, inside the same transaction as the delete. The first check above
+        # happened before object deletion; a hold placed in between must not be missed, and
+        # `place_legal_hold` and this statement contend for the same tenant advisory lock below,
+        # so the two orderings are both valid and both safe.
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (str(investor_id),)
+        )
+        cur.execute(
+            "SELECT reason FROM legal_hold WHERE investor_id = %s AND released_at IS NULL",
+            (investor_id,),
+        )
+        late = [r[0] for r in cur.fetchall()]
+        if late:
+            raise LegalHoldError(investor_id, late)
+
         # Announce the erasure to the append-only trigger. LOCAL, so it expires with this
         # transaction and cannot leak authorisation into any later statement.
         cur.execute(f"SET LOCAL {ERASURE_FLAG} = 'on'")
+        if workspace_present:
+            # Migration 044's ws_append_only also requires the row's investor_id to equal
+            # ws_tenant(), so the scope has to be set for the cascade to be permitted.
+            cur.execute(
+                "SELECT set_config(%s, %s, true)", (TENANT_SETTING, str(investor_id))
+            )
+        # ONE cascading statement removes accounts, transactions, documents and every workspace
+        # row, in an order PostgreSQL works out and the FK checks confirm at statement end.
         cur.execute("DELETE FROM investor WHERE id = %s", (investor_id,))
         removed = cur.rowcount
 
+    # DID IT ACTUALLY DELETE ANYTHING? A DELETE that matched no rows succeeds, and under RLS
+    # with no tenant selected every workspace table looks empty -- so "the statement ran" is not
+    # "the data is gone". Counted before and verified after, because reporting a successful
+    # erasure that removed nothing is the one failure a data principal cannot detect.
+    remaining: dict[str, int] = {}
+    if workspace_present:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config(%s, %s, true)", (TENANT_SETTING, str(investor_id))
+            )
+        remaining = {
+            table: count
+            for table, count in workspace_privacy.workspace_row_counts(conn, investor_id).items()
+            if count
+        }
+    if removed == 0:
+        raise RuntimeError(
+            f"erasure of investor {investor_id} removed no investor row. Refusing to report a "
+            "successful erasure: check the investor exists and that this connection holds the "
+            "eraser capability with a matching tenant scope."
+        )
+    if remaining:
+        raise RuntimeError(
+            f"erasure of investor {investor_id} left workspace rows behind: {remaining}. The "
+            "transaction is being rolled back; storage objects already deleted are recorded as "
+            "pending in the audit log and the operation is safe to retry."
+        )
+
     # Recorded AFTER the delete and outside the flag's usefulness, so the trail is the
-    # last thing written and cannot itself be cascaded away.
+    # last thing written and cannot itself be cascaded away. Audit and deletion share this
+    # transaction: an audit failure rolls the deletion back rather than leaving an unrecorded
+    # erasure, which is app/db/audit.py's rule and is unchanged here.
     audit.record(
         conn,
         audit.ACTION_ERASURE,
@@ -216,6 +341,15 @@ def erase_investor(
             "transactions_deleted": txn_count,
             "investors_deleted": removed,
             "documents_deleted": docs_removed,
+            # Counts per table, never content. Someone auditing a disputed erasure needs to know
+            # twelve notes were removed, not what they said.
+            "workspace_rows_deleted": sum(workspace_counts.values()),
+            "workspace_tables_affected": sorted(t for t, n in workspace_counts.items() if n),
         },
     )
-    return {"investors": removed, "transactions": txn_count, "documents": docs_removed}
+    return {
+        "investors": removed,
+        "transactions": txn_count,
+        "documents": docs_removed,
+        "workspace_rows": sum(workspace_counts.values()),
+    }

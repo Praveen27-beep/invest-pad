@@ -1,48 +1,477 @@
 "use client";
 
-import { Fragment } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, BrandMark, Lock } from "./icons";
+import { RANGES } from "@/lib/ranges";
+import { PageHeader } from "../PageHeader";
+import { NAV_GROUPS } from "../nav";
+import {
+  AllocationArcsSkeleton,
+  Card,
+  Gauge,
+  Icon,
+  LedgerGrid,
+  LedgerSecurity,
+  LedgerSigned,
+  MeterRow,
+  SegmentedControl,
+  Skeleton,
+  VintageKpi,
+  VintageKpiSkeleton,
+  VintageLinePlot,
+  type LedgerColumn,
+  type PlotSeries,
+} from "../ds";
+import { ArrowRight, Lock } from "./icons";
 
-/** Sample figures only — see the disclaimer in LandingFooter. Nothing here is wired to
- *  the real engine, and it must not be: the golden fixture is a losing portfolio. */
-const HOLDINGS = [
-  { name: "HDFC Bank", invested: "1,25,000", current: "1,68,450", pl: "+34.76%", weight: "14.2%" },
-  { name: "ICICI Bank", invested: "1,10,000", current: "1,52,320", pl: "+38.47%", weight: "12.8%" },
-  { name: "Persistent Systems", invested: "85,000", current: "1,18,750", pl: "+39.71%", weight: "10.0%" },
-  { name: "Tata Motors", invested: "60,000", current: "79,800", pl: "+33.00%", weight: "6.7%" },
+/**
+ * THE MOCKUP IS THE REAL APP.
+ *
+ * Everything inside the window is built from the components the signed-in app renders —
+ * PageHeader, VintageKpi, Card, VintageLinePlot, LedgerGrid, Gauge, MeterRow and the
+ * app's own Skeleton — reading the same design tokens, at the same type scale. The
+ * ribbon's tabs come from `NAV_GROUPS` and the chart's range buttons from `RANGES`, so
+ * neither can drift from the app the day either list changes.
+ *
+ * That is the point: a visitor who signs up must land on the screens they were shown.
+ *
+ * ONE WINDOW, FOUR SCREENS. The frame never moves. Every few seconds the PAGE inside it
+ * changes — Dashboard, Analytics, Holdings, Contribution — and the ribbon tab moves with
+ * it, exactly as it would if someone were clicking through. Nothing pops, slides or
+ * resizes: a marketing page that rearranges itself while you read it is harder to read
+ * than one that doesn't.
+ *
+ * The tabs are also real buttons. A screen asked for by hand holds for `PICKED_MS` rather
+ * than `CYCLE_MS` before the rotation resumes, because being carried off a page you just
+ * chose is the thing that makes autoplay feel like it is fighting you.
+ *
+ * WHAT CARRIES A NUMBER AND WHAT DOES NOT. Every screen's HEADER is filled in — the
+ * value, the unrealised gain, and whatever third figure that page frames it against. So
+ * is the two or three things in the body that ARE that screen: the Dashboard's XIRR and
+ * its line against the index, the Analytics health score, the first rows of Holdings, the
+ * top contributor. Everything else is structure with the app's own loading skeleton in
+ * place of the figure: real column headers, real rules, real row and tile metrics.
+ *
+ * Two reasons, and the second is the one that matters. It reads faster — against a body
+ * of placeholders, the filled figures are the only things the eye can land on, so a
+ * screen says what it is for in one glance. And every invented cell is a small fiction a
+ * reader could check and find wrong, so there are as few of them as the picture can
+ * carry. The ones that remain are sample figures, and the line under the window says so.
+ */
+
+/** The filled figures. Internally consistent so no two of them contradict each other:
+ *  11,89,340 − 8,17,690 = 3,71,650, and that over invested is +45.45%. */
+const SAMPLE = {
+  asOf: "20 Sep 2026",
+  invested: "₹8,17,690",
+  marketValue: "₹11,89,340",
+  unrealised: "₹3,71,650",
+  unrealisedPct: "+45.45%",
+  realised: "₹42,180",
+  dayChange: "₹8,740 (+0.74%)",
+  xirrAll: "+14.09%",
+  xirrHoldings: "+11.62%",
+};
+
+/** Every screen's header carries its figures. The header is the same three facts on all
+ *  four — what the portfolio is worth, what it has made, and against what — so leaving it
+ *  blank made each screen open on nothing and the whole window read as still loading. The
+ *  placeholders belong below it, where the screens actually differ. */
+const HEADER_UNREALISED = {
+  key: "unrealised",
+  label: "Unrealised",
+  value: `${SAMPLE.unrealised} (${SAMPLE.unrealisedPct})`,
+  negative: false,
+};
+
+/* ------------------------------------------------------------------- the Dashboard */
+
+const PLOT_LABELS = ["Sep 25", "Nov 25", "Dec 25", "Feb 26", "Mar 26", "May 26", "Jun 26", "Aug 26", "Sep 26"];
+
+/** In ₹ lakh, the unit the real card plots in. The benchmark starts at the same value
+ *  because the engine replicates the portfolio's own cash flows into the index rather
+ *  than rebasing a line (docs/ENGINE_SPEC.md section 6) — a mock that started them apart
+ *  would misdescribe the comparison. */
+const PLOT_SERIES: PlotSeries[] = [
+  {
+    label: "Portfolio",
+    points: ["8.42", "8.91", "9.24", "9.02", "9.86", "10.31", "10.72", "11.35", "11.89"],
+    color: "var(--ledger-ink)",
+    weight: 2.1,
+    marker: "dot",
+  },
+  {
+    label: "NIFTY 500",
+    points: ["8.42", "8.66", "8.95", "8.71", "9.12", "9.44", "9.61", "9.98", "10.34"],
+    color: "var(--alloc-accent)",
+    weight: 1.2,
+    dash: "1 3.2",
+    marker: "square",
+  },
 ];
 
-const SECTORS = [
-  { label: "Financials", pct: "30.7%", value: 30.7, colour: "#e6e3dc", offset: 25 },
-  { label: "IT", pct: "19.9%", value: 19.9, colour: "#d3c8ad", offset: -5.7 },
-  { label: "Energy", pct: "14.1%", value: 14.1, colour: "#dcb069", offset: -25.6 },
-  { label: "Industrials", pct: "12.0%", value: 12.0, colour: "#cf9d42", offset: -39.7 },
-  { label: "Others", pct: "23.3%", value: 23.3, colour: "#ad8235", offset: -51.7 },
+/* ---------------------------------------------------------------- standing-in parts */
+
+/** A score bar with no score: `MeterRow`'s geometry, standing in. Fill widths vary per
+ *  row so a column of placeholders does not read as a barcode. */
+function MeterSkeleton({ label, fill }: { label: string; fill: string }) {
+  return (
+    <div style={{ padding: "12px 0", borderBottom: "1px solid var(--border)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text-primary)" }}>{label}</span>
+        <Skeleton width={54} height={13} />
+      </div>
+      <div style={{ height: 6, borderRadius: 3, background: "var(--surface-hover)", overflow: "hidden" }}>
+        <Skeleton width={fill} height={6} radius={3} />
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------- the Holdings */
+
+/**
+ * A cell deliberately left out.
+ *
+ * `LedgerGrid` renders the rows it is given, so the placeholder goes IN the row rather
+ * than round the table: the first positions carry figures and the rest carry the app's
+ * own placeholder, at the same height, in the same tracks. That is the whole device on
+ * this screen — against a table of placeholders, the two filled rows are the only thing
+ * the eye can land on.
+ */
+const BLANK_WIDTHS = ["58%", "72%", "52%", "66%", "61%"];
+function blankCell(i: number, align: "left" | "right") {
+  return (
+    <Skeleton
+      width={BLANK_WIDTHS[i % BLANK_WIDTHS.length]}
+      height={16}
+      style={align === "right" ? { marginLeft: "auto" } : undefined}
+    />
+  );
+}
+
+interface HoldingRow {
+  /** `LedgerRow`'s own open shape, so this type is assignable to it. */
+  [key: string]: unknown;
+  id: string;
+  index: number;
+  blank?: boolean;
+  symbol?: string;
+  name?: string;
+  quantity?: string;
+  avg_cost?: string;
+  market_value?: string;
+  unrealised?: string;
+  weight?: string;
+}
+
+/** The ledger's figure treatment, for the cells this file renders itself. */
+function Figure({ children }: { children: ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "block",
+        textAlign: "right",
+        fontFamily: "var(--font-heading)",
+        fontSize: 16,
+        color: "var(--ledger-ink)",
+        fontVariantNumeric: "tabular-nums",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The Holdings page's own columns, in its own order (app/holdings/page.tsx). */
+const HOLDING_COLUMNS: LedgerColumn<HoldingRow>[] = [
+  {
+    key: "symbol",
+    label: "Security",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index, "left") : <LedgerSecurity symbol={r.symbol} name={r.name} />),
+  },
+  {
+    key: "quantity",
+    label: "Qty",
+    align: "right",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index + 1, "right") : <Figure>{r.quantity}</Figure>),
+  },
+  {
+    key: "avg_cost",
+    label: "Avg cost",
+    align: "right",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index + 2, "right") : <Figure>{r.avg_cost}</Figure>),
+  },
+  {
+    key: "market_value",
+    label: "Current",
+    align: "right",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index + 3, "right") : <Figure>{r.market_value}</Figure>),
+  },
+  {
+    key: "unrealised",
+    label: "Unrealised",
+    align: "right",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index + 4, "right") : <LedgerSigned value={r.unrealised} />),
+  },
+  {
+    key: "weight",
+    label: "Weight",
+    align: "right",
+    figure: false,
+    render: (r) => (r.blank ? blankCell(r.index, "right") : <Figure>{r.weight}</Figure>),
+  },
 ];
 
-const CURVE =
-  "M0 132 L26 127 L53 130 L79 116 L106 120 L132 106 L159 110 L185 93 L212 98 L238 82 L264 88 L291 70 L317 76 L344 58 L370 52 L397 60 L423 40 L450 33 L476 27 L502 18 L528 12";
-// The benchmark: same x-grid as CURVE, but a chopped path with real drawdowns —
-// an index never climbs in a straight line — ending above where it started but
-// well below the portfolio curve, since the whole point of the panel is showing
-// the portfolio ahead of Nifty 50, not tracking it.
-const INVESTED_LINE =
-  "M0 140 L26 133 L53 138 L79 128 L106 133 L132 140 L159 130 L185 120 L212 126 L238 108 L264 118 L291 100 L317 108 L344 90 L370 96 L397 80 L423 88 L450 70 L476 76 L502 64 L528 68";
+const HOLDING_ROWS: HoldingRow[] = [
+  { id: "1", index: 0, symbol: "HDFCBANK", name: "HDFC Bank", quantity: "84", avg_cost: "₹1,488.10", market_value: "₹1,68,450", unrealised: "+34.76%", weight: "14.2%" },
+  { id: "2", index: 1, symbol: "ICICIBANK", name: "ICICI Bank", quantity: "112", avg_cost: "₹982.14", market_value: "₹1,52,320", unrealised: "+38.47%", weight: "12.8%" },
+  ...Array.from({ length: 7 }, (_, i) => ({ id: `b${i}`, index: i + 2, blank: true })),
+];
 
-const NAV = ["Overview", "Performance", "Holdings", "Corporate actions", "Tax & ITR"];
+/* ---------------------------------------------------------------- the Contribution */
+
+/** One ranked row: the ticker, its bar, its share. Filled for the top contributor,
+ *  standing in for the rest. */
+function ContributionRow({ label, bar, share }: { label?: string; bar: string; share?: string }) {
+  const filled = Boolean(label);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      {filled ? (
+        <span
+          style={{
+            width: 104,
+            flexShrink: 0,
+            fontFamily: "var(--font-label)",
+            fontSize: 12.5,
+            color: "var(--ledger-ink)",
+          }}
+        >
+          {label}
+        </span>
+      ) : (
+        <span style={{ width: 104, flexShrink: 0 }}>
+          <Skeleton width="86%" height={13} />
+        </span>
+      )}
+      <span style={{ flexGrow: 1, height: 10, background: "var(--surface-hover)" }}>
+        {filled ? (
+          <i style={{ display: "block", height: "100%", width: bar, background: "var(--alloc-accent)" }} />
+        ) : (
+          <Skeleton width={bar} height={10} radius={0} />
+        )}
+      </span>
+      {filled ? (
+        <span
+          className="tabular-nums"
+          style={{ width: 52, textAlign: "right", font: "var(--type-body)", color: "var(--text-secondary)" }}
+        >
+          {share}
+        </span>
+      ) : (
+        <span style={{ width: 52 }}>
+          <Skeleton width={40} height={13} style={{ marginLeft: "auto" }} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------ the pages */
+
+interface AppPage {
+  /** The nav href, which is also what the window's URL bar shows. */
+  href: string;
+  header: ReactNode;
+  body: ReactNode;
+}
+
+/** The Analytics page's KPI row ends in a gauge tile rather than a fourth slip —
+ *  app/analytics/page.tsx's `HealthKpi`, whose shape is copied here. It is that page's
+ *  one filled figure: the score is what the screen is for. */
+function HealthTile() {
+  return (
+    <div
+      style={{
+        flex: "1 1 190px",
+        border: "1px solid var(--border)",
+        borderTop: "1px solid var(--ledger-rule)",
+        background: "var(--surface)",
+        padding: "14px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        boxShadow: "var(--shadow-slip)",
+      }}
+    >
+      <Gauge score={72} grade="B" size={78} />
+      <div>
+        <div
+          style={{
+            fontFamily: "var(--font-label)",
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: ".09em",
+            textTransform: "uppercase",
+            color: "var(--text-tertiary)",
+          }}
+        >
+          Portfolio health
+        </div>
+        <div style={{ fontFamily: "var(--font-heading)", fontSize: 23, marginTop: 4 }}>
+          72<span style={{ fontSize: 13, color: "var(--text-tertiary)" }}>/100</span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>5 sectors · nothing above 15%</div>
+      </div>
+    </div>
+  );
+}
+
+const PAGES: Record<string, AppPage> = {
+  "/": {
+    href: "/",
+    header: (
+      <PageHeader
+        title="Dashboard"
+        subtitle="Live · updated 15:42 IST"
+        headline={SAMPLE.marketValue}
+        changes={[
+          HEADER_UNREALISED,
+          { key: "realised", label: "Realised · since inception", value: SAMPLE.realised, negative: false },
+        ]}
+      />
+    ),
+    body: (
+      <>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: "var(--gap-grid)" }}>
+          <VintageKpiSkeleton label="Invested" />
+          <VintageKpi
+            label="Current value"
+            value={SAMPLE.marketValue}
+            foot="Marked to market"
+            footValue={SAMPLE.asOf}
+          />
+          <VintageKpiSkeleton label="Unrealised P&L" />
+          <VintageKpi
+            label="XIRR · since inception"
+            value={SAMPLE.xirrAll}
+            foot="Current holdings only"
+            footValue={SAMPLE.xirrHoldings}
+          />
+        </div>
+
+        <Card
+          title="Portfolio value vs benchmark"
+          subtitle="Daily snapshots in ₹ lakh, against NIFTY 500 TRI."
+          action={<SegmentedControl size="sm" options={RANGES.map((r) => ({ value: r, label: r }))} value="1Y" />}
+        >
+          <VintageLinePlot height={160} labels={PLOT_LABELS} series={PLOT_SERIES} formatTick={(v) => `${v}L`} />
+        </Card>
+      </>
+    ),
+  },
+
+  "/analytics": {
+    href: "/analytics",
+    header: (
+      <PageHeader
+        title="Analytics"
+        subtitle="Computed nightly · read-only"
+        headline={SAMPLE.marketValue}
+        changes={[HEADER_UNREALISED, { key: "day", label: "Today", value: SAMPLE.dayChange, negative: false }]}
+      />
+    ),
+    body: (
+      <>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch", gap: "var(--gap-grid)" }}>
+          <VintageKpiSkeleton label="Invested" />
+          <VintageKpiSkeleton label="Market value" />
+          <VintageKpiSkeleton label="Unrealised" />
+          <HealthTile />
+        </div>
+
+        <Card title="What the score is made of" subtitle="Published rubric · the same weights for every portfolio">
+          <MeterRow label="Diversification" score={78} detail="9 holdings across 5 sectors" />
+          <MeterSkeleton label="Concentration" fill="46%" />
+          <MeterSkeleton label="Quality" fill="63%" />
+        </Card>
+      </>
+    ),
+  },
+
+  "/holdings": {
+    href: "/holdings",
+    header: (
+      <PageHeader
+        title="Holdings"
+        subtitle="FIFO cost basis, computed on read from the ledger and never stored."
+        headline={SAMPLE.marketValue}
+        changes={[HEADER_UNREALISED, { key: "invested", label: "Invested", value: SAMPLE.invested, negative: null }]}
+      />
+    ),
+    body: (
+      <Card title="Holdings" subtitle="Every open position, priced to the last close">
+        <LedgerGrid columns={HOLDING_COLUMNS} rows={HOLDING_ROWS} gap={18} />
+      </Card>
+    ),
+  },
+
+  "/contribution": {
+    href: "/contribution",
+    header: (
+      <PageHeader
+        title="Contribution"
+        subtitle="Which holdings moved the portfolio, in rupees."
+        headline={SAMPLE.unrealised}
+        changes={[
+          { key: "period", label: "Period", value: "This financial year", negative: null },
+          { key: "share", label: "Top contributor", value: "HDFCBANK · 31.4%", negative: null },
+        ]}
+      />
+    ),
+    body: (
+      <>
+        <Card title="Which holdings contributed most?" subtitle="Share of the period's total gain">
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <ContributionRow label="HDFCBANK" bar="100%" share="31.4%" />
+            <ContributionRow bar="72%" />
+            <ContributionRow bar="45%" />
+            <ContributionRow bar="31%" />
+            <ContributionRow bar="19%" />
+          </div>
+        </Card>
+
+        <Card title="Portfolio allocation" subtitle={`As on ${SAMPLE.asOf}`}>
+          <AllocationArcsSkeleton size={180} rings={5} />
+        </Card>
+      </>
+    ),
+  },
+};
+
+/** How long a screen holds before the next one takes its place. */
+const CYCLE_MS = 5200;
+
+/** How long one the reader PICKED holds instead. Long enough to read a table, short
+ *  enough that a page left open eventually carries on by itself. */
+const PICKED_MS = 14000;
 
 export function LandingHero() {
   return (
     <section id="top" className="l-hero">
       <div className="l-container l-center">
-        <h1 className="l-h1 l-rise" style={{ animationDelay: "60ms", maxWidth: 920 }}>
+        <h1 className="l-h1 l-rise" style={{ animationDelay: "60ms", maxWidth: 820 }}>
           Manage your investments, better.
         </h1>
 
-        <p className="l-lede l-rise" style={{ animationDelay: "220ms", maxWidth: 660 }}>
-          Track every portfolio in one place, with actionable insights and your XIRR
-          benchmarked against the Nifty 50.
+        <p className="l-lede l-rise" style={{ animationDelay: "220ms", maxWidth: 620 }}>
+          All your stocks in one place. See what you really earned, and how it compares
+          with the Nifty 500.
         </p>
 
         <div className="l-cta-row l-rise" style={{ animationDelay: "300ms" }}>
@@ -50,193 +479,279 @@ export function LandingHero() {
             Get started <ArrowRight />
           </Link>
           <a href="#security" className="l-btn l-btn-ghost">
-            See how we protect your data
+            How we keep your data safe
           </a>
         </div>
 
         <div className="l-trust l-rise" style={{ animationDelay: "380ms" }}>
           <Lock />
-          We never ask for your broker password. Just upload a file or forward an email.
+          No broker password needed. Just upload a file or forward an email.
         </div>
       </div>
 
       <div className="l-container">
-        <div className="l-mock-wrap l-rise" style={{ animationDelay: "500ms" }}>
-          <div className="l-mock-glow l-breathe" />
-          <ProductMockup />
-        </div>
+        <ProductMockup />
+        <p className="l-mock-note">
+          The screens you get after signing in, or pick a tab to jump to one. The figures
+          shown are sample data, and the placeholders are where the rest of yours land.
+        </p>
       </div>
     </section>
   );
 }
 
 function ProductMockup() {
+  const tabs = NAV_GROUPS[0]?.items ?? [];
+  /** Nav order, not object order: drop a tab from the ribbon and it leaves the cycle. */
+  const cycle = tabs.filter((t) => PAGES[t.href]).map((t) => t.href);
+
+  const [open, setOpen] = useState<string>(cycle[0] ?? "/");
+  /** Whether the page on screen was asked for, which is all that decides how long it
+   *  holds. Cleared by the rotation itself, so one click slows one turn, not every one
+   *  after it. */
+  const [picked, setPicked] = useState(false);
+
+  /**
+   * A timeout rather than an interval, and keyed on the page being shown: every change
+   * re-arms it, so a click restarts the countdown instead of landing mid-way through
+   * somebody else's.
+   */
+  useEffect(() => {
+    if (cycle.length < 2) return;
+    // Motion that repeats forever is exactly what this query is for, and the blanket CSS
+    // override on durations is not enough on its own: the page would still change.
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setTimeout(() => {
+      setPicked(false);
+      setOpen((current) => cycle[(cycle.indexOf(current) + 1) % cycle.length] ?? current);
+    }, picked ? PICKED_MS : CYCLE_MS);
+    return () => window.clearTimeout(timer);
+    // `cycle` is derived from a module constant, so its identity changing per render is
+    // harmless here — the timeout is cleared and re-armed, never stacked.
+  }, [open, picked, cycle]);
+
+  const page = PAGES[open] ?? PAGES["/"]!;
+
   return (
-    <div className="l-mock">
-      <div className="l-mock-chrome">
+    <div className="l-mock-wrap l-rise" style={{ animationDelay: "500ms" }}>
+      <div className="l-mock-glow l-breathe" />
+      <AppWindow
+        page={page}
+        tabs={tabs}
+        onPick={(href) => {
+          if (!PAGES[href]) return;
+          setPicked(true);
+          setOpen(href);
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * The window: browser chrome, the ribbon, and a page, cropped like a screen that scrolls
+ * further than the window does.
+ *
+ * The frame, the chrome and the ribbon are rendered ONCE and never remount — only the URL
+ * and the active tab change with the page, and only the page itself is keyed, so the
+ * change is confined to the part of the picture that is actually changing.
+ *
+ * The ribbon's tabs are the only live controls: the page under them is `inert` and hidden
+ * from assistive tech, because it is a picture, and a picture made of real components
+ * still renders real buttons — hidden from assistive tech but left in the tab order is the
+ * worst of both. The attribute is passed as a spread because React 18's JSX types predate
+ * it; it serialises to `inert=""`.
+ */
+function AppWindow({
+  page,
+  tabs,
+  onPick,
+}: {
+  page: AppPage;
+  tabs: { href: string; label: string }[];
+  onPick: (href: string) => void;
+}) {
+  return (
+    <div className="l-win">
+      <div className="l-mock-chrome" aria-hidden="true">
         <span className="l-mock-dot" />
         <span className="l-mock-dot" />
         <span className="l-mock-dot" />
         <span style={{ flexGrow: 1, display: "flex", justifyContent: "center" }}>
           <span className="l-mock-url">
             <Lock size={10} />
-            app.trackrplus.in/portfolio
+            app.trackrplus.in{page.href === "/" ? "" : page.href}
           </span>
         </span>
       </div>
 
-      <div className="l-mock-body">
-        <div className="l-mock-side">
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px 16px" }}>
-            <span className="l-mark" style={{ width: 20, height: 20, borderRadius: 5 }}><BrandMark size={12} /></span>
-            <span style={{ fontFamily: "Newsreader, Georgia, serif", fontSize: 15 }}>Trackr+</span>
-          </div>
-          {NAV.map((item, i) => (
-            <span key={item} className={`l-mock-navitem${i === 0 ? " l-mock-navitem-on" : ""}`}>
-              {item}
-            </span>
-          ))}
-        </div>
-
-        <div className="l-mock-main">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ fontFamily: "Newsreader, Georgia, serif", fontSize: 22 }}>Portfolio</span>
-            <span
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 7,
-                height: 28, padding: "0 12px",
-                border: "1px solid var(--l-border)", borderRadius: 7,
-                background: "var(--l-surface)", fontSize: 11, color: "var(--l-text-3)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <span className="l-dot l-blink" style={{ width: 5, height: 5 }} />
-              Priced to 20 Sep 2026 close
-            </span>
-          </div>
-
-          <div className="l-kpis">
-            <Kpi label="Invested" figure="₹8.18 L" note="Net of brokerage & STT" />
-            <Kpi label="Current value" figure="₹11.89 L" note="Day +0.74%" noteColour="var(--l-pos)" />
-            <Kpi label="Unrealised P&L" figure="₹3.71 L" figureColour="var(--l-pos)" note="+45.29%" noteColour="var(--l-pos)" />
-            <Kpi
-              accent
-              label="XIRR · since inception"
-              figure="+14.09%"
-              figureColour="var(--l-accent)"
-              note="Annualised, computed on every read"
-              noteColour="var(--l-text-2)"
-            />
-          </div>
-
-          <div className="l-panels">
-            <div className="l-panel" style={{ display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span className="l-panel-title">Portfolio value vs Nifty 50</span>
-                <span style={{ display: "flex", gap: 3 }}>
-                  <span style={{ padding: "3px 8px", fontSize: 10, color: "var(--l-text-3)" }}>1Y</span>
-                  <span style={{ padding: "3px 8px", borderRadius: 5, background: "var(--l-accent)", color: "var(--l-page)", fontSize: 10, fontWeight: 600 }}>3Y</span>
-                  <span style={{ padding: "3px 8px", fontSize: 10, color: "var(--l-text-3)" }}>Max</span>
-                </span>
-              </div>
-
-              <svg viewBox="0 0 528 152" fill="none" style={{ width: "100%", height: "auto" }} aria-hidden="true">
-                <defs>
-                  <linearGradient id="l-curve-fill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#dcb069" stopOpacity="0.28" />
-                    <stop offset="100%" stopColor="#dcb069" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {[18, 52, 86, 120].map((y) => (
-                  <line key={y} x1="0" y1={y} x2="528" y2={y} stroke="var(--l-border)" strokeWidth="1" />
-                ))}
-                <path d={`${CURVE} L528 152 L0 152 Z`} fill="url(#l-curve-fill)" />
-                <path className="l-draw" d={CURVE} stroke="#dcb069" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                <path d={INVESTED_LINE} stroke="#8e8b86" strokeWidth="1.5" strokeDasharray="3 4" strokeLinecap="round" />
-              </svg>
-
-              <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 16, fontSize: 10, color: "var(--l-text-3)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 14, height: 2, background: "#dcb069" }} />Portfolio value
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 14, borderTop: "1.5px dashed #8e8b86" }} />Nifty 50
-                </span>
-              </div>
-            </div>
-
-            <div className="l-panel">
-              <span className="l-panel-title">Allocation by sector</span>
-              <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 16 }}>
-                <svg width="96" height="96" viewBox="0 0 42 42" style={{ flexShrink: 0 }} aria-hidden="true">
-                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--l-raised)" strokeWidth="7" />
-                  {SECTORS.map((s) => (
-                    <circle
-                      key={s.label}
-                      cx="21" cy="21" r="15.9" fill="none"
-                      stroke={s.colour} strokeWidth="7"
-                      strokeDasharray={`${s.value} ${100 - s.value}`}
-                      strokeDashoffset={s.offset}
-                    />
-                  ))}
-                </svg>
-                <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 7 }}>
-                  {SECTORS.map((s) => (
-                    <span key={s.label} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 10.5, color: "var(--l-text-2)" }}>
-                      <span style={{ width: 7, height: 7, borderRadius: 2, background: s.colour, flexShrink: 0 }} />
-                      {s.label}
-                      <span className="l-num" style={{ flexGrow: 1, color: "var(--l-text-3)" }}>{s.pct}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="l-panel">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 12 }}>
-              <span className="l-panel-title">Top holdings</span>
-              <span style={{ fontSize: 10, color: "var(--l-text-3)", whiteSpace: "nowrap" }}>Computed on read · never stored</span>
-            </div>
-            <div className="l-ledger">
-              <span className="l-ledger-head">Security</span>
-              <span className="l-ledger-head l-num l-ledger-col-hide">Invested</span>
-              <span className="l-ledger-head l-num l-ledger-col-hide">Current</span>
-              <span className="l-ledger-head l-num">P&amp;L</span>
-              <span className="l-ledger-head l-num">Weight</span>
-
-              {HOLDINGS.map((h) => (
-                <Fragment key={h.name}>
-                  <span className="l-ledger-cell" style={{ color: "var(--l-text)" }}>{h.name}</span>
-                  <span className="l-ledger-cell l-num l-ledger-col-hide">{h.invested}</span>
-                  <span className="l-ledger-cell l-num l-ledger-col-hide">{h.current}</span>
-                  <span className="l-ledger-cell l-num" style={{ color: "var(--l-pos)" }}>{h.pl}</span>
-                  <span className="l-ledger-cell l-num">{h.weight}</span>
-                </Fragment>
-              ))}
-            </div>
+      <div className="l-win-screen">
+        <div className="l-win-inner">
+          <MockRibbon tabs={tabs} active={page.href} onPick={onPick} />
+          <div
+            className="l-win-page"
+            key={page.href}
+            aria-hidden="true"
+            {...({ inert: "" } as Record<string, unknown>)}
+          >
+            {page.header}
+            <div className="l-win-body">{page.body}</div>
           </div>
         </div>
+        <div className="l-win-fade" />
+        <div className="l-win-fade-right" />
       </div>
     </div>
   );
 }
 
-function Kpi({
-  label, figure, note, accent, figureColour, noteColour,
+/**
+ * The top ribbon. The real one (components/Ribbon.tsx) needs a signed-in user, the AI
+ * chat context and a router, none of which exist on a marketing page, so the markup is
+ * duplicated here rather than the component reused. The TABS are not duplicated: they are
+ * read from `NAV_GROUPS`, so the mock cannot advertise a destination the app does not
+ * have, and the one matching the page on screen wears the current-page treatment.
+ *
+ * These are real buttons: they turn the window to that screen. They do NOT navigate — a
+ * signed-out visitor clicking Holdings wants to see what Holdings looks like, and sending
+ * them to a login wall instead is the opposite of an answer.
+ */
+function MockRibbon({
+  tabs,
+  active,
+  onPick,
 }: {
-  label: string;
-  figure: string;
-  note: string;
-  accent?: boolean;
-  figureColour?: string;
-  noteColour?: string;
+  tabs: { href: string; label: string }[];
+  active: string;
+  onPick: (href: string) => void;
 }) {
   return (
-    <div className={`l-kpi${accent ? " l-kpi-accent" : ""}`}>
-      <span className="l-kpi-label" style={accent ? { color: "var(--l-accent-dim)" } : undefined}>{label}</span>
-      <span className="l-kpi-fig" style={figureColour ? { color: figureColour } : undefined}>{figure}</span>
-      <span className="l-kpi-note" style={noteColour ? { color: noteColour } : undefined}>{note}</span>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        height: 52,
+        padding: "0 22px",
+        background: "var(--surface)",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          display: "inline-flex",
+          height: 28,
+          width: 28,
+          flexShrink: 0,
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: "var(--radius-full)",
+          background: "var(--ink-900)",
+          color: "var(--text-inverse)",
+          fontFamily: "var(--font-heading)",
+          fontSize: 11,
+        }}
+      >
+        T+
+      </span>
+
+      <span
+        aria-hidden="true"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          flexShrink: 0,
+          border: "1px solid var(--border-strong)",
+          borderRadius: "var(--radius-sm)",
+          padding: "6px 11px",
+          font: "var(--type-body-sm)",
+          color: "var(--text-primary)",
+        }}
+      >
+        <span style={{ display: "grid", gridTemplateColumns: "repeat(3, 3px)", gap: 2 }}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <i key={i} style={{ display: "block", height: 3, width: 3, borderRadius: 0.5, background: "var(--text-secondary)" }} />
+          ))}
+        </span>
+        All sections
+        <span
+          style={{
+            font: "var(--type-label)",
+            color: "var(--text-tertiary)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-xs)",
+            padding: "1px 4px",
+          }}
+        >
+          ⌘K
+        </span>
+      </span>
+
+      <span style={{ display: "flex", gap: 2, minWidth: 0, overflow: "hidden" }}>
+        {tabs.map((t) => {
+          const isActive = t.href === active;
+          return (
+            <button
+              key={t.href}
+              type="button"
+              className="l-win-tab"
+              aria-label={`Show the ${t.label} screen`}
+              aria-pressed={isActive}
+              onClick={() => onPick(t.href)}
+              style={{
+                border: "none",
+                cursor: "pointer",
+                padding: "5px 10px",
+                borderRadius: "var(--radius-sm)",
+                font: "var(--type-body-sm)",
+                whiteSpace: "nowrap",
+                background: isActive ? "var(--surface-active)" : "transparent",
+                color: isActive ? "var(--text-primary)" : "var(--text-tertiary)",
+              }}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </span>
+
+      <span aria-hidden="true" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {(["import", "mail", "reconcile", "sparkles"] as const).map((name) => (
+          <span
+            key={name}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              height: 36,
+              width: 36,
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border)",
+              background: "var(--surface)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <Icon name={name} />
+          </span>
+        ))}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: 30,
+            width: 30,
+            borderRadius: "var(--radius-full)",
+            background: "var(--surface-active)",
+            color: "var(--text-primary)",
+            font: "var(--type-body-sm)",
+          }}
+        >
+          A
+        </span>
+      </span>
     </div>
   );
 }

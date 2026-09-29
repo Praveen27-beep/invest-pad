@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { useAuth } from "@/lib/auth-context";
 import { api, ApiError } from "@/lib/api-client";
 import type { AccountOut, BrokerOut } from "@/lib/api-types";
-import { Banner, Checkbox, Input } from "../ds";
+import { Banner, Checkbox } from "../ds";
 
 /**
  * Step 2 — where do you trade? A screen that did not exist.
@@ -20,10 +20,29 @@ import { Banner, Checkbox, Input } from "../ds";
  * addresses have always been derived from the adapter registry. What was missing was a
  * question, and honesty about the answers.
  *
- * KEPT TO NAMES ONLY. Per-broker capability badges (notes/book/files/email) used to sit
- * beside each row; this list is just "which brokers do you use", so it now shows only the
- * broker name and its checkbox. What each broker can parse still comes from `GET /brokers`
- * and still drives the ingestion behaviour elsewhere — it just isn't restated here.
+ * A CHECKBOX ONLY WHERE THERE IS A CHOICE. Per-broker capability badges (notes/book/files/
+ * email) used to sit beside every row and are gone. A row now carries a tickable checkbox,
+ * or a tag saying why it has none: "Coming soon" for a broker whose documents nothing here
+ * parses yet, "already added" for one this investor already has an account with.
+ *
+ * NOTHING ARRIVES PRE-TICKED, which is the point. An existing account used to render as a
+ * ticked, locked checkbox, and a ticked box on a screen asking you to choose reads as a
+ * choice already made on your behalf. It is a fact about the account, so it is now stated as
+ * one. Every tick on this screen was made by the person looking at it.
+ *
+ * THE TAGS ARE DERIVED, NEVER TYPED HERE. "Coming soon" is `documents` arriving empty from
+ * `GET /brokers`, which app/brokers.py inverts out of the real upload routing table. So the
+ * day a Groww parser lands, that row grows a checkbox with no edit to this file, and no edit
+ * to this file can ever promise a parser that does not exist. docs/ONBOARDING_FLOW.md Part 4
+ * warns that a picker listing brokers it silently fails on turns a clear "we only do Zerodha
+ * today" into a failure at upload time; a row with no checkbox is that warning taken
+ * literally.
+ *
+ * AND THERE IS NO FREE-TEXT ROW. It used to accept any broker name at all. Settings'
+ * AccountOnboarding still does, and is now the one place an unlisted broker is added. Here
+ * the answer for someone who uses a broker we cannot read yet is to skip: the dashboard
+ * checklist keeps the step open, and nothing about looking around an empty dashboard needs
+ * an account first.
  *
  * ADDING, NEVER REMOVING. Unticking a broker you already have an account with does not
  * delete it. Accounts own transactions, and a checkbox is not a safe place to put "erase
@@ -43,7 +62,6 @@ export function BrokerPickerStep({
   const [brokers, setBrokers] = useState<BrokerOut[] | null>(null);
   const [existing, setExisting] = useState<AccountOut[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [otherName, setOtherName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,14 +93,11 @@ export function BrokerPickerStep({
     [existing]
   );
 
-  const trimmedOther = otherName.trim().toUpperCase();
-  const canContinue = picked.size > 0 || trimmedOther.length > 0 || owned.size > 0;
+  const canContinue = picked.size > 0 || owned.size > 0;
 
   const save = useCallback(async () => {
     if (!investorId) return;
-    const wanted = [...picked, ...(trimmedOther ? [trimmedOther] : [])].filter(
-      (code) => !owned.has(code)
-    );
+    const wanted = [...picked].filter((code) => !owned.has(code));
     if (wanted.length === 0) {
       // Everything ticked already exists. Nothing to write, and writing anyway would
       // leave a second account for the same broker that nothing could tell apart.
@@ -108,14 +123,13 @@ export function BrokerPickerStep({
       const all = [...existing, ...created];
       setExisting(all);
       setPicked(new Set());
-      setOtherName("");
       onAccountsChanged(all);
     } catch (err) {
       setError(friendly(err));
     } finally {
       setBusy(false);
     }
-  }, [investorId, token, picked, trimmedOther, owned, existing, onAccountsChanged]);
+  }, [investorId, token, picked, owned, existing, onAccountsChanged]);
 
   useEffect(() => {
     onReadyChange?.({ busy, canContinue, save: () => void save() });
@@ -139,6 +153,9 @@ export function BrokerPickerStep({
     );
   }
 
+  const readableNames = brokers.filter((b) => b.documents.length > 0).map((b) => b.name);
+  const comingSoon = brokers.filter((b) => b.documents.length === 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {error && (
@@ -150,6 +167,20 @@ export function BrokerPickerStep({
       <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
         {brokers.map((broker) => {
           const already = owned.has(broker.code);
+          const tag = already ? "already added" : broker.documents.length > 0 ? null : "Coming soon";
+          const name = (
+            <span
+              style={{
+                flex: 1,
+                minWidth: 140,
+                font: "var(--type-body)",
+                fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
+                color: "var(--text-primary)",
+              }}
+            >
+              {broker.name}
+            </span>
+          );
           return (
             <li
               key={broker.code}
@@ -160,78 +191,55 @@ export function BrokerPickerStep({
                 flexWrap: "wrap",
                 padding: "10px 12px",
                 border: "1px solid var(--border)",
-                background: already ? "var(--surface-sunken)" : "var(--surface)",
+                background: tag ? "var(--surface-sunken)" : "var(--surface)",
+                opacity: tag ? 0.6 : 1,
               }}
             >
-              <Checkbox
-                id={`broker-${broker.code}`}
-                checked={already || picked.has(broker.code)}
-                onChange={
-                  already
-                    ? undefined
-                    : (on) =>
-                        setPicked((current) => {
-                          const next = new Set(current);
-                          if (on) next.add(broker.code);
-                          else next.delete(broker.code);
-                          return next;
-                        })
-                }
-                label={
-                  <span
-                    style={{
-                      font: "var(--type-body)",
-                      fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    {broker.name}
-                  </span>
-                }
-                style={{ flex: 1, minWidth: 140 }}
-              />
-              {already && (
+              {tag ? (
+                name
+              ) : (
+                <Checkbox
+                  id={`broker-${broker.code}`}
+                  checked={picked.has(broker.code)}
+                  onChange={(on) =>
+                    setPicked((current) => {
+                      const next = new Set(current);
+                      if (on) next.add(broker.code);
+                      else next.delete(broker.code);
+                      return next;
+                    })
+                  }
+                  label={name}
+                  style={{ flex: 1, minWidth: 140 }}
+                />
+              )}
+              {tag && (
                 <span style={{ font: "var(--type-label)", color: "var(--text-tertiary)" }}>
-                  already added
+                  {tag}
                 </span>
               )}
             </li>
           );
         })}
-
-        <li
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            padding: "10px 12px",
-            border: "1px solid var(--border)",
-            background: "var(--surface)",
-          }}
-        >
-          <span
-            style={{
-              font: "var(--type-body)",
-              fontWeight: "var(--weight-medium)" as CSSProperties["fontWeight"],
-              color: "var(--text-primary)",
-              minWidth: 140,
-              flex: 1,
-            }}
-          >
-            Someone else
-          </span>
-          <Input
-            id="broker-other"
-            value={otherName}
-            onChange={setOtherName}
-            placeholder="Name your broker"
-            style={{ maxWidth: 200, textTransform: "uppercase" }}
-          />
-        </li>
       </ul>
+
+      {readableNames.length > 0 && comingSoon.length > 0 && (
+        <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+          {listOf(readableNames)} {readableNames.length === 1 ? "is" : "are"} the only broker
+          {readableNames.length === 1 ? "" : "s"} we can read files from right now. The others
+          are coming soon. If you do not use {readableNames.length === 1 ? "it" : "them"}, skip
+          this step and have a look around. You can add a broker later in Settings.
+        </p>
+      )}
     </div>
   );
+}
+
+/** "Zerodha", or "Zerodha and Groww", or "Zerodha, Groww and Upstox" — so the sentence
+ *  under the list stays a sentence as parsers are added. */
+function listOf(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function friendly(err: unknown): string {

@@ -71,6 +71,7 @@ stop_process() {
 section "Stopping Trackr stack"
 
 stop_process "frontend" "Next.js dev server"
+stop_process "reference-worker" "reference reconciliation worker"
 stop_process "backend"  "uvicorn (FastAPI)"
 
 if [[ "$STOP_DB" == "true" ]]; then
