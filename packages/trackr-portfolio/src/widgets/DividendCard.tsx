@@ -277,22 +277,14 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
         // dividends are automated; receipt is not (CLAUDE.md's four states), so "no
         // DIVIDEND rows" and "no dividends" are different claims and only the first is
         // what an empty ledger proves.
+        // One line. `unsized` separates "declarations exist but await a second source"
+        // from "nothing declared" -- the old copy blamed missing holdings for both.
         <EmptyState
-          title="No dividends recorded yet"
+          title="No dividends yet"
           hint={
-            <>
-              A dividend reaches this card in four steps: a company{" "}
-              <strong>declares</strong> one, we work out what you should{" "}
-              <strong>expect</strong> from the shares you held on the ex-date, you tell us
-              it was <strong>received</strong>, and only then does it count as income.
-              Nothing is here because the first step needs holdings — import your trades
-              and the declared and expected figures fill themselves in.{" "}
-              <em>
-                Receipt stays manual on purpose: no feed we can reach carries the amount
-                actually paid or the tax withheld, and &ldquo;should have received&rdquo;
-                is not the same claim as &ldquo;received&rdquo;.
-              </em>
-            </>
+            unsized > 0
+              ? `${unsized} declared ${unsized === 1 ? "dividend is" : "dividends are"} awaiting confirmation from a second source.`
+              : "No dividends declared for your holdings yet."
           }
         />
       ) : (
@@ -335,15 +327,12 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
                 }`}
                 hint={
                   earliest
-                    ? `The first one on record was ${formatDate(earliest)}. Widen the range to see it.`
+                    ? `First received ${formatDate(earliest)}. Widen the range to see it.`
                     : announcedUnavailable
-                      ? // The projection request failed. Do not describe a figure that is
-                        // not on screen, and do not imply anything was paid.
-                        "No DIVIDEND row is on the ledger for this range. The declared-dividend projection could not be loaded, so nothing is claimed about it."
-                      : // Declarations exist, no receipt does. Says why rather than
-                        // suggesting a wider range, which would find nothing either --
-                        // and never implies the announced figure was paid.
-                        "The Announced figure is what companies declared on shares you held. Receipt is not automated: add the credit or import a funds statement to record it."
+                      ? // The projection request failed: claim nothing about it.
+                        "Announced dividends could not be loaded."
+                      : // Declarations exist, no receipt does -- never imply it was paid.
+                        "Import a funds statement to record dividends received."
                 }
               />
             </div>
@@ -441,14 +430,11 @@ export function DividendCard({ names }: { names?: Record<string, string> }) {
               Received, per security
             </span>
             <p style={{ margin: 0, font: "var(--type-body-sm)", color: "var(--text-tertiary)" }}>
+              {/* Announced is a projection, never income -- say so in as few words as possible. */}
               {announcedUnavailable
-                ? "Announced is declared-but-unpaid, projected from your holdings at each ex-date. That projection could not be loaded, so whether anything is outstanding is unknown."
-                : announced === null
-                  ? "Announced is declared-but-unpaid, projected from your holdings at each ex-date. Nothing is outstanding."
-                  : "Announced is declared-but-unpaid, projected from your holdings at each ex-date — not income, and not counted in returns."}
-              {unsized > 0
-                ? ` ${unsized} declaration${unsized === 1 ? "" : "s"} could not be sized; see Exceptions.`
-                : ""}
+                ? "Announced: unavailable."
+                : "Announced = declared, not yet received; not counted in returns."}
+              {unsized > 0 ? ` ${unsized} awaiting confirmation.` : ""}
             </p>
           </div>
         </>

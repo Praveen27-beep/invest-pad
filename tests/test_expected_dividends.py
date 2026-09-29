@@ -8,7 +8,7 @@ pins the property the entire declared/received design exists to protect.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -142,6 +142,19 @@ def test_an_unverified_event_is_withheld_with_a_reason() -> None:
     expected, unprojectable = compute_expected_dividends([_buy("100", date(2024, 1, 1))], [event])
     assert expected == []
     assert unprojectable[0].code == "UNVERIFIED"
+
+
+def test_an_unverified_event_the_holder_was_never_eligible_for_is_not_reported() -> None:
+    """A feed returns a security's whole dividend history. An unverified declaration from
+    before the first buy, or on a security never held, can never apply -- it is neither
+    projected nor listed as withheld."""
+    before_first_buy = _event(verification=Verification.DRAFT)
+    never_held = _event(isin="INE009A01021", verification=Verification.DRAFT)
+    expected, unprojectable = compute_expected_dividends(
+        [_buy("100", before_first_buy.ex_date + timedelta(days=30))],
+        [before_first_buy, never_held],
+    )
+    assert expected == [] and unprojectable == []
 
 
 def test_an_uncorroborated_event_is_withheld() -> None:
