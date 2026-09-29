@@ -1,0 +1,2490 @@
+/*
+ * Trackr Workspace's visual language.
+ *
+ * THIS FILE IS A TRANSCRIPTION OF `demo.html`, NOT AN INTERPRETATION OF IT. Every value
+ * below is lifted from that file's stylesheet -- the token ramp from its second `:root`
+ * block (the "dark by default" override at ~line 520, which supersedes the light values at
+ * the top of that file), and the component geometry from the blocks that follow it. Where a
+ * number here looks arbitrary -- 216px, 38px, 13px, 62ch -- it is arbitrary in demo.html
+ * too, and it is copied rather than rounded.
+ *
+ * WHY THAT MATTERS FOR EDITING IT. The previous version of this file was a blue-glass
+ * language of its own invention, and it drifted from the demo one plausible improvement at
+ * a time. If a value here needs to change, change it in demo.html first and copy it back,
+ * or the two will part company again.
+ *
+ * WARM NEAR-BLACK, NOT BLUE-BLACK. `--ws-page` is #191918: black with a trace of warmth in
+ * it, which is what lets brass sit on top without turning green. It is deliberately not
+ * #000 -- demo.html's own choice, and a true zero would take the border ramp
+ * (#2c2c2b/#3d3d3b) with it, since those only read as hairlines against a lifted ground.
+ *
+ * SEPARATE FROM PLUS ON PURPOSE. This file never imports Plus's CSS and Plus never imports
+ * this. The product contract requires feature and data parity between the two applications
+ * and explicitly does NOT require pixel equality.
+ *
+ * Everything is a token. Components reference `var(--ws-*)` and never a literal colour.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- surfaces: demo.html's dark ramp, verbatim -----------------------------------
+   *
+   * THREE GROUNDS, AND THE DIFFERENCE BETWEEN THEM IS THE WHOLE LAYOUT. Unlike the
+   * pitch-black-everything approach this replaces, the demo separates planes by actually
+   * moving them: the rail and tab strips sit BELOW the page (`sunken`), cards and panels
+   * sit ON it (`surface`). Six points of luminance is all it takes, and it means a panel
+   * reads as a panel without a glow, a gradient or a backdrop-filter anywhere.
+   */
+  --ws-page: #191918;
+  --ws-surface: #1f1f1e;
+  --ws-sunken: #141413;
+  --ws-hover: #232322;
+  --ws-active: #2c2c2b;
+  --ws-scrim: rgb(8 8 8 / 0.62);
+
+  /* --- the neutral ramp ------------------------------------------------------------ */
+  --ws-ink-900: #f0efed;
+  --ws-ink-700: #d4d3cf;
+  --ws-ink-600: #ada9a3;
+  --ws-ink-400: #8e8b86;
+  --ws-ink-300: #6f6e69;
+  --ws-ink-200: #4a4a47;
+  --ws-ink-100: #333331;
+  --ws-ink-50: #262624;
+
+  /* --- text ------------------------------------------------------------------------ */
+  --ws-text: #eceae7;
+  --ws-text-dim: #a5a29c;
+  --ws-text-faint: #76736d;
+  --ws-text-inverse: #191918;
+
+  /* --- borders. In this language a border is load-bearing: it is what divides a metric
+   * strip into four cells and a panel into rows, so there is no padding-only separation
+   * anywhere and no shadow doing a border's job. */
+  --ws-border: #2c2c2b;
+  --ws-border-strong: #3d3d3b;
+  --ws-border-focus: #8e8b86;
+
+  /* --- state ----------------------------------------------------------------------- */
+  --ws-positive: #4ab87e;
+  --ws-positive-tint: #16271f;
+  --ws-negative: #e0655a;
+  --ws-negative-tint: #2b1a18;
+  --ws-warning: #d2a55f;
+  --ws-warning-tint: #2a2218;
+  --ws-info: #6f9dff;
+  --ws-info-tint: #1a2033;
+
+  /* --- brass: the one accent, and it is used sparingly ------------------------------
+   *
+   * It marks the product wordmark, an open question, and an AI affordance. It is NOT a
+   * primary-button colour and NOT a link colour -- the demo's primary action is white ink
+   * on near-white, which is why `--ws-btn-primary-*` below is the ink ramp and not this.
+   */
+  --ws-brass: #c89a4e;
+  --ws-brass-tint: rgb(200 154 78 / 0.13);
+  --ws-brass-text: #dcb877;
+  --ws-brass-hair: rgb(200 154 78 / 0.26);
+
+  /* --- ledger ink: the colour a FIGURE is set in ------------------------------------
+   *
+   * Money, quantities and metric values use `--ws-ledger-ink`, which is brighter than
+   * body text on purpose. In this design the numbers are the content and the prose is
+   * support, so the contrast runs the opposite way to a normal document.
+   */
+  --ws-ledger-ink: #f2f0ec;
+  --ws-ledger-faint: #8b8780;
+  --ws-ledger-rule: #4a4741;
+
+  /* --- radii ----------------------------------------------------------------------- */
+  --ws-r-xs: 4px;
+  --ws-r-sm: 6px;
+  --ws-r-md: 8px;
+  --ws-r-lg: 12px;
+  --ws-r-xl: 16px;
+  --ws-r-full: 9999px;
+
+  /* --- elevation ------------------------------------------------------------------- */
+  --ws-sh-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --ws-sh-raised: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 30px -10px rgb(0 0 0 / 0.6);
+  --ws-sh-menu: 0 14px 40px -14px rgb(0 0 0 / 0.7);
+  --ws-sh-overlay: 0 24px 60px -20px rgb(0 0 0 / 0.75);
+
+  --ws-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* --- type ------------------------------------------------------------------------
+   *
+   * THREE FAMILIES, EACH WITH ONE JOB. Newsreader (serif) sets headings AND every number,
+   * which is the single most recognisable thing about this design -- a market value in a
+   * serif with tabular figures reads as a printed ledger rather than as a dashboard. Inter
+   * sets prose. JetBrains Mono sets identifiers: symbols, ISINs, dates, provenance.
+   *
+   * The `--ws-font-*-loaded` indirection is what `next/font` fills in. `layout.tsx` puts
+   * the generated family names on <html> as these variables; the fallbacks here are what
+   * paints if the font request has not resolved yet, so first paint is Georgia rather than
+   * a flash of nothing. See `layout.tsx` for why these are self-hosted and not a CDN link.
+   */
+  --ws-font-heading: var(--ws-font-newsreader), Newsreader, Georgia, "Times New Roman", serif;
+  --ws-font-body: var(--ws-font-inter), Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ws-font-mono: var(--ws-font-jetbrains), "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* --- geometry: demo.html's final grid declaration --------------------------------- */
+  --ws-rail-width: 216px;
+  --ws-research-width: 340px;
+  --ws-strip-height: 38px;
+  --ws-tab-max: 210px;
+  /* The content measure. `.wrap` in demo.html. */
+  --ws-wrap: 1180px;
+}
+
+/*
+ * THERE IS NO LIGHT THEME, AND THAT IS A PRODUCT DECISION.
+ *
+ * A light palette and a toggle were added here and then removed on the owner's instruction
+ * (2026-09-27): Workspace is a dark product. demo.html reached the same conclusion -- its
+ * second `:root` block promotes the dark ramp and supersedes the light values at the top of
+ * that file. The top of demo.html is stale; the override is the design.
+ *
+ * So `color-scheme: dark` above is a constant: no `data-theme` attribute, no
+ * `prefers-color-scheme` query, no stored preference to read before first paint. That also
+ * removes the whole class of theme bug -- nothing can flash, mismatch on hydration, or come
+ * back from storage as a value this file does not recognise.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--ws-page);
+  /*
+   * BODY TEXT IS THE DIM ONE. `--ws-text-dim` here, not `--ws-text`: in this design prose
+   * is the quieter layer and headings, figures and `.ws-row` titles opt UP to
+   * `--ws-text`/`--ws-ledger-ink`. Setting the bright ink here instead would flatten that
+   * whole hierarchy and is the fastest way to make this palette look like a generic dark
+   * theme.
+   */
+  color: var(--ws-text-dim);
+  font: 400 14px/1.55 var(--ws-font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * NO AMBIENT GRADIENT. The version of this file being replaced painted two fixed blue
+ * radials over the page as a "light source". They are gone: this design's depth comes from
+ * the three grounds and the border ramp, and a tinted corner fights both -- it was also the
+ * main reason the app read as navy rather than as ink.
+ */
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-family: var(--ws-font-heading);
+  font-weight: 400;
+  color: var(--ws-text);
+  line-height: 1.15;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ws-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* --- scrollbars, so they belong to the theme rather than the OS -------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ws-ink-200) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--ws-ink-200);
+  border-radius: var(--ws-r-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* =====================================================================================
+ * Type utilities
+ *
+ * `.ws-num` is the important one and it is used on every figure in the application. It is
+ * the serif with `tnum` forced on, so a column of values aligns on the decimal even though
+ * the family is proportional by default. Without `font-feature-settings` Newsreader's
+ * figures are old-style and a holdings table wobbles.
+ * ===================================================================================== */
+
+.ws-mono {
+  font-family: var(--ws-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.92em;
+}
+
+.ws-num {
+  font-family: var(--ws-font-heading);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.ws-pos {
+  color: var(--ws-positive);
+}
+
+.ws-neg {
+  color: var(--ws-negative);
+}
+
+.ws-muted {
+  color: var(--ws-text-faint);
+  font-size: 11.5px;
+}
+
+/* An identifier or a date, set small and in mono. `.date` in demo.html. */
+.ws-date {
+  font-family: var(--ws-font-mono);
+  font-size: 10.5px;
+  color: var(--ws-text-faint);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.ws-date--strong {
+  color: var(--ws-ledger-faint);
+}
+
+/* =====================================================================================
+ * Shell
+ *
+ * `.app.work3` / `.app.work2` in demo.html: 216px rail, fluid centre, 340px research
+ * column when there is a document beside.
+ * ===================================================================================== */
+
+/*
+ * `minmax(0, 1fr)` on the centre, not `1fr`. A bare `1fr` has an automatic minimum of
+ * min-content, so one wide table -- Transactions, Holdings -- makes the whole grid wider
+ * than the viewport and the page scrolls horizontally, rail and all. With a zero minimum
+ * the centre can be narrower than its content and the overflow stays where it belongs,
+ * inside the table's own scroll container (`.ws-scroll-x`).
+ *
+ * `100dvh`, not `100vh`. On mobile Safari `100vh` is the viewport with the toolbar hidden,
+ * so a full-height shell is always slightly taller than what you can see and the last row
+ * sits under the browser chrome.
+ *
+ * `overflow: hidden` + a scrolling centre, which is demo.html's model: the rail and the tab
+ * strip are fixed furniture and only the document scrolls. The page itself never scrolls.
+ */
+.ws-shell {
+  display: grid;
+  grid-template-columns: var(--ws-rail-width) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/*
+ * The research column exists ONLY when a document is open. A permanent third track left
+ * empty reads as a panel that failed to load, and would take 340px off every portfolio
+ * screen for nothing.
+ */
+.ws-shell[data-research="open"] {
+  grid-template-columns: var(--ws-rail-width) minmax(0, 1fr) var(--ws-research-width);
+}
+
+/*
+ * <=1240px COLLAPSES TO TWO COLUMNS, and this block must come after the declarations it
+ * overrides -- including the `[data-research="open"]` rule above, whose selector is more
+ * specific than a bare `.ws-shell` inside a media query. Hence the attribute is repeated:
+ * media queries add no specificity, so file order is doing the work and a less-specific
+ * override would silently lose.
+ *
+ * The column is DROPPED rather than shrunk, which is demo.html's own rule at this
+ * breakpoint. A 340px document column and a portfolio table cannot both be usable in
+ * 1240px, and a research panel squeezed to 200px is worse than one reached by switching.
+ */
+@media (max-width: 1240px) {
+  .ws-shell,
+  .ws-shell[data-research="open"] {
+    grid-template-columns: var(--ws-rail-width) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .ws-shell,
+  .ws-shell[data-research="open"] {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+}
+
+.ws-centre {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--ws-page);
+}
+
+/*
+ * `.wrap` in demo.html: the content measure, centred, with the generous bottom padding that
+ * keeps the last row clear of the viewport edge. This is the element that scrolls.
+ */
+.ws-centre-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+/*
+ * `.wrap`: the content measure.
+ *
+ * IT IS ONE ELEMENT IN THE SHELL, NOT A `> *` RULE ON THE SCROLLER. Applying the measure to
+ * every direct child looks equivalent and is not: a page component that returns a fragment
+ * renders as SEVERAL direct children, and each one would then get its own 1180px box and
+ * its own 96px of bottom padding -- so a header and its body would be separately centred
+ * with a gap between them. `Shell` renders this wrapper once and `children` goes inside it,
+ * which makes the measure independent of how many roots a page happens to return.
+ */
+.ws-wrap {
+  max-width: var(--ws-wrap);
+  margin: 0 auto;
+  padding: 36px 40px 96px;
+}
+
+@media (max-width: 640px) {
+  .ws-wrap {
+    padding: 22px 16px 64px;
+  }
+}
+
+/*
+ * Local table overflow. Every wide table sits in one of these, so a 14-column ledger
+ * scrolls inside its own panel instead of widening the page.
+ */
+.ws-scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* =====================================================================================
+ * Rail
+ *
+ * `.rail` in demo.html, with the redesign block's tighter padding applied. Sunken ground,
+ * one hairline against the page, and nothing else: no gradient, no glass, no glow.
+ * ===================================================================================== */
+
+.ws-rail {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--ws-sunken);
+  border-right: 1px solid var(--ws-border);
+}
+
+@media (max-width: 900px) {
+  .ws-rail {
+    overflow-y: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--ws-border);
+  }
+}
+
+/* `.brand`: baseline-aligned, so the serif wordmark and the brass eyebrow sit on one line. */
+.ws-rail-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 16px 16px 10px;
+}
+
+/*
+ * NO LOGO TILE. The previous version drew a 34px rounded square with a blue gradient and a
+ * glow behind the wordmark. demo.html has no mark at all -- the wordmark IS the brand -- so
+ * the element is kept for the markup's sake and reduced to nothing rather than restyled.
+ */
+.ws-mark {
+  display: none;
+}
+
+.ws-wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.ws-wordmark-name {
+  font-family: var(--ws-font-heading);
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ws-ledger-ink);
+  white-space: nowrap;
+}
+.ws-wordmark-sub {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-brass);
+  white-space: nowrap;
+}
+
+.ws-rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* `.navgrp` */
+.ws-rail-group {
+  padding: 2px 8px;
+}
+
+/* `.navlabel` */
+.ws-rail-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+}
+
+/*
+ * `.nav`. A FLAT ROW, NOT A PILL. No border at rest, no gradient when active, no inset
+ * accent bar -- the active state is a filled `--ws-active` rectangle and slightly brighter
+ * ink, which is all demo.html uses. This is the single biggest visual difference from the
+ * blue-glass version and the reason the rail now reads as quiet.
+ */
+.ws-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 5px;
+  color: var(--ws-text-dim);
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.12s var(--ws-ease);
+}
+
+.ws-rail-item:hover {
+  background: var(--ws-hover);
+}
+
+.ws-rail-item[aria-current="page"],
+.ws-rail-item[data-active="true"] {
+  background: var(--ws-active);
+  color: var(--ws-text);
+  font-weight: 500;
+}
+
+.ws-rail-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-rail-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+.ws-rail-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  color: var(--ws-text-faint);
+}
+
+/* The glyph takes the row's colour once the row is active, so there is no icon variant. */
+.ws-rail-item[aria-current="page"] .ws-rail-icon,
+.ws-rail-item[data-active="true"] .ws-rail-icon {
+  color: inherit;
+}
+
+.ws-rail-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `.nav .cnt`: a count, pushed right, in mono. */
+.ws-rail-count {
+  margin-left: auto;
+  font-family: var(--ws-font-mono);
+  font-size: 9.5px;
+  color: var(--ws-text-faint);
+  flex: none;
+}
+
+/* `.railfoot` */
+.ws-rail-foot {
+  margin-top: auto;
+  padding: 14px 16px;
+  border-top: 1px solid var(--ws-border);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ws-text-faint);
+}
+
+/* --- explorer tree: `.exhead` / `.exrow` ------------------------------------------- */
+
+.ws-exhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 5px;
+}
+.ws-exhead-label {
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+}
+.ws-exhead button {
+  color: var(--ws-text-faint);
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: var(--ws-r-xs);
+}
+.ws-exhead button:hover {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+
+.ws-explorer {
+  padding: 2px 8px 8px;
+}
+
+.ws-exrow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 9px;
+  border-radius: 5px;
+  text-align: left;
+  color: var(--ws-text-dim);
+  font-size: 13px;
+  transition: background 0.1s var(--ws-ease);
+}
+.ws-exrow:hover {
+  background: var(--ws-hover);
+}
+.ws-exrow[aria-current="page"] {
+  background: var(--ws-active);
+  color: var(--ws-text);
+}
+.ws-exrow-chev {
+  width: 11px;
+  flex: none;
+  color: var(--ws-text-faint);
+  font-size: 8px;
+  text-align: center;
+  transition: transform 0.13s var(--ws-ease);
+}
+.ws-exrow-chev[data-open="true"] {
+  transform: rotate(90deg);
+}
+.ws-exrow-icon {
+  width: 13px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--ws-text-faint);
+}
+.ws-exrow-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A COMPANY IS AN IDENTIFIER, SO IT IS SET IN MONO. A note title is prose and is not. */
+.ws-exrow--company .ws-exrow-label {
+  font-family: var(--ws-font-mono);
+  font-size: 11.5px;
+  color: var(--ws-text);
+}
+.ws-exrow--sub {
+  padding-left: 31px;
+  font-size: 12px;
+  color: var(--ws-text-faint);
+}
+.ws-exrow--sub:hover,
+.ws-exrow--sub[aria-current="page"] {
+  color: var(--ws-text-dim);
+}
+
+/* `.archive` */
+.ws-archive {
+  margin-top: auto;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--ws-border);
+}
+.ws-archive-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+}
+.ws-archive-zone {
+  margin-top: 8px;
+  border: 1px dashed var(--ws-border-strong);
+  border-radius: var(--ws-r-sm);
+  padding: 12px 10px;
+  font-size: 10.5px;
+  color: var(--ws-text-faint);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* =====================================================================================
+ * Centre strip -- exactly one is visible at a time
+ *
+ * `.dtabs` / `.dtab` in demo.html. A TAB IS NOT A PILL: the strip is one sunken band 38px
+ * tall, and each tab is a full-height cell divided from its neighbour by a single
+ * border-right. The active tab is filled with the PAGE colour and covers the strip's bottom
+ * border with a 1px sliver of the same, so it reads as continuous with the document below
+ * it -- a real tab, rather than a highlighted word.
+ * ===================================================================================== */
+
+.ws-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  height: var(--ws-strip-height);
+  min-height: var(--ws-strip-height);
+  flex: none;
+  border-bottom: 1px solid var(--ws-border);
+  background: var(--ws-sunken);
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+  z-index: 20;
+}
+.ws-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.ws-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 0 11px;
+  height: var(--ws-strip-height);
+  border-right: 1px solid var(--ws-border);
+  color: var(--ws-text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 230px;
+  position: relative;
+  transition: background 0.12s var(--ws-ease);
+}
+.ws-tab:hover {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+.ws-tab[aria-current="page"] {
+  background: var(--ws-page);
+  color: var(--ws-text);
+}
+/* The 1px sliver that joins the active tab to the document. */
+.ws-tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ws-page);
+}
+.ws-tab-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--ws-text-faint);
+}
+.ws-tab[aria-current="page"] .ws-tab-icon {
+  color: inherit;
+}
+
+/* --- research document tabs --------------------------------------------------------
+ *
+ * A DOCUMENT TAB IS TWO CONTROLS, NOT ONE. The label is a real <a href> -- so cmd/ctrl
+ * click, middle-click and "open in new tab" all work natively, and a tab is a place rather
+ * than a piece of state -- and the close button is a separate <button> beside it. Nesting a
+ * button inside an anchor is invalid HTML and makes closing a tab indistinguishable from
+ * opening it for a keyboard or screen-reader user. That is why the cell geometry lives on
+ * the wrapper and the padding on the label, rather than all of it on one element.
+ */
+.ws-strip--research {
+  padding: 0;
+  gap: 0;
+}
+
+.ws-doc-tab {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: var(--ws-strip-height);
+  max-width: var(--ws-tab-max);
+  border-right: 1px solid var(--ws-border);
+  position: relative;
+  transition: background 0.12s var(--ws-ease);
+}
+.ws-doc-tab:hover {
+  background: var(--ws-hover);
+}
+.ws-doc-tab[data-active="true"] {
+  background: var(--ws-page);
+}
+.ws-doc-tab[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--ws-page);
+}
+
+/*
+ * `min-width: 0` is what actually lets the ellipsis happen: a flex item's default min-width
+ * is auto, so without it the text refuses to shrink and pushes the strip wide.
+ */
+.ws-doc-tab-label {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  min-width: 0;
+  max-width: calc(var(--ws-tab-max) - 34px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px 0 11px;
+  font-size: 12px;
+  color: var(--ws-text-dim);
+}
+.ws-doc-tab[data-active="true"] .ws-doc-tab-label {
+  color: var(--ws-text);
+}
+
+/* `.dtab .x`: hover turns it red, because it destroys something. */
+.ws-doc-tab-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0 7px 0 1px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ws-text-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ws-doc-tab-close:hover {
+  background: var(--ws-active);
+  color: var(--ws-negative);
+}
+
+/* `.dtabadd`: the trailing control. Not a close button, so it does not go red. */
+.ws-strip-add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--ws-strip-height);
+  padding: 0 12px;
+  color: var(--ws-text-faint);
+  font-size: 15px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.ws-strip-add:hover {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+
+/* --- the research chat column ------------------------------------------------------- */
+/*
+ * THREE ROWS, AND ONLY THE MIDDLE ONE SCROLLS. The header pins to the top, the composer
+ * pins to the bottom, and the log takes what is left -- which is what stops the composer
+ * from walking off the bottom of a long conversation. A single scrolling block with a
+ * sticky footer would do it too and would fight the `overflow-y` the column needs.
+ */
+.ws-research-column {
+  border-left: 1px solid var(--ws-border);
+  background: var(--ws-sunken);
+  min-width: 0;
+  display: grid;
+  grid-template-rows: var(--ws-strip-height) minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+/* 38px, the same as the centre's navigation strip, so the three columns line up. */
+.ws-research-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: var(--ws-strip-height);
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--ws-border);
+}
+.ws-research-title {
+  font-family: var(--ws-font-body);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-dim);
+}
+.ws-research-close {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ws-r-sm);
+  color: var(--ws-text-faint);
+  font-size: 17px;
+  line-height: 1;
+}
+.ws-research-close:hover {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+
+.ws-research-log {
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.ws-research-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px 16px;
+  border-top: 1px solid var(--ws-border);
+}
+.ws-research-input {
+  width: 100%;
+  resize: none;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-sm);
+  color: var(--ws-text);
+  font: 400 13px / 1.5 var(--ws-font-body);
+  padding: 8px 10px;
+}
+.ws-research-input:disabled {
+  color: var(--ws-text-faint);
+  cursor: not-allowed;
+}
+.ws-research-input:focus-visible {
+  outline: 1px solid var(--ws-border-focus);
+  outline-offset: 1px;
+}
+
+/*
+ * Dropped, not shrunk, below the two-column breakpoint. See `.ws-shell`.
+ *
+ * `display: none` rather than a width of zero on purpose: a hidden-but-present column would
+ * keep its close button and its composer in the tab order, so keyboard focus would disappear
+ * into a panel nobody can see. The shell also stops rendering it at this width, so this rule
+ * is the second of two defences rather than the only one.
+ */
+@media (max-width: 1240px) {
+  .ws-research-column {
+    display: none;
+  }
+}
+
+/* =====================================================================================
+ * Page furniture
+ * ===================================================================================== */
+
+/* `.crumb`: the small uppercase locator above a page title. */
+.ws-eyebrow,
+.ws-crumb {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+}
+
+/* `.ptitle`: the serif page title. 30px, and it is the largest thing on any screen. */
+.ws-h1 {
+  margin: 0 0 6px;
+  font-family: var(--ws-font-heading);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--ws-text);
+}
+
+/* `.psub`. The 62ch measure is deliberate: a subtitle that runs the full 1180px is a
+ * paragraph pretending to be a caption. */
+.ws-sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ws-text-dim);
+  max-width: 62ch;
+}
+
+/* `.sechead`: a section rule with an optional right-hand hint, baseline aligned. */
+.ws-sechead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 34px 0 12px;
+}
+.ws-sechead h2 {
+  font-family: var(--ws-font-heading);
+  font-size: 19px;
+  font-weight: 400;
+  color: var(--ws-text);
+  margin: 0;
+}
+.ws-hint {
+  font-size: 11.5px;
+  color: var(--ws-text-faint);
+}
+
+.ws-hr {
+  height: 1px;
+  background: var(--ws-border);
+  border: 0;
+  margin: 0;
+}
+
+/* --- metric strip -------------------------------------------------------------------
+ *
+ * `.metrics` / `.metric`. FOUR CELLS IN ONE BOX, NOT FOUR CARDS. This is the signature
+ * element of the design and it is not interchangeable with a card grid: one rounded
+ * border around the whole strip, internal `border-right` hairlines dividing it, no gaps.
+ * The version this replaces rendered four separate floating cards, which is what made the
+ * home screen read as a dashboard rather than as a statement.
+ *
+ * The value is serif, 25px, in ledger ink with tabular figures.
+ */
+.ws-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-lg);
+  overflow: hidden;
+  background: var(--ws-surface);
+}
+.ws-metric {
+  padding: 20px 22px;
+  border-right: 1px solid var(--ws-border);
+}
+.ws-metric:last-child {
+  border-right: 0;
+}
+.ws-metric-k {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-ledger-faint);
+  margin-bottom: 9px;
+}
+.ws-metric-v {
+  font-family: var(--ws-font-heading);
+  font-size: 25px;
+  line-height: 1.15;
+  color: var(--ws-ledger-ink);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+.ws-metric-s {
+  font-size: 11px;
+  color: var(--ws-text-faint);
+  margin-top: 5px;
+}
+
+/* Two-up below the point where four cells stop being readable, with the internal borders
+ * rearranged so the 2x2 grid keeps its hairlines. demo.html's own breakpoint behaviour. */
+@media (max-width: 1180px) {
+  .ws-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .ws-metric:nth-child(2) {
+    border-right: 0;
+  }
+  .ws-metric:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--ws-border);
+  }
+}
+@media (max-width: 560px) {
+  .ws-metrics {
+    grid-template-columns: 1fr;
+  }
+  .ws-metric {
+    border-right: 0;
+    border-bottom: 1px solid var(--ws-border);
+  }
+  .ws-metric:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* `.asof`: the provenance line under a metric strip. */
+.ws-asof {
+  font-size: 11px;
+  color: var(--ws-text-faint);
+  margin-top: 10px;
+}
+
+/* --- cards and panels ---------------------------------------------------------------
+ *
+ * `.card` is a bordered box you put content in. `.panel` is a bordered box whose children
+ * are ROWS -- it clips them with `overflow: hidden` so the first and last row inherit the
+ * container's corners, which is why a panel needs no padding of its own and why a row can
+ * carry a full-bleed border-bottom.
+ */
+.ws-card {
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-lg);
+  box-shadow: var(--ws-sh-card);
+  padding: 20px 22px;
+}
+
+.ws-panel {
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-lg);
+  overflow: hidden;
+}
+
+/* `.panel > header` */
+.ws-panel-head {
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid var(--ws-border);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ws-panel-head h2,
+.ws-panel-head h3 {
+  font-family: var(--ws-font-heading);
+  font-size: 15px;
+  font-weight: 400;
+  margin: 0;
+  color: var(--ws-text);
+}
+
+/*
+ * `.card .k` / section label. NOT uppercase-bold-blue any more: 10px, wide tracking, in
+ * `--ws-ledger-faint`, which is the same treatment a metric key gets. One label style for
+ * the whole app.
+ */
+.ws-card-title {
+  margin: 0 0 10px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-ledger-faint);
+}
+
+/* `.row`: a list row inside a panel. Full-bleed divider, last one suppressed. */
+.ws-row {
+  display: flex;
+  gap: 12px;
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--ws-border);
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+}
+.ws-row:last-child {
+  border-bottom: 0;
+}
+a.ws-row,
+button.ws-row {
+  transition: background 0.12s var(--ws-ease);
+}
+a.ws-row:hover,
+button.ws-row:hover {
+  background: var(--ws-hover);
+}
+.ws-row-grow {
+  flex: 1;
+  min-width: 0;
+}
+/*
+ * `display: block` on both, because these are spans and `.row .m`'s `margin-top` in
+ * demo.html only means anything on a block. Left inline the title and its meta line run
+ * together into one paragraph, which is how this row reads before the display is set.
+ */
+.ws-row-t {
+  display: block;
+  color: var(--ws-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.ws-row-m {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ws-text-faint);
+  margin-top: 3px;
+}
+
+/* `.empty` */
+.ws-empty {
+  padding: 34px 20px;
+  text-align: center;
+  color: var(--ws-text-faint);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* `.owed`: the asymmetric two-panel row. The left panel is the one that matters. */
+.ws-owed {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 1180px) {
+  .ws-owed {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* A plain auto-filling card grid, for screens that are genuinely a set of equals. */
+.ws-grid {
+  display: grid;
+  gap: 14px;
+}
+.ws-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+}
+
+/* --- holdings row -------------------------------------------------------------------
+ *
+ * `.holdrow`. A CSS GRID, NOT A TABLE, and the column widths are demo.html's. The right
+ * hand cells are serif with tabular figures, which is what makes a column of money align
+ * on the decimal; the header row reverses to the body font at 10px so it reads as a label
+ * rather than as data.
+ *
+ * `align-items: baseline` is what puts a 14px figure and an 11px qualifier on the same
+ * line -- with `center` the small text floats and the row looks misprinted.
+ */
+.ws-holdrow {
+  display: grid;
+  grid-template-columns: 82px 1fr 96px 104px 78px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--ws-border);
+  font-size: 13px;
+  width: 100%;
+  text-align: left;
+}
+.ws-holdrow:last-child {
+  border-bottom: 0;
+}
+.ws-holdrow--head {
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+  padding: 9px 18px;
+  background: var(--ws-sunken);
+}
+.ws-holdrow--foot {
+  background: var(--ws-sunken);
+  border-top: 1px solid var(--ws-border);
+  border-bottom: 0;
+}
+.ws-holdrow-r {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-family: var(--ws-font-heading);
+  font-size: 14px;
+  color: var(--ws-ledger-ink);
+}
+.ws-holdrow--head .ws-holdrow-r {
+  font-family: var(--ws-font-body);
+  font-size: 10px;
+  color: var(--ws-text-faint);
+}
+.ws-holdrow-sym {
+  font-family: var(--ws-font-mono);
+  font-size: 11.5px;
+  color: var(--ws-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-holdrow-nm {
+  color: var(--ws-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-holdrow-q {
+  color: var(--ws-text-faint);
+  font-size: 11px;
+  font-family: var(--ws-font-body);
+}
+
+/*
+ * THE SIGN COLOUR HAS TO OUT-SPECIFY THE CELL COLOUR, and this pair is the only reason it
+ * does. `.ws-holdrow-r` sets `--ws-ledger-ink` at (0,1,0); a bare `.ws-pos`/`.ws-neg` is
+ * also (0,1,0) and is declared earlier in this file, so it loses and every P/L renders
+ * cream. demo.html hits the same wall and solves it the same way, with explicit
+ * `.holdrow .r.pos` / `.holdrow .r.neg` rules.
+ *
+ * Note this is deliberately NOT done for `.ws-metric-v`: in demo.html `.metric .v` beats
+ * `.neg` on specificity and the metric strip's figures are always ledger ink, coloured
+ * sign or not. That is the rendered design, so it is kept.
+ */
+.ws-holdrow-r.ws-pos {
+  color: var(--ws-positive);
+}
+.ws-holdrow-r.ws-neg {
+  color: var(--ws-negative);
+}
+a.ws-holdrow:hover,
+button.ws-holdrow:hover {
+  background: var(--ws-hover);
+}
+
+/* The narrow holdings variant: widen the name column and drop to the essentials. */
+@media (max-width: 760px) {
+  .ws-holdrow {
+    grid-template-columns: 72px 1fr 92px;
+    row-gap: 4px;
+  }
+  .ws-holdrow-hide-narrow {
+    display: none;
+  }
+}
+
+/* =====================================================================================
+ * Chips and buttons
+ * ===================================================================================== */
+
+/* `.chip`: a small uppercase status label. Tinted ground, never a border. */
+.ws-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--ws-r-full);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ws-chip--open {
+  background: var(--ws-brass-tint);
+  color: var(--ws-brass-text);
+}
+.ws-chip--warn {
+  background: var(--ws-warning-tint);
+  color: var(--ws-warning);
+}
+.ws-chip--neg {
+  background: var(--ws-negative-tint);
+  color: var(--ws-negative);
+}
+.ws-chip--pos {
+  background: var(--ws-positive-tint);
+  color: var(--ws-positive);
+}
+.ws-chip--mute {
+  background: var(--ws-active);
+  color: var(--ws-text-dim);
+}
+.ws-chip--ink {
+  background: var(--ws-ink-900);
+  color: var(--ws-text-inverse);
+}
+
+/*
+ * `.btn`. THE PRIMARY ACTION IS WHITE, NOT BRASS AND NOT BLUE. demo.html's dark override
+ * makes `.btn.primary` near-white ink with the page colour as its text, which is the
+ * highest-contrast thing available and keeps brass for meaning rather than for emphasis.
+ */
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--ws-r-sm);
+  border: 1px solid var(--ws-border-strong);
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.14s var(--ws-ease);
+}
+.ws-btn:hover {
+  background: var(--ws-hover);
+}
+.ws-btn:active {
+  transform: scale(0.985);
+}
+.ws-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+.ws-btn:disabled:active {
+  transform: none;
+}
+
+.ws-btn--primary {
+  background: var(--ws-ink-900);
+  border-color: var(--ws-ink-900);
+  color: #171716;
+}
+.ws-btn--primary:hover {
+  background: #fff;
+  border-color: #fff;
+}
+
+.ws-btn--brass {
+  background: var(--ws-brass);
+  border-color: var(--ws-brass);
+  color: #191918;
+}
+.ws-btn--brass:hover {
+  filter: brightness(1.06);
+}
+
+.ws-btn--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ws-text-dim);
+}
+.ws-btn--ghost:hover {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+
+.ws-btn--sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.ws-btn--wide {
+  width: 100%;
+}
+
+/* `.kbd` */
+.ws-kbd {
+  font-family: var(--ws-font-mono);
+  font-size: 9.5px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--ws-text-dim);
+  background: var(--ws-surface);
+}
+
+/* =====================================================================================
+ * Form fields -- `.fld` / `.ta` / `.qinput`
+ *
+ * A FIELD SITS ON THE PAGE COLOUR, NOT ON THE SURFACE. Inputs in this design are darker
+ * than the card they sit in, which is the opposite of the glass version's lighter wells.
+ * The focus state is a border change only: no ring, no glow, no accent wash.
+ * ===================================================================================== */
+
+.ws-field {
+  display: block;
+  margin-bottom: 15px;
+}
+
+.ws-field-label {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-ledger-faint);
+}
+
+/* An inline rule beside a field label, e.g. the password minimum. Normal weight, faint and
+ * NOT uppercase, so it reads as guidance rather than as part of the label. */
+.ws-field-hint {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ws-text-faint);
+}
+
+.ws-input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-r-md);
+  background: var(--ws-page);
+  color: var(--ws-text);
+  font-size: 13.5px;
+  font-family: var(--ws-font-body);
+  outline: 0;
+}
+.ws-input::placeholder {
+  color: var(--ws-ink-300);
+}
+.ws-input:focus {
+  border-color: var(--ws-border-focus);
+}
+/* An input holding an identifier -- an ISIN, a key, a symbol -- is set in mono. */
+.ws-input.ws-mono {
+  font-family: var(--ws-font-mono);
+  font-size: 12px;
+}
+
+/* =====================================================================================
+ * Notices
+ *
+ * `.evidence` in demo.html: a sunken box with one heavier rule down its left edge. That
+ * left rule is the whole idea -- it marks the block as quoted or conditional rather than as
+ * part of the argument, which is exactly what a notice is. The error variant swaps the rule
+ * and the tint for the negative pair and says so in colour as well as in words.
+ * ===================================================================================== */
+
+.ws-notice {
+  padding: 13px 16px;
+  border: 1px solid var(--ws-border);
+  border-left: 3px solid var(--ws-ledger-rule);
+  border-radius: var(--ws-r-sm);
+  background: var(--ws-sunken);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ws-text-dim);
+}
+.ws-notice strong {
+  color: var(--ws-text);
+  font-weight: 500;
+}
+.ws-notice ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.ws-notice li {
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+
+.ws-notice--error {
+  border-color: rgb(224 101 90 / 0.3);
+  border-left-color: var(--ws-negative);
+  background: var(--ws-negative-tint);
+  color: #e69a92;
+}
+.ws-notice--error strong {
+  color: var(--ws-negative);
+}
+
+.ws-notice--warn {
+  border-color: rgb(210 165 95 / 0.3);
+  border-left-color: var(--ws-warning);
+  background: var(--ws-warning-tint);
+  color: var(--ws-warning);
+}
+
+/* `.qstrip`: the brass-tinted block that marks something owed or awaiting an answer. */
+.ws-notice--open {
+  border-color: var(--ws-brass-hair);
+  border-left-color: var(--ws-brass);
+  background: var(--ws-brass-tint);
+  color: var(--ws-brass-text);
+}
+
+/* =====================================================================================
+ * Rail footer plan badge
+ *
+ * NOT A USAGE METER. There is no quota, no storage limit and no billing in this product, so
+ * a partly-filled bar would be decoration pretending to be data. It is a tier marker, and
+ * it is brass rather than accent-blue because brass is this design's only accent.
+ * ===================================================================================== */
+
+.ws-meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  margin-bottom: 7px;
+}
+.ws-meter-label {
+  color: var(--ws-text-dim);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-meter-value {
+  font-family: var(--ws-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+  flex: none;
+}
+.ws-meter-track {
+  height: 3px;
+  border-radius: var(--ws-r-full);
+  background: var(--ws-ink-100);
+  overflow: hidden;
+}
+.ws-meter-fill {
+  height: 100%;
+  border-radius: var(--ws-r-full);
+  background: var(--ws-brass);
+}
+
+/* =====================================================================================
+ * The destination launcher -- `.ctx` in demo.html
+ *
+ * A DESKTOP CONTEXT MENU, NOT A COMMAND PALETTE. It rises from the rail's foot because that
+ * is where its trigger is: a panel that appeared centre-screen from a control in the
+ * bottom-left corner reads as a different thing opening.
+ * ===================================================================================== */
+
+.ws-gear {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid var(--ws-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ws-text-dim);
+  font-size: 12.5px;
+  transition: background 0.12s var(--ws-ease);
+}
+.ws-gear:hover,
+.ws-gear[aria-expanded="true"] {
+  background: var(--ws-hover);
+  border-color: var(--ws-border-strong);
+  color: var(--ws-text);
+}
+.ws-gear-text {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A scrim with no blur and no tint of its own beyond the demo's overlay value. The panel is
+ * opaque, so the scrim's only job is to catch the click that closes it.
+ */
+.ws-launcher-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  background: var(--ws-scrim);
+  animation: ws-fade 0.18s var(--ws-ease);
+}
+
+.ws-launcher {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 46;
+  width: min(540px, calc(100vw - 24px));
+  max-height: min(70vh, 620px);
+  overflow-y: auto;
+  padding: 5px;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border-strong);
+  border-radius: var(--ws-r-md);
+  box-shadow: var(--ws-sh-menu);
+  animation: ws-scale-in 0.12s var(--ws-ease);
+}
+
+/* `.ctx .lab` */
+.ws-launcher-title {
+  margin: 0;
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+}
+
+.ws-launcher-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0 10px;
+}
+
+.ws-launcher-group {
+  margin: 5px 0 2px;
+  padding: 6px 10px 4px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-text-faint);
+  border-top: 1px solid var(--ws-border);
+}
+
+/* `.ctx button` */
+.ws-launcher-row {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 5px;
+  color: var(--ws-text-dim);
+  text-align: left;
+}
+.ws-launcher-row:hover,
+.ws-launcher-row[data-active="true"] {
+  background: var(--ws-hover);
+  color: var(--ws-text);
+}
+.ws-launcher-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.ws-launcher-row-sub {
+  display: block;
+  margin-top: 2px;
+  padding-left: 25px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--ws-text-faint);
+}
+.ws-launcher-note {
+  margin: 5px 4px 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ws-border);
+  padding-left: 6px;
+  padding-right: 6px;
+  padding-bottom: 4px;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: var(--ws-text-faint);
+}
+
+/*
+ * The home screen's destination cards. `.ws-launcher` is the fixed menu above; this is the
+ * in-page tile, which is an ordinary bordered card that lifts on hover the way `.tcard`
+ * does in demo.html.
+ */
+.ws-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 16px;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-md);
+  box-shadow: var(--ws-sh-card);
+  transition: box-shadow 0.14s var(--ws-ease), transform 0.14s var(--ws-ease),
+    border-color 0.14s var(--ws-ease);
+}
+.ws-tile:hover {
+  box-shadow: var(--ws-sh-raised);
+  transform: translateY(-1px);
+  border-color: var(--ws-border-strong);
+}
+.ws-tile-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ws-text-faint);
+}
+.ws-launcher-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ws-text);
+}
+.ws-launcher-summary {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ws-text-faint);
+}
+
+/* =====================================================================================
+ * Centred single-purpose pages -- `.modal` in demo.html
+ * ===================================================================================== */
+
+.ws-centred {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+  overflow-y: auto;
+}
+
+.ws-centred-card {
+  width: 100%;
+  max-width: 520px;
+  padding: 28px 30px 24px;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-xl);
+  box-shadow: var(--ws-sh-overlay);
+  animation: ws-pop 0.22s var(--ws-ease);
+}
+
+@keyframes ws-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ws-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ws-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* =====================================================================================
+ * Sign in / create account
+ *
+ * The screen the whole product is reached through, so it gets the fullest expression of the
+ * language: the page ground, one bordered pane, a serif title, and nothing else competing.
+ * ===================================================================================== */
+
+.ws-auth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 32px 20px;
+}
+/* Inside the landing's right-hand column the page is already centred and already full
+ * height, so the form drops its own centring rather than fighting the grid for it. */
+.ws-landing-form .ws-auth {
+  min-height: 0;
+  padding: 0;
+  display: block;
+}
+
+.ws-auth-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 26px 28px 22px;
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-lg);
+  box-shadow: var(--ws-sh-raised);
+}
+
+/* `.seg` / `.typepick`: a segmented control on the sunken ground, the selected cell lifted
+ * to the surface colour with a card shadow. */
+.ws-auth-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 20px;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-md);
+  background: var(--ws-sunken);
+}
+.ws-auth-tab {
+  flex: 1;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--ws-r-sm);
+  background: transparent;
+  color: var(--ws-text-dim);
+  font-size: 12.5px;
+  transition: background 0.14s var(--ws-ease), color 0.14s var(--ws-ease);
+}
+.ws-auth-tab:hover {
+  color: var(--ws-text);
+}
+.ws-auth-tab[data-active="true"] {
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  box-shadow: var(--ws-sh-card);
+  font-weight: 500;
+}
+
+.ws-auth-form {
+  margin: 0;
+}
+
+.ws-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 4px 0 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ws-text-dim);
+}
+.ws-check input {
+  margin: 2px 0 0;
+  accent-color: var(--ws-brass);
+  flex: none;
+}
+.ws-check a {
+  color: var(--ws-brass-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ws-auth-error {
+  margin: 0 0 14px;
+  padding: 11px 13px;
+  border: 1px solid rgb(224 101 90 / 0.3);
+  border-left: 3px solid var(--ws-negative);
+  border-radius: var(--ws-r-sm);
+  background: var(--ws-negative-tint);
+  color: #e69a92;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.ws-auth-note {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--ws-border);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ws-text-faint);
+}
+.ws-auth-note strong {
+  color: var(--ws-text-dim);
+  font-weight: 500;
+}
+
+/* =====================================================================================
+ * Signed-out landing
+ * ===================================================================================== */
+
+.ws-landing {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 56px;
+  align-items: center;
+  max-width: var(--ws-wrap);
+  margin: 0 auto;
+  padding: 72px 40px;
+  min-height: 100dvh;
+}
+/* One column below the point where two would each be too narrow to read. The copy leads,
+ * because a visitor who has not signed in yet is reading rather than typing. */
+@media (max-width: 980px) {
+  .ws-landing {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+    padding: 48px 20px;
+    align-items: start;
+  }
+}
+.ws-landing-copy {
+  min-width: 0;
+}
+/* `.ws-landing-list` items are claims, and each gets the quoted-block left rule. */
+.ws-landing-list {
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 16px;
+  max-width: 54ch;
+}
+.ws-landing-list li {
+  padding-left: 14px;
+  border-left: 2px solid var(--ws-ink-200);
+  color: var(--ws-text-dim);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+.ws-landing-list strong {
+  color: var(--ws-text);
+  font-weight: 500;
+}
+.ws-landing-form {
+  min-width: 0;
+}
+
+/* =====================================================================================
+ * Legal and long-form text -- `.report` in demo.html
+ *
+ * 68ch is the one place a fixed measure beats a fluid one: a 1180px-wide paragraph is
+ * unreadable however elegant the surrounding layout is.
+ * ===================================================================================== */
+
+/*
+ * `/terms` is reachable SIGNED OUT, where it renders on its own with no shell around it,
+ * and signed in, where the shell's `.ws-wrap` has already applied the measure and the
+ * padding. So this carries its own padding for the standalone case and gives it back
+ * inside the wrap -- otherwise the page is either flush to the viewport edge signed out,
+ * or double-padded signed in.
+ */
+.ws-legal {
+  max-width: 68ch;
+  margin: 0 auto;
+  padding: 36px 40px 96px;
+}
+.ws-wrap > .ws-legal {
+  padding: 0;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .ws-legal {
+    padding: 22px 16px 64px;
+  }
+  .ws-wrap > .ws-legal {
+    padding: 0;
+  }
+}
+.ws-legal-section {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ws-border);
+}
+.ws-legal-heading {
+  margin: 0 0 12px;
+  font-family: var(--ws-font-heading);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--ws-text);
+}
+.ws-legal-body {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 1.72;
+  color: var(--ws-text-dim);
+}
+.ws-legal-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ws-text-dim);
+}
+.ws-legal a {
+  color: var(--ws-brass-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* =====================================================================================
+ * Motion
+ *
+ * Respect the OS setting. Someone who has asked for less motion has asked for less motion,
+ * and none of the transitions above carry information.
+ * ===================================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ======================================================================================
+   THE SHARED PORTFOLIO TOKEN BRIDGE
+
+   `@trackr/ui` and the shared portfolio screens are styled entirely with semantic CSS
+   variables -- `--surface`, `--border`, `--positive`, the `--chart-*` and `--alloc-*` ramps,
+   the `--type-*` compositions. That is what makes one implementation serve two products:
+   the package owns the NAMES and each application owns the VALUES.
+
+   Trackr+ defines those names in its own globals.css. Workspace's palette is namespaced
+   `--ws-*` and there is deliberately ZERO overlap between the two files, so without this
+   block a shared screen would render here with every colour, font and radius unset.
+
+   WHY A SCOPE AND NOT `:root`. Unprefixed names on :root would be global to Workspace, and
+   the first `--surface` or `--border` that Workspace's own research CSS wanted for a
+   different purpose would silently restyle the portfolio screens. Scoping it to the element
+   the portfolio content is mounted inside keeps the two vocabularies from colliding, and
+   makes the boundary visible: portfolio tokens exist exactly where portfolio content is.
+
+   THESE ARE WORKSPACE'S VALUES. Every entry resolves to a `--ws-*` variable wherever
+   Workspace has an opinion, so the shared screens read as part of THIS product rather than
+   as Plus embedded in it -- which is the "identical figures, app-owned appearance" split
+   `docs/PRODUCT_ARCHITECTURE.md` section 3 requires. The literals below are the cases
+   Workspace has no `--ws-*` for: the categorical chart/allocation ramps, which are data
+   encodings rather than brand colours, and are tuned here for a dark surface.
+   ====================================================================================== */
+
+.trackr-portfolio {
+  /* surfaces */
+  --surface: var(--ws-surface);
+  --surface-raised: var(--ws-hover);
+  --surface-sunken: var(--ws-sunken);
+  --surface-hover: var(--ws-hover);
+  --surface-active: var(--ws-active);
+  --overlay-scrim: var(--ws-scrim);
+  --skeleton: var(--ws-ink-100);
+
+  /* text */
+  --text-primary: var(--ws-text);
+  --text-secondary: var(--ws-text-dim);
+  --text-tertiary: var(--ws-text-faint);
+  --text-inverse: var(--ws-text-inverse);
+
+  /* ink scale, as the primitives reference it */
+  --ink-900: var(--ws-ink-900);
+  --ink-700: var(--ws-ink-700);
+  --ink-300: var(--ws-ink-300);
+  --ink-50: var(--ws-ink-50);
+
+  /* lines */
+  --border: var(--ws-border);
+  --border-strong: var(--ws-border-strong);
+  --border-focus: var(--ws-border-focus);
+
+  /* meaning */
+  --positive: var(--ws-positive);
+  --positive-tint: var(--ws-positive-tint);
+  --negative: var(--ws-negative);
+  --negative-tint: var(--ws-negative-tint);
+  --warning: var(--ws-warning);
+  --warning-tint: var(--ws-warning-tint);
+  --info: var(--ws-info);
+  --info-tint: var(--ws-info-tint);
+
+  /* the ledger voice -- the slip/grid typography the portfolio tables are set in */
+  --ledger-ink: var(--ws-ledger-ink);
+  --ledger-ink-soft: var(--ws-ink-700);
+  --ledger-ink-faint: var(--ws-ledger-faint);
+  --ledger-ink-positive: var(--ws-positive);
+  --ledger-ink-negative: var(--ws-negative);
+  --ledger-chip-text: var(--ws-text-inverse);
+  --ledger-rule: var(--ws-ledger-rule);
+
+  /* type */
+  --font-heading: var(--ws-font-heading);
+  --font-body: var(--ws-font-body);
+  --font-mono: var(--ws-font-mono);
+  --font-label: var(--ws-font-body);
+  --font-figure: var(--ws-font-heading);
+  --font-slip: var(--ws-font-heading);
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --weight-medium: 500;
+  --tracking-label: 0.06em;
+
+  --type-h2: 400 19px / 1.2 var(--font-heading);
+  --type-h3: 500 15px / 1.35 var(--font-heading);
+  --type-body: 400 14px / 1.5 var(--font-body);
+  --type-body-sm: 400 12px / 1.5 var(--font-body);
+  --type-label: 500 11px / 1.2 var(--font-body);
+  --type-metric: 400 24px / 1.2 var(--font-heading);
+  --type-mono: 400 12px / 1.5 var(--font-mono);
+
+  /* shape, depth, motion */
+  --radius-xs: var(--ws-r-xs);
+  --radius-sm: var(--ws-r-sm);
+  --radius-md: var(--ws-r-md);
+  --radius-lg: var(--ws-r-lg);
+  --shadow-slip: var(--ws-sh-card);
+  --shadow-menu: var(--ws-sh-menu);
+  --shadow-overlay: var(--ws-sh-overlay);
+  --ease-smooth: var(--ws-ease);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --press-scale: 0.97;
+
+  /* spacing the shared cards and grids read */
+  --card-padding: 18px;
+  --gap-grid: 16px;
+  --gap-section: 24px;
+
+  /*
+    CATEGORICAL RAMPS. Not brand colours: a chart series' identity. Kept as literals
+    because Workspace has no `--ws-*` equivalent, and tuned for its near-black surface --
+    Plus's values are chosen against cream and go muddy here.
+
+    The ALLOCATION ramp is ordered, not categorical: weight reads as depth of colour
+    (ink -> brass), which is the convention the allocation rings and the ledger grid share.
+  */
+  --chart-1: #6f9dff;
+  --chart-2: #4ab87e;
+  --chart-3: #d2a55f;
+  --chart-4: #e0655a;
+  --chart-5: #9b8cf0;
+  --chart-6: #56b8c4;
+  --chart-7: #d585b5;
+  --chart-8: #a3b45c;
+  --chart-9: #8e8b86;
+  --chart-grid: var(--ws-border);
+  --chart-axis-text: var(--ws-text-faint);
+  --chart-mono-1: #f0efed;
+  --chart-mono-2: #cfcdc8;
+  --chart-mono-3: #aaa7a1;
+  --chart-mono-4: #85827c;
+  --chart-mono-5: #615f5a;
+  --chart-mono-6: #45433f;
+
+  --alloc-1: #f0efed;
+  --alloc-2: #d9d6cf;
+  --alloc-3: #c2beb4;
+  --alloc-4: #aaa598;
+  --alloc-5: #938c7d;
+  --alloc-6: #7c7462;
+  --alloc-7: #655b47;
+  --alloc-8: #4e432c;
+  --alloc-9: var(--ws-brass);
+  --alloc-accent: var(--ws-brass);
+  --alloc-accent-text: var(--ws-brass-text);
+  --alloc-accent-tint: var(--ws-brass-tint);
+  --alloc-hairline: var(--ws-brass-hair);
+
+  /* the received-dividend bar, which is its own encoding rather than a chart series */
+  --data-received: #3f8f7a;
+
+  color: var(--text-primary);
+  font: var(--type-body);
+}
+
+/* =========================================================================================
+ * Research documents (FE 15-16): company modes, forms, verbatim writing, rule tables.
+ *
+ * Built on the existing tokens only -- no new colours. Writing is shown VERBATIM
+ * (`white-space: pre-wrap`), never reflowed into something the person did not type.
+ * ========================================================================================= */
+.ws-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 9px 11px;
+  background: var(--ws-surface);
+  color: var(--ws-text);
+  border: 1px solid var(--ws-border);
+  border-radius: 6px;
+  font: 400 13.5px/1.55 var(--ws-font-body);
+}
+.ws-textarea:focus {
+  outline: none;
+  border-color: var(--ws-brass);
+}
+.ws-modes {
+  display: flex;
+  gap: 2px;
+  margin: 14px 0 18px;
+  border-bottom: 1px solid var(--ws-border);
+}
+.ws-mode {
+  padding: 7px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ws-text-faint);
+  font: 500 12.5px/1 var(--ws-font-body);
+  cursor: pointer;
+}
+.ws-mode[aria-selected="true"] {
+  color: var(--ws-text);
+  border-bottom-color: var(--ws-brass);
+}
+.ws-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+}
+.ws-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.ws-form-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ws-verbatim {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ws-text);
+  margin: 0;
+}
+.ws-rules {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.ws-rules th,
+.ws-rules td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--ws-border);
+  vertical-align: top;
+}
+.ws-rules th {
+  color: var(--ws-text-faint);
+  font-weight: 500;
+}
+.ws-stack {
+  display: grid;
+  gap: 16px;
+}
+.ws-pending {
+  opacity: 0.6;
+}
+@media (max-width: 640px) {
+  .ws-modes {
+    overflow-x: auto;
+  }
+}
+
+/* =====================================================================================
+ * Butler (BT 07) -- column content, cards, reviews, and the follow/remember controls.
+ * Text only: every string here arrived from the server and is rendered as a text node.
+ * ===================================================================================== */
+.ws-butler-tabs {
+  margin: 0 0 12px;
+}
+.ws-butler-status {
+  font-size: 11.5px;
+  line-height: 1.5;
+  margin: 0 0 10px;
+}
+.ws-butler-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.ws-butler-card {
+  list-style: none;
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-md);
+  background: var(--ws-surface);
+  padding: 10px 12px;
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.ws-butler-card[data-priority="REQUIRED"] {
+  border-color: var(--ws-brass-hair);
+}
+.ws-butler-card[data-state="WITHDRAWN"] {
+  opacity: 0.75;
+}
+.ws-butler-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.ws-butler-card-title {
+  font-family: var(--ws-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--ws-text);
+}
+.ws-butler-statement {
+  margin: 0 0 6px;
+  color: var(--ws-text);
+}
+.ws-butler-basis {
+  color: var(--ws-text-faint);
+  font-size: 11px;
+}
+.ws-butler-passage {
+  margin: 8px 0;
+}
+.ws-butler-passage blockquote,
+blockquote.ws-butler-passage,
+.ws-butler-answer blockquote {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--ws-border-strong);
+  background: var(--ws-sunken);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ws-butler-question,
+.ws-butler-lesson {
+  margin: 8px 0 0;
+}
+.ws-butler-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ws-brass-text);
+}
+.ws-butler-coverage {
+  font-size: 11px;
+  margin: 8px 0 0;
+}
+.ws-butler-citations {
+  margin-top: 8px;
+}
+.ws-butler-citation-list {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+.ws-butler-hash {
+  font-size: 10.5px;
+}
+.ws-butler-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.ws-butler-memories {
+  margin: 0;
+  padding: 0;
+}
+.ws-butler-fields {
+  margin: 10px 0;
+  padding-left: 18px;
+}
+.ws-butler-fields li {
+  margin-bottom: 10px;
+}
+.ws-butler-field-head {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--ws-text);
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font: inherit;
+}
+.ws-butler-field-head:focus-visible {
+  outline: 1px solid var(--ws-border-focus);
+  outline-offset: 2px;
+}
+.ws-butler-form {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+.ws-butler-form textarea,
+.ws-butler-form input[type="text"],
+.ws-butler-form input[type="date"],
+.ws-butler-form select,
+.ws-butler-pref select,
+.ws-butler-follow select {
+  background: var(--ws-surface);
+  border: 1px solid var(--ws-border);
+  border-radius: var(--ws-r-sm);
+  color: var(--ws-text);
+  font: 400 12.5px / 1.5 var(--ws-font-body);
+  padding: 6px 8px;
+  width: 100%;
+}
+.ws-butler-follow select {
+  width: auto;
+}
+.ws-butler-follow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 12px;
+}
+.ws-butler-follow-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--ws-border);
+}
