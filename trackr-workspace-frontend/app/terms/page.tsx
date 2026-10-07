@@ -29,7 +29,7 @@ import {
 export default function Terms() {
   return (
     <main className="ws-legal">
-      <p className="ws-eyebrow">Trackr Workspace &middot; version {CURRENT_TOS_VERSION}</p>
+      <p className="ws-eyebrow">Invest-pad &middot; version {CURRENT_TOS_VERSION}</p>
       <h1 className="ws-h1" style={{ fontSize: 26, marginTop: 8 }}>
         Terms of Service &amp; Privacy Policy
       </h1>

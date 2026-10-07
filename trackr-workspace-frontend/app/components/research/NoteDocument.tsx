@@ -78,7 +78,7 @@ export function NoteDocument({ noteId }: { noteId: string }) {
         </div>
       )}
 
-      <div className="ws-panel" style={{ padding: "16px 18px" }}>
+      <div className="ip-note-body" data-kind={data.kind}><div className="ip-note-kind">{data.kind === "OBSERVATION" ? "Sourced observation" : data.kind.toLowerCase().replace("_", " ")}</div>
         {data.body ? <p className="ws-verbatim">{data.body}</p> : <p className="ws-muted">No body text.</p>}
       </div>
 

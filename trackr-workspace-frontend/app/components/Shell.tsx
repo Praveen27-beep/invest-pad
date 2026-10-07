@@ -51,6 +51,7 @@ import { NoWorkspaceAccess } from "./NoWorkspaceAccess";
  * Workspace it is the account's own export and erasure controls, which are meaningless -- and
  * would fire unauthenticated requests -- without a session.
  */
+const MARKETING_PATHS = new Set(["/features", "/pricing", "/blog", "/manifesto", "/docs"]);
 const PUBLIC_PATHS = new Set(["/login", "/terms", "/coming-soon"]);
 
 /**
@@ -72,7 +73,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   // the half-second before that resolves is how a signed-in user gets told, briefly, that they
   // are signed out -- on every single page load. Also the reason no private fetch can start
   // before this point: the scaffold has no private children to mount yet.
-  if (!ready) return null;
+  if (MARKETING_PATHS.has(pathname)) return <>{children}</>;
+  if (!ready) return <div className="ws-empty" role="status">Opening Invest-pad…</div>;
 
   if (!token) {
     // Public routes render OUTSIDE the private chrome -- no rail, no strip, no launcher -- so a

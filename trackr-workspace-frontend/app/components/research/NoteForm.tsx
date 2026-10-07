@@ -93,7 +93,7 @@ export function NoteForm({
   }
 
   return (
-    <form className={`ws-form${pending ? " ws-pending" : ""}`} onSubmit={save}>
+    <form className={`ws-form ip-note-editor${pending ? " ws-pending" : ""}`} onSubmit={save}>
       <div className="ws-form-row">
         <label className="ws-field">
           <span className="ws-field-label">Kind</span>
@@ -150,7 +150,8 @@ export function NoteForm({
       <label className="ws-field">
         <span className="ws-field-label">Title</span>
         <input
-          className="ws-input"
+          className="ws-input ip-title"
+          placeholder="Give this idea a title"
           required
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -158,8 +159,8 @@ export function NoteForm({
         />
       </label>
       <label className="ws-field">
-        <span className="ws-field-label">Body</span>
-        <textarea className="ws-textarea" value={body} onChange={(e) => setBody(e.target.value)} />
+        <span className="ws-field-label">Your writing · unsaved until you save a version</span>
+        <textarea placeholder="Write in your own words. Separate what you know from what you think it means." className="ws-textarea" value={body} onChange={(e) => setBody(e.target.value)} />
       </label>
       <div className="ws-form-row">
         <label className="ws-field">

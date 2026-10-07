@@ -38,6 +38,7 @@ const REASON_LABEL: Record<string, string> = {
 export function ExplorerView() {
   const { investorId, token } = useResearchAuth();
   const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
   const companies = useFetch<Page<CompanyListItem>>(
     investorId ? paths.companies(investorId) : null,
     { q: q.trim() || undefined },
@@ -46,18 +47,17 @@ export function ExplorerView() {
   const home = useFetch<Home>(investorId ? paths.home(investorId) : null, undefined, token);
 
   return (
-    <div>
-      <div className="ws-crumb">Research &middot; Explorer</div>
-      <h1 className="ws-h1">Companies &amp; notes</h1>
-      <p className="ws-sub">
-        Companies you have opened a research file on. A company unlocks once you have written
-        down your own questions about it.
-      </p>
-
-      <HomeFeed home={home.data} error={home.error} loading={home.loading} />
-
+    <div className="ip-library">
+      <header className="ip-library-head">
+        <div><div className="ws-crumb">YOUR WORKSPACE</div>
+        <h1 className="ws-h1">Research library</h1>
+        <p className="ws-sub">A place to build conviction. And remember how you got there.</p></div>
+        <button className="ws-btn ws-btn--primary" onClick={() => setAdding(!adding)} aria-expanded={adding}>{adding ? "Close search" : "+ Research a company"}</button>
+      </header>
+      {adding && <AddCompany onAdded={companies.refetch} />}
+      <div className="ip-library-layout"><section className="ip-library-main">
       <div className="ws-sechead">
-        <h2>Companies</h2>
+        <h2>All companies</h2>
         <div className="ws-hint">
           {companies.data ? `${companies.data.items.length} shown` : " "}
         </div>
@@ -70,6 +70,7 @@ export function ExplorerView() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="ISIN, symbol or name"
+            aria-label="Filter your companies"
             maxLength={64}
           />
         </label>
@@ -84,15 +85,16 @@ export function ExplorerView() {
             <div className="ws-empty">
               {q.trim()
                 ? "No company in your research matches that."
-                : "No companies yet. Add one below to start a research file."}
+                : "Your first research file starts with a question."}
             </div>
           )}
           {companies.data?.items.map((company) => (
             <CompanyRow key={company.isin} company={company} />
           ))}
         </div>
-        <AddCompany onAdded={companies.refetch} />
       </div>
+      {!q.trim() && companies.data?.items.length === 0 && <div className="ip-library-intro"><span className="ip-library-number">01 / BEGIN</span><h2>What do you want<br />to understand?</h2><p>Choose an Indian company. Write your questions, collect the evidence, and keep your thinking in one place.</p><button className="ws-btn" onClick={() => setAdding(true)}>Find a company <span aria-hidden="true">↗</span></button><div className="ip-library-steps"><span>Ask a question</span><span>Read the evidence</span><span>Write your view</span></div></div>}
+      </section><aside className="ip-library-aside"><HomeFeed home={home.data} error={home.error} loading={home.loading} /><div className="ip-library-principle"><span>THE RESEARCH HABIT</span><p>Separate what you know from what you believe.</p><Link href="/manifesto">Our manifesto ↗</Link></div></aside></div>
     </div>
   );
 }
@@ -286,8 +288,8 @@ function AddCompany({ onAdded }: { onAdded: () => void }) {
   return (
     <div className="ws-panel">
       <div className="ws-panel-head">
-        <h3>Add a company</h3>
-        <span className="ws-hint">listed equities known to the system, by ISIN</span>
+        <h3>Research a company</h3>
+        <span className="ws-hint">Search Indian listed companies</span>
       </div>
       <div className="ws-form">
         <label className="ws-field">
@@ -296,7 +298,7 @@ function AddCompany({ onAdded }: { onAdded: () => void }) {
             className="ws-input"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="At least 2 characters"
+            placeholder="Search by company, symbol or ISIN"
             maxLength={64}
           />
         </label>

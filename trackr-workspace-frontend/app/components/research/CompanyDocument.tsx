@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { descriptorId, noteHref } from "@trackr/portfolio";
-import { useFetch } from "@trackr/core";
+import { Figure, useFetch } from "@trackr/core";
 import { useWorkspaceNav } from "@/lib/workspace-context";
 import {
   istToday,
@@ -30,25 +30,43 @@ import {
   type Note,
   type Page,
   type Question,
+  type Fact,
+  type Source,
 } from "@/lib/research-api";
-import { describeError, useResearchAuth, useSubmit } from "@/lib/research-hooks";
+import {
+  describeError,
+  useResearchAuth,
+  useSubmit,
+} from "@/lib/research-hooks";
 import { NoteForm } from "./NoteForm";
 import { ThesisPanel } from "./ThesisPanel";
 import { EvidencePanel } from "./EvidencePanel";
+import { AdvancedEvidence } from "./AdvancedEvidence";
 import { AskPanel, TasksPanel } from "./TasksPanel";
 import { ReportsPanel } from "./ReportsPanel";
 import { FollowControl } from "../butler/ButlerControls";
 
 const MODES = [
   { key: "overview", label: "Overview" },
-  { key: "questions", label: "Questions" },
-  { key: "notes", label: "Notes" },
-  { key: "thesis", label: "Thesis" },
-  { key: "evidence", label: "Evidence" },
-  { key: "tasks", label: "Tasks" },
-  { key: "ask", label: "Ask" },
+  { key: "financials", label: "Financials" },
+  { key: "thesis", label: "Investment Thesis" },
+  { key: "research", label: "Research Report" },
+  { key: "valuation-summary", label: "Valuation Summary" },
+  { key: "valuation", label: "Valuation Model" },
+  { key: "capex", label: "Capex Tracker" },
+  { key: "calls", label: "Read Between the Lines" },
+  { key: "forensics", label: "Forensics" },
+  { key: "consistency", label: "Management Consistency" },
 ] as const;
-type Mode = (typeof MODES)[number]["key"];
+const WORK_MODES = [
+  { key: "notes", label: "Research notes" },
+  { key: "questions", label: "Questions" },
+  { key: "evidence", label: "Get filings" },
+  { key: "tasks", label: "Run a skill" },
+  { key: "ask", label: "Review my thinking" },
+] as const;
+const ALL_MODES = [...MODES, ...WORK_MODES];
+type Mode = (typeof ALL_MODES)[number]["key"];
 
 export function CompanyDocument({ isin }: { isin: string }) {
   const { investorId, token } = useResearchAuth();
@@ -56,16 +74,20 @@ export function CompanyDocument({ isin }: { isin: string }) {
   const view = useFetch<CompanyView>(
     investorId ? paths.company(investorId, isin) : null,
     undefined,
-    token
+    token,
   );
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const requested = searchParams.get("mode");
-  const mode: Mode = MODES.some((m) => m.key === requested) ? (requested as Mode) : "overview";
+  const requested = searchParams.get("mode") ?? searchParams.get("view");
+  const mode: Mode = ALL_MODES.some((m) => m.key === requested)
+    ? (requested as Mode)
+    : "overview";
 
   const identity = view.data?.identity;
-  const label = identity ? identity.symbol ?? identity.name ?? identity.isin : null;
+  const label = identity
+    ? (identity.symbol ?? identity.name ?? identity.isin)
+    : null;
   useEffect(() => {
     // The tab label comes from the AUTHORISED record only, after it loaded.
     if (label) labelDocument(descriptorId("company", isin), label);
@@ -73,10 +95,11 @@ export function CompanyDocument({ isin }: { isin: string }) {
 
   function setMode(next: Mode) {
     const query = new URLSearchParams(searchParams.toString());
+    query.delete("view");
     if (next === "overview") query.delete("mode");
     else query.set("mode", next);
     const qs = query.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
+    router.push(qs ? `${pathname}?${qs}` : pathname);
   }
 
   if (view.loading) return <div className="ws-empty">Loading&hellip;</div>;
@@ -88,7 +111,7 @@ export function CompanyDocument({ isin }: { isin: string }) {
         <div className="ws-notice ws-notice--error">
           {view.errorDetail?.status === 404
             ? "This company is not in your research. Add it from Explorer."
-            : describeError(view.errorDetail) ?? view.error}
+            : (describeError(view.errorDetail) ?? view.error)}
         </div>
         <p>
           <Link href="/explorer" className="ws-btn ws-btn--ghost">
@@ -109,42 +132,96 @@ export function CompanyDocument({ isin }: { isin: string }) {
         {data.identity.canonical_isin !== data.identity.isin
           ? ` → now ${data.identity.canonical_isin}`
           : ""}
-        {data.identity.name && data.identity.symbol ? ` · ${data.identity.name}` : ""}
+        {data.identity.name && data.identity.symbol
+          ? ` · ${data.identity.name}`
+          : ""}
       </p>
-      {/* Explicit follow / review controls. Opening this page follows nothing. */}
-      <FollowControl isin={data.identity.isin} />
-      {/* Report-first entry (RP 07): available BEFORE the ritual, issuer evidence only.
-          Adding private research to a report is a separate scope that needs the ritual. */}
-      <ReportsPanel isin={data.identity.isin} ritualComplete={data.state !== "RITUAL_REQUIRED"} />
-
       {data.state === "RITUAL_REQUIRED" ? (
         <RitualForm isin={isin} onSaved={view.refetch} />
       ) : (
         <>
-          <div className="ws-modes" role="tablist" aria-label="Company views">
-            {MODES.map((m) => (
+          <div className="ip-company-tools">
+            {WORK_MODES.map((m) => (
               <button
                 key={m.key}
-                type="button"
-                role="tab"
-                className="ws-mode"
-                aria-selected={mode === m.key}
+                className={`ws-btn ws-btn--sm${mode === m.key ? " ws-btn--primary" : " ws-btn--ghost"}`}
+                aria-pressed={mode === m.key}
                 onClick={() => setMode(m.key)}
               >
                 {m.label}
+                {m.key === "questions" && data.open_questions.length
+                  ? ` (${data.open_questions.length})`
+                  : ""}
               </button>
             ))}
+            <FollowControl isin={data.identity.isin} />
           </div>
-          {mode === "overview" && <Overview data={data} onChanged={view.refetch} />}
-          {mode === "questions" && <QuestionsPanel isin={isin} onChanged={view.refetch} />}
+          <nav className="ws-modes ip-company-tabs" aria-label="Company views">
+            {MODES.map((m) => (
+              <Link
+                key={m.key}
+                className="ws-mode"
+                aria-current={mode === m.key ? "page" : undefined}
+                data-active={mode === m.key}
+                href={`${pathname}?mode=${m.key}`}
+              >
+                {m.label}
+              </Link>
+            ))}
+          </nav>
+          {mode === "research" && <ReportsPanel isin={isin} ritualComplete />}
+          {mode === "valuation" && (
+            <>
+              <h2 className="ws-h1">Valuation Model</h2>
+              <p className="ws-sub">
+                Scenarios from your assumptions and verified inputs. No price
+                targets.
+              </p>
+              <AdvancedEvidence isin={isin} section="calculations" />
+            </>
+          )}
+          {[
+            "financials",
+            "valuation-summary",
+            "capex",
+            "calls",
+            "forensics",
+            "consistency",
+          ].includes(mode) && (
+            <ResearchSection
+              key={`${isin}:${mode}`}
+              isin={isin}
+              mode={mode}
+              onWrite={() => setMode("notes")}
+              onEvidence={() => setMode("evidence")}
+            />
+          )}
+          {mode === "overview" && (
+            <Overview data={data} onChanged={view.refetch} />
+          )}
+          {mode === "questions" && (
+            <QuestionsPanel isin={isin} onChanged={view.refetch} />
+          )}
           {mode === "notes" && <NotesPanel isin={isin} />}
-          {mode === "thesis" && <ThesisPanel isin={isin} onChanged={view.refetch} />}
+          {mode === "thesis" && (
+            <ThesisPanel isin={isin} onChanged={view.refetch} />
+          )}
           {mode === "evidence" && <EvidencePanel isin={isin} />}
           {mode === "tasks" && (
-            <TasksPanel isin={isin} thesisId={data.state === "READY" ? data.thesis?.id ?? null : null} />
+            <TasksPanel
+              isin={isin}
+              thesisId={
+                data.state === "READY" ? (data.thesis?.id ?? null) : null
+              }
+            />
           )}
           {mode === "ask" && (
-            <AskPanel isin={isin} thesisId={data.state === "READY" ? data.thesis?.id ?? null : null} />
+            <AskPanel
+              isin={isin}
+              thesisId={
+                data.state === "READY" ? (data.thesis?.id ?? null) : null
+              }
+            />
           )}
         </>
       )}
@@ -158,9 +235,9 @@ export function CompanyDocument({ isin }: { isin: string }) {
 
 function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
   const { investorId, token } = useResearchAuth();
-  const [questions, setQuestions] = useState<{ text: string; blocking: boolean }[]>([
-    { text: "", blocking: true },
-  ]);
+  const [questions, setQuestions] = useState<
+    { text: string; blocking: boolean }[]
+  >([{ text: "", blocking: true }]);
   const [writtenOn, setWrittenOn] = useState(istToday());
   const { submit, pending, error } = useSubmit<unknown>();
   const filled = questions.filter((q) => q.text.trim());
@@ -169,7 +246,11 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
     event.preventDefault();
     const body = { questions: filled, written_on: writtenOn };
     const saved = await submit(body, (key) =>
-      write.createRitual({ investorId, token, idempotencyKey: key }, isin, body)
+      write.createRitual(
+        { investorId, token, idempotencyKey: key },
+        isin,
+        body,
+      ),
     );
     if (saved) onSaved();
   }
@@ -178,16 +259,25 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
     <div className="ws-panel" style={{ maxWidth: 720 }}>
       <div className="ws-panel-head">
         <h2>Your questions come first</h2>
-        <span className="ws-hint">nothing here opens until at least one is saved</span>
+        <span className="ws-hint">
+          nothing here opens until at least one is saved
+        </span>
       </div>
-      <form className={`ws-form${pending ? " ws-pending" : ""}`} onSubmit={save}>
+      <form
+        className={`ws-form${pending ? " ws-pending" : ""}`}
+        onSubmit={save}
+      >
         <p className="ws-row-m">
-          Write down what you need to find out about this company before you form a view.
-          Mark a question as blocking if no thesis should be published while it is unanswered.
-          Saving them does not answer them.
+          Write down what you need to find out about this company before you
+          form a view. Mark a question as blocking if no thesis should be
+          published while it is unanswered. Saving them does not answer them.
         </p>
         {questions.map((question, index) => (
-          <div key={index} className="ws-form-row" style={{ gridTemplateColumns: "1fr auto auto" }}>
+          <div
+            key={index}
+            className="ws-form-row"
+            style={{ gridTemplateColumns: "1fr auto auto" }}
+          >
             <label className="ws-field">
               <span className="ws-field-label">Question {index + 1}</span>
               <input
@@ -196,7 +286,9 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
                 maxLength={2000}
                 onChange={(e) =>
                   setQuestions((all) =>
-                    all.map((q, i) => (i === index ? { ...q, text: e.target.value } : q))
+                    all.map((q, i) =>
+                      i === index ? { ...q, text: e.target.value } : q,
+                    ),
                   )
                 }
               />
@@ -207,7 +299,9 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
                 checked={question.blocking}
                 onChange={(e) =>
                   setQuestions((all) =>
-                    all.map((q, i) => (i === index ? { ...q, blocking: e.target.checked } : q))
+                    all.map((q, i) =>
+                      i === index ? { ...q, blocking: e.target.checked } : q,
+                    ),
                   )
                 }
               />{" "}
@@ -218,7 +312,9 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
               className="ws-btn ws-btn--ghost ws-btn--sm"
               style={{ alignSelf: "end" }}
               disabled={questions.length === 1}
-              onClick={() => setQuestions((all) => all.filter((_, i) => i !== index))}
+              onClick={() =>
+                setQuestions((all) => all.filter((_, i) => i !== index))
+              }
             >
               Remove
             </button>
@@ -229,7 +325,9 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
             type="button"
             className="ws-btn ws-btn--ghost ws-btn--sm"
             disabled={questions.length >= 20}
-            onClick={() => setQuestions((all) => [...all, { text: "", blocking: false }])}
+            onClick={() =>
+              setQuestions((all) => [...all, { text: "", blocking: false }])
+            }
           >
             Add another question
           </button>
@@ -243,14 +341,20 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
             />
           </label>
         </div>
-        {error && <div className="ws-notice ws-notice--error">{describeError(error)}</div>}
+        {error && (
+          <div className="ws-notice ws-notice--error">
+            {describeError(error)}
+          </div>
+        )}
         <div className="ws-form-actions">
           <button
             type="submit"
             className="ws-btn ws-btn--primary"
             disabled={pending || filled.length === 0}
           >
-            {pending ? "Saving…" : `Save ${filled.length || ""} question${filled.length === 1 ? "" : "s"}`}
+            {pending
+              ? "Saving…"
+              : `Save ${filled.length || ""} question${filled.length === 1 ? "" : "s"}`}
           </button>
         </div>
       </form>
@@ -262,9 +366,16 @@ function RitualForm({ isin, onSaved }: { isin: string; onSaved: () => void }) {
 // Overview
 // ------------------------------------------------------------------------------------
 
-function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () => void }) {
+function Overview({
+  data,
+  onChanged,
+}: {
+  data: CompanyViewReady;
+  onChanged: () => void;
+}) {
   return (
     <div className="ws-stack">
+      <MarketSummary data={data} />
       {data.notices.map((notice) => (
         <div key={notice.code} className="ws-notice ws-notice--warn">
           {notice.message}
@@ -278,10 +389,16 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
         </div>
         <div className="ws-panel">
           {data.open_questions.length === 0 ? (
-            <div className="ws-empty">Every question you recorded has an answer.</div>
+            <div className="ws-empty">
+              Every question you recorded has an answer.
+            </div>
           ) : (
             data.open_questions.map((question) => (
-              <QuestionItem key={question.id} question={question} onChanged={onChanged} />
+              <QuestionItem
+                key={question.id}
+                question={question}
+                onChanged={onChanged}
+              />
             ))
           )}
         </div>
@@ -296,7 +413,8 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
             <div className="ws-row">
               <span className="ws-row-grow">
                 <span className="ws-row-t">
-                  Version {data.thesis.version} &middot; formed {data.thesis.formed_on}
+                  Version {data.thesis.version} &middot; formed{" "}
+                  {data.thesis.formed_on}
                 </span>
                 <span className="ws-row-m">
                   {data.trigger
@@ -304,7 +422,9 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
                     : "No evaluation has been recorded for this version."}
                 </span>
               </span>
-              <span className="ws-chip ws-chip--ink">{data.thesis.display_status}</span>
+              <span className="ws-chip ws-chip--ink">
+                {data.thesis.display_status}
+              </span>
             </div>
           ) : (
             <div className="ws-empty">No active thesis is in force.</div>
@@ -320,7 +440,9 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
           {data.notes.items.length === 0 ? (
             <div className="ws-empty">No notes yet.</div>
           ) : (
-            data.notes.items.map((note) => <NoteRow key={note.id} note={note} />)
+            data.notes.items.map((note) => (
+              <NoteRow key={note.id} note={note} />
+            ))
           )}
         </div>
       </div>
@@ -328,7 +450,9 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
       <div>
         <div className="ws-sechead">
           <h2>Position</h2>
-          <div className="ws-hint">read from your ledger now; never stored with research</div>
+          <div className="ws-hint">
+            read from your ledger now; never stored with research
+          </div>
         </div>
         <div className="ws-panel">
           {data.position ? (
@@ -336,10 +460,13 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
               {data.position.holdings.map((holding, index) => (
                 <div key={index} className="ws-row">
                   <span className="ws-row-grow">
-                    <span className="ws-row-t ws-mono">{String(holding.isin)}</span>
+                    <span className="ws-row-t ws-mono">
+                      {String(holding.isin)}
+                    </span>
                     <span className="ws-row-m">
                       Quantity {String(holding.quantity)} &middot; invested{" "}
-                      {String(holding.invested)} &middot; value {String(holding.market_value)}
+                      {String(holding.invested)} &middot; value{" "}
+                      {String(holding.market_value)}
                     </span>
                   </span>
                 </div>
@@ -349,7 +476,8 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
                   <span className="ws-row-grow">
                     <span className="ws-row-t ws-mono">{holding.isin}</span>
                     <span className="ws-row-m">
-                      Invested {holding.invested} &middot; not valued: no price available
+                      Invested {holding.invested} &middot; not valued: no price
+                      available
                     </span>
                   </span>
                   <span className="ws-chip ws-chip--warn">Unpriced</span>
@@ -368,17 +496,28 @@ function Overview({ data, onChanged }: { data: CompanyViewReady; onChanged: () =
 function NoteRow({ note }: { note: Note }) {
   const contradicts = note.links.filter((l) => l.relation === "CONTRADICTS");
   return (
-    <Link className="ws-row" href={noteHref(note.id) ?? "#"}>
+    <Link
+      className="ws-row"
+      data-kind={note.kind}
+      href={noteHref(note.id) ?? "#"}
+    >
       <span className="ws-row-grow">
         <span className="ws-row-t">{note.title}</span>
         <span className="ws-row-m">
-          {note.kind.toLowerCase().replace("_", " ")} &middot; written {note.written_on}
-          {note.revision_ids.length > 1 ? ` · ${note.revision_ids.length} revisions` : ""}
+          {note.kind.toLowerCase().replace("_", " ")} &middot; written{" "}
+          {note.written_on}
+          {note.revision_ids.length > 1
+            ? ` · ${note.revision_ids.length} revisions`
+            : ""}
           {note.source ? ` · cites ${note.source.source}` : ""}
-          {note.authorship === "ACCEPTED_AGENT" ? " · accepted from an agent proposal" : ""}
+          {note.authorship === "ACCEPTED_AGENT"
+            ? " · accepted from an agent proposal"
+            : ""}
         </span>
       </span>
-      {contradicts.length > 0 && <span className="ws-chip ws-chip--neg">Contradiction</span>}
+      {contradicts.length > 0 && (
+        <span className="ws-chip ws-chip--neg">Contradiction</span>
+      )}
     </Link>
   );
 }
@@ -387,12 +526,18 @@ function NoteRow({ note }: { note: Note }) {
 // Questions and answers
 // ------------------------------------------------------------------------------------
 
-function QuestionsPanel({ isin, onChanged }: { isin: string; onChanged: () => void }) {
+function QuestionsPanel({
+  isin,
+  onChanged,
+}: {
+  isin: string;
+  onChanged: () => void;
+}) {
   const { investorId, token } = useResearchAuth();
   const list = useFetch<Page<Question>>(
     investorId ? paths.questions(investorId) : null,
     { isin, limit: 100 },
-    token
+    token,
   );
   const { submit, pending, error } = useSubmit<Question>();
   const [text, setText] = useState("");
@@ -403,7 +548,11 @@ function QuestionsPanel({ isin, onChanged }: { isin: string; onChanged: () => vo
     event.preventDefault();
     const body = { text, blocking, written_on: writtenOn };
     const saved = await submit(body, (key) =>
-      write.createQuestion({ investorId, token, idempotencyKey: key }, isin, body)
+      write.createQuestion(
+        { investorId, token, idempotencyKey: key },
+        isin,
+        body,
+      ),
     );
     if (saved) {
       setText("");
@@ -417,7 +566,9 @@ function QuestionsPanel({ isin, onChanged }: { isin: string; onChanged: () => vo
     <div className="ws-stack">
       <div className="ws-panel">
         {list.loading && <div className="ws-empty">Loading&hellip;</div>}
-        {list.error && <div className="ws-notice ws-notice--error">{list.error}</div>}
+        {list.error && (
+          <div className="ws-notice ws-notice--error">{list.error}</div>
+        )}
         {list.data?.items.map((question) => (
           <QuestionItem
             key={question.id}
@@ -428,36 +579,75 @@ function QuestionsPanel({ isin, onChanged }: { isin: string; onChanged: () => vo
             }}
           />
         ))}
-        {list.data?.next_cursor && <div className="ws-empty">More questions exist beyond the first 100.</div>}
+        {list.data?.next_cursor && (
+          <div className="ws-empty">
+            More questions exist beyond the first 100.
+          </div>
+        )}
       </div>
       <div className="ws-panel">
         <div className="ws-panel-head">
           <h3>Ask another question</h3>
-          <span className="ws-hint">earlier questions and rituals are never edited</span>
+          <span className="ws-hint">
+            earlier questions and rituals are never edited
+          </span>
         </div>
-        <form className={`ws-form${pending ? " ws-pending" : ""}`} onSubmit={add}>
+        <form
+          className={`ws-form${pending ? " ws-pending" : ""}`}
+          onSubmit={add}
+        >
           <label className="ws-field">
             <span className="ws-field-label">Question</span>
-            <input className="ws-input" required value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} />
+            <input
+              className="ws-input"
+              required
+              value={text}
+              maxLength={2000}
+              onChange={(e) => setText(e.target.value)}
+            />
           </label>
           <div className="ws-form-actions">
             <label className="ws-check">
-              <input type="checkbox" checked={blocking} onChange={(e) => setBlocking(e.target.checked)} />{" "}
+              <input
+                type="checkbox"
+                checked={blocking}
+                onChange={(e) => setBlocking(e.target.checked)}
+              />{" "}
               Blocks a thesis
             </label>
-            <input className="ws-input" type="date" value={writtenOn} onChange={(e) => setWrittenOn(e.target.value)} style={{ maxWidth: 170 }} />
-            <button type="submit" className="ws-btn ws-btn--primary" disabled={pending || !text.trim()}>
+            <input
+              className="ws-input"
+              type="date"
+              value={writtenOn}
+              onChange={(e) => setWrittenOn(e.target.value)}
+              style={{ maxWidth: 170 }}
+            />
+            <button
+              type="submit"
+              className="ws-btn ws-btn--primary"
+              disabled={pending || !text.trim()}
+            >
               {pending ? "Saving…" : "Save question"}
             </button>
           </div>
-          {error && <div className="ws-notice ws-notice--error">{describeError(error)}</div>}
+          {error && (
+            <div className="ws-notice ws-notice--error">
+              {describeError(error)}
+            </div>
+          )}
         </form>
       </div>
     </div>
   );
 }
 
-function QuestionItem({ question, onChanged }: { question: Question; onChanged: () => void }) {
+function QuestionItem({
+  question,
+  onChanged,
+}: {
+  question: Question;
+  onChanged: () => void;
+}) {
   const { investorId, token } = useResearchAuth();
   const [answering, setAnswering] = useState(false);
   const [answer, setAnswer] = useState("");
@@ -473,7 +663,11 @@ function QuestionItem({ question, onChanged }: { question: Question; onChanged: 
       expected_latest_answer_id: latest?.id ?? null,
     };
     const saved = await submit(body, (key) =>
-      write.answerQuestion({ investorId, token, idempotencyKey: key }, question.id, body)
+      write.answerQuestion(
+        { investorId, token, idempotencyKey: key },
+        question.id,
+        body,
+      ),
     );
     if (saved) {
       setAnswer("");
@@ -483,17 +677,26 @@ function QuestionItem({ question, onChanged }: { question: Question; onChanged: 
   }
 
   return (
-    <div className="ws-row" style={{ flexDirection: "column", alignItems: "stretch" }}>
+    <div
+      className="ws-row"
+      style={{ flexDirection: "column", alignItems: "stretch" }}
+    >
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <span className="ws-row-grow">
           <span className="ws-row-t">{question.text}</span>
           <span className="ws-row-m">
             asked {question.written_on}
-            {question.answer_ids.length > 1 ? ` · ${question.answer_ids.length} answers kept` : ""}
+            {question.answer_ids.length > 1
+              ? ` · ${question.answer_ids.length} answers kept`
+              : ""}
           </span>
         </span>
-        {question.blocking && <span className="ws-chip ws-chip--warn">Blocking</span>}
-        <span className={`ws-chip ${question.status === "OPEN" ? "ws-chip--open" : "ws-chip--pos"}`}>
+        {question.blocking && (
+          <span className="ws-chip ws-chip--warn">Blocking</span>
+        )}
+        <span
+          className={`ws-chip ${question.status === "OPEN" ? "ws-chip--open" : "ws-chip--pos"}`}
+        >
           {question.status === "OPEN" ? "Open" : "Answered"}
         </span>
       </div>
@@ -505,38 +708,79 @@ function QuestionItem({ question, onChanged }: { question: Question; onChanged: 
       )}
       {question.review && (
         <div className="ws-notice ws-notice--open" style={{ marginTop: 8 }}>
-          <strong>Review of this exact answer{question.review.sample ? " (stored sample)" : ""}</strong>
+          <strong>
+            Review of this exact answer
+            {question.review.sample ? " (stored sample)" : ""}
+          </strong>
           {question.review.ok.length > 0 && (
-            <ul>{question.review.ok.map((s, i) => <li key={`ok${i}`}>{s}</li>)}</ul>
+            <ul>
+              {question.review.ok.map((s, i) => (
+                <li key={`ok${i}`}>{s}</li>
+              ))}
+            </ul>
           )}
           {question.review.gap.length > 0 && (
-            <ul>{question.review.gap.map((s, i) => <li key={`gap${i}`}>Gap: {s}</li>)}</ul>
+            <ul>
+              {question.review.gap.map((s, i) => (
+                <li key={`gap${i}`}>Gap: {s}</li>
+              ))}
+            </ul>
           )}
         </div>
       )}
       {answering ? (
-        <form className={`ws-form${pending ? " ws-pending" : ""}`} style={{ padding: "10px 0 0" }} onSubmit={save}>
+        <form
+          className={`ws-form${pending ? " ws-pending" : ""}`}
+          style={{ padding: "10px 0 0" }}
+          onSubmit={save}
+        >
           <textarea
             className="ws-textarea"
             required
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            placeholder="In your own words. &quot;I cannot establish this&quot; is a valid answer."
+            placeholder='In your own words. "I cannot establish this" is a valid answer.'
           />
           <div className="ws-form-actions">
-            <input className="ws-input" type="date" value={answeredOn} onChange={(e) => setAnsweredOn(e.target.value)} style={{ maxWidth: 170 }} />
-            <button type="submit" className="ws-btn ws-btn--primary ws-btn--sm" disabled={pending || !answer.trim()}>
-              {pending ? "Saving…" : latest ? "Save revised answer" : "Save answer"}
+            <input
+              className="ws-input"
+              type="date"
+              value={answeredOn}
+              onChange={(e) => setAnsweredOn(e.target.value)}
+              style={{ maxWidth: 170 }}
+            />
+            <button
+              type="submit"
+              className="ws-btn ws-btn--primary ws-btn--sm"
+              disabled={pending || !answer.trim()}
+            >
+              {pending
+                ? "Saving…"
+                : latest
+                  ? "Save revised answer"
+                  : "Save answer"}
             </button>
-            <button type="button" className="ws-btn ws-btn--ghost ws-btn--sm" onClick={() => setAnswering(false)}>
+            <button
+              type="button"
+              className="ws-btn ws-btn--ghost ws-btn--sm"
+              onClick={() => setAnswering(false)}
+            >
               Discard
             </button>
           </div>
-          {error && <div className="ws-notice ws-notice--error">{describeError(error)}</div>}
+          {error && (
+            <div className="ws-notice ws-notice--error">
+              {describeError(error)}
+            </div>
+          )}
         </form>
       ) : (
         <div className="ws-form-actions" style={{ marginTop: 8 }}>
-          <button type="button" className="ws-btn ws-btn--sm" onClick={() => setAnswering(true)}>
+          <button
+            type="button"
+            className="ws-btn ws-btn--sm"
+            onClick={() => setAnswering(true)}
+          >
             {latest ? "Revise answer" : "Answer"}
           </button>
         </div>
@@ -552,51 +796,376 @@ function QuestionItem({ question, onChanged }: { question: Question; onChanged: 
 function NotesPanel({ isin }: { isin: string }) {
   const { investorId, token } = useResearchAuth();
   const [history, setHistory] = useState(false);
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("");
   const [writing, setWriting] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const notes = useFetch<Page<Note>>(
-    investorId ? paths.companyNotes(investorId, isin) : null,
-    { history, cursor, limit: 50 },
-    token
+    investorId
+      ? query.trim()
+        ? paths.noteSearch(investorId)
+        : paths.companyNotes(investorId, isin)
+      : null,
+    {
+      q: query.trim() || undefined,
+      isin,
+      kind: kind || undefined,
+      history,
+      cursor,
+      limit: 50,
+    },
+    token,
   );
   const router = useRouter();
 
   return (
-    <div className="ws-stack">
-      <div className="ws-form-actions">
-        <button type="button" className="ws-btn ws-btn--primary ws-btn--sm" onClick={() => setWriting(true)} disabled={writing}>
-          New note
-        </button>
-        <label className="ws-check">
-          <input type="checkbox" checked={history} onChange={(e) => { setCursor(undefined); setHistory(e.target.checked); }} />{" "}
-          Show every revision
-        </label>
-      </div>
-      {writing && (
-        <div className="ws-panel">
-          <NoteForm
-            isin={isin}
-            onCancel={() => setWriting(false)}
-            onSaved={(note) => {
-              setWriting(false);
-              notes.refetch();
-              const href = noteHref(note.id);
-              if (href) router.push(href);
+    <div className="ip-notes-layout">
+      <aside className="ip-note-groups" aria-label="Note groups">
+        {[
+          ["", "All notes"],
+          ["QUESTION", "Questions"],
+          ["OBSERVATION", "Observations"],
+          ["INTERPRETATION", "Interpretations"],
+          ["THESIS_NOTE", "Thesis notes"],
+          ["LITERATURE", "Reading notes"],
+          ["DECISION", "Decisions"],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            aria-pressed={kind === value}
+            onClick={() => {
+              setKind(value ?? "");
+              setCursor(undefined);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </aside>
+      <div className="ws-stack">
+        <label className="ws-field">
+          <span className="ws-field-label">
+            Find in this company’s research
+          </span>
+          <input
+            className="ws-input"
+            placeholder="Search your earlier thinking"
+            maxLength={200}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setCursor(undefined);
             }}
           />
+        </label>
+        <div className="ws-form-actions">
+          <button
+            type="button"
+            className="ws-btn ws-btn--primary ws-btn--sm"
+            onClick={() => setWriting(true)}
+            disabled={writing}
+          >
+            New note
+          </button>
+          <label className="ws-check">
+            <input
+              type="checkbox"
+              disabled={Boolean(query.trim())}
+              checked={history}
+              onChange={(e) => {
+                setCursor(undefined);
+                setHistory(e.target.checked);
+              }}
+            />{" "}
+            Show every revision
+          </label>
+        </div>
+        {writing && (
+          <div>
+            <NoteForm
+              isin={isin}
+              onCancel={() => setWriting(false)}
+              onSaved={(note) => {
+                setWriting(false);
+                notes.refetch();
+                const href = noteHref(note.id);
+                if (href) router.push(href);
+              }}
+            />
+          </div>
+        )}
+        <div className="ws-panel">
+          {notes.loading && <div className="ws-empty">Loading&hellip;</div>}
+          {notes.error && (
+            <div className="ws-notice ws-notice--error">{notes.error}</div>
+          )}
+          {notes.data && notes.data.items.length === 0 && (
+            <div className="ws-empty">
+              No notes match this group or search. Start with one idea.
+            </div>
+          )}
+          {notes.data?.items.map((note) => (
+            <NoteRow key={note.id} note={note} />
+          ))}
+        </div>
+        {notes.data?.next_cursor && (
+          <button
+            type="button"
+            className="ws-btn ws-btn--ghost ws-btn--sm"
+            onClick={() => setCursor(notes.data?.next_cursor ?? undefined)}
+          >
+            Older notes
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Existing ledger price seam: no second quote fetch, no numeric conversion or guessed exchange. */
+function MarketSummary({ data }: { data: CompanyViewReady }) {
+  const holding = data.position?.holdings.find(
+    (h) =>
+      h.isin === data.identity.canonical_isin || h.isin === data.identity.isin,
+  );
+  const price =
+    typeof holding?.last_price === "string" ? holding.last_price : null;
+  return (
+    <section className="ip-market" aria-label="Company snapshot">
+      <div>
+        <span className="ws-eyebrow">Recorded market snapshot · INR</span>
+        <h2>{price ? <Figure>₹{price}</Figure> : "Price unavailable"}</h2>
+        <p className="ws-row-m">
+          {price
+            ? `Portfolio price as of ${data.position?.as_of}. This is not a streaming quote.`
+            : "No sourced quote is available for this company. We do not substitute an estimate."}
+        </p>
+        <p className="ws-row-m">Price history is not connected.</p>
+      </div>
+      <div>
+        <dl>
+          <dt>Company</dt>
+          <dd>{data.identity.name ?? "Not recorded"}</dd>
+          <dt>Symbol</dt>
+          <dd>{data.identity.symbol ?? "Not recorded"}</dd>
+          <dt>ISIN</dt>
+          <dd>{data.identity.canonical_isin}</dd>
+          <dt>Research as of</dt>
+          <dd>{data.as_of.slice(0, 10)}</dd>
+          <dt>Market cap / P/E</dt>
+          <dd>Not available</dd>
+        </dl>
+      </div>
+    </section>
+  );
+}
+
+const SECTION_GUIDES: Record<
+  string,
+  { title: string; question: string; metrics: RegExp; prompts: string[] }
+> = {
+  financials: {
+    title: "Financials",
+    question: "What do the statements establish?",
+    metrics: /./,
+    prompts: [
+      "Read profit and loss alongside cash flow.",
+      "Keep consolidated and standalone figures separate.",
+      "Compare like periods and keep restatements visible.",
+    ],
+  },
+  "valuation-summary": {
+    title: "Valuation Summary",
+    question: "Which assumptions carry the valuation?",
+    metrics: /valuation|multiple|enterprise|market_cap|cash_flow|earnings/i,
+    prompts: [
+      "Separate recorded inputs from assumptions.",
+      "Test the range of outcomes in Valuation Model.",
+      "An unavailable input stays unknown.",
+    ],
+  },
+  capex: {
+    title: "Capex Tracker",
+    question: "Is capital turning into productive capacity?",
+    metrics: /capex|capital_expenditure|capacity|fixed_asset|cwip/i,
+    prompts: [
+      "Compare announced spending with reported deployment.",
+      "Record the expected commissioning date.",
+      "Revisit utilisation and returns when new evidence arrives.",
+    ],
+  },
+  calls: {
+    title: "Read Between the Lines",
+    question: "What was said, and what was left unanswered?",
+    metrics: /guidance|commentary|outlook/i,
+    prompts: [
+      "Read the prepared remarks against the questions asked.",
+      "Keep management’s statement verbatim in the source.",
+      "Write your interpretation separately, with the call date.",
+    ],
+  },
+  forensics: {
+    title: "Forensics",
+    question: "Do the earnings stand up to scrutiny?",
+    metrics: /receivable|cash|related|pledge|auditor|debt|inventory/i,
+    prompts: [
+      "Reconcile earnings with operating cash flow.",
+      "Inspect related-party transactions and promoter pledges.",
+      "Record auditor qualifications without inferring misconduct.",
+    ],
+  },
+  consistency: {
+    title: "Management Consistency",
+    question: "What did management commit to, and what followed?",
+    metrics: /guidance|commitment|target|actual|execution/i,
+    prompts: [
+      "Date each original commitment.",
+      "Compare it with subsequently reported evidence.",
+      "Keep both records when they conflict. Do not rewrite the promise.",
+    ],
+  },
+};
+
+/** A reading surface over the existing sourced-fact store, not a second financial model. */
+function ResearchSection({
+  isin,
+  mode,
+  onWrite,
+  onEvidence,
+}: {
+  isin: string;
+  mode: string;
+  onWrite: () => void;
+  onEvidence: () => void;
+}) {
+  const { investorId, token } = useResearchAuth();
+  const [cursor, setCursor] = useState<string | undefined>();
+  const facts = useFetch<Page<Fact>>(
+    investorId ? paths.companyFacts(investorId, isin) : null,
+    { limit: 100, cursor },
+    token,
+  );
+  const sources = useFetch<Page<Source>>(
+    investorId ? paths.companySources(investorId, isin) : null,
+    { limit: 100 },
+    token,
+  );
+  const guide = SECTION_GUIDES[mode];
+  if (!guide) return null;
+  const rows =
+    facts.data?.items.filter((f) => guide.metrics.test(f.metric)) ?? [];
+  return (
+    <article className="ip-research-section">
+      <span className="ws-eyebrow">
+        {guide.title} / {isin}
+      </span>
+      <h2>{guide.question}</h2>
+      <p className="ws-sub">
+        Recorded evidence, with its period and verification status. Research
+        prompts below are a method, not findings about this company.
+      </p>
+      <div className="ws-sechead">
+        <h3>Source evidence</h3>
+        <button className="ws-btn ws-btn--sm" onClick={onEvidence}>
+          Get filings
+        </button>
+      </div>
+      {facts.loading ? (
+        <p role="status">Loading evidence…</p>
+      ) : facts.error ? (
+        <div className="ws-notice ws-notice--error">
+          {facts.error}
+          <button className="ws-btn ws-btn--sm" onClick={facts.refetch}>
+            Try again
+          </button>
+        </div>
+      ) : rows.length ? (
+        <div className="ip-table-scroll">
+          <table className="ip-research-table">
+            <thead>
+              <tr>
+                <th>Reported measure</th>
+                <th>Value / basis</th>
+                <th>Period</th>
+                <th>Source / status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((f) => {
+                const source = sources.data?.items.find(
+                  (s) => s.id === f.source_id,
+                );
+                return (
+                  <tr key={f.id}>
+                    <td>{f.metric.replace(/_/g, " ")}</td>
+                    <td>
+                      {f.numeric_value ??
+                        f.text_value ??
+                        (f.boolean_value === null
+                          ? "Unknown"
+                          : String(f.boolean_value))}{" "}
+                      {f.unit}
+                      <small>{f.basis}</small>
+                    </td>
+                    <td>
+                      {f.period_start}
+                      <br />
+                      {f.period_end}
+                    </td>
+                    <td>
+                      {source?.source ?? `Source ${f.source_id}`}
+                      <small>
+                        {source
+                          ? `Published ${source.publication_date} · ${source.document_reference}`
+                          : "Source details are not loaded. Open Get filings to inspect the citation."}
+                      </small>
+                      <small>
+                        {f.verification === "VERIFIED"
+                          ? "Verified"
+                          : "Unverified"}
+                        {f.superseded_by ? " · Superseded" : ""}
+                        {f.conflicts_with.length
+                          ? " · Conflicting evidence"
+                          : ""}
+                      </small>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="ws-empty">
+          No matching evidence on this page. Add a dated source and recorded
+          facts to begin.
         </div>
       )}
-      <div className="ws-panel">
-        {notes.loading && <div className="ws-empty">Loading&hellip;</div>}
-        {notes.error && <div className="ws-notice ws-notice--error">{notes.error}</div>}
-        {notes.data && notes.data.items.length === 0 && <div className="ws-empty">No notes yet.</div>}
-        {notes.data?.items.map((note) => <NoteRow key={note.id} note={note} />)}
-      </div>
-      {notes.data?.next_cursor && (
-        <button type="button" className="ws-btn ws-btn--ghost ws-btn--sm" onClick={() => setCursor(notes.data?.next_cursor ?? undefined)}>
-          Older notes
+      {sources.error && (
+        <p className="ws-notice">Source details unavailable: {sources.error}</p>
+      )}
+      {facts.data?.next_cursor && (
+        <button
+          className="ws-btn ws-btn--sm"
+          onClick={() => setCursor(facts.data?.next_cursor ?? undefined)}
+        >
+          More evidence
         </button>
       )}
-    </div>
+      <section>
+        <h2>Research questions</h2>
+        {guide.prompts.map((p, i) => (
+          <div className="ws-row" key={p}>
+            <span className="ws-mono ws-muted">0{i + 1}</span>
+            <span>{p}</span>
+          </div>
+        ))}
+      </section>
+      <p>
+        <button className="ws-btn ws-btn--primary" onClick={onWrite}>
+          Write your interpretation
+        </button>
+      </p>
+    </article>
   );
 }

@@ -41,7 +41,7 @@ export const RAIL_ENTRIES: readonly RailEntry[] = [
   { key: "portfolio", href: "/", label: "Portfolio", surfaceSwitch: true, research: false },
   { key: "monitors", href: "/monitors", label: "Monitors", surfaceSwitch: false, research: true },
   { key: "skills", href: "/skills", label: "Skills", surfaceSwitch: false, research: true },
-  { key: "agents", href: "/agents", label: "Agents", surfaceSwitch: false, research: true },
+  { key: "agents", href: "/agents", label: "Research settings", surfaceSwitch: false, research: true },
 ];
 
 export interface ResearchScreen {
@@ -91,7 +91,7 @@ export const RESEARCH_SCREENS: readonly ResearchScreen[] = [
   {
     kind: "agents",
     href: "/agents",
-    label: "Agents",
+    label: "Research settings",
     summary: "Which model runs which method, from your browser",
     pending: true,
   },

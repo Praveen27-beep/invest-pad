@@ -62,10 +62,10 @@ export function Launcher({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="All portfolio destinations"
-        title="All destinations (⌘K)"
+        title="Search & navigate (⌘K)"
       >
         <Icon name="settings" size={13} />
-        <span className="ws-gear-text">All destinations</span>
+        <span className="ws-gear-text">Search & navigate</span>
         <kbd className="ws-kbd">⌘K</kbd>
       </button>
 

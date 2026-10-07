@@ -194,8 +194,7 @@ export function RenderedResult({ rendered }: { rendered: Rendered }) {
       {rendered.note_proposal && (
         <section className="ws-rendered-section">
           <h4 className="ws-field-label">Proposed {rendered.note_proposal.kind.toLowerCase()} note</h4>
-          <p className="ws-row-t">{rendered.note_proposal.title}</p>
-          <p style={{ whiteSpace: "pre-wrap" }}>{rendered.note_proposal.body}</p>
+          <div className="ip-diff"><div><span className="ws-field-label">Current record</span><p>No existing note will be changed.</p></div><div><span className="ws-field-label">Proposed addition · review required</span><p className="ws-row-t">+ {rendered.note_proposal.title}</p><p>{rendered.note_proposal.body}</p></div></div>
         </section>
       )}
     </div>

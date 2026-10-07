@@ -34,11 +34,11 @@ import {
 } from "@/lib/research-client";
 import { describeError, useResearchAuth, useSubmit } from "@/lib/research-hooks";
 
-export function AdvancedEvidence({ isin }: { isin: string }) {
+export function AdvancedEvidence({ isin, section = "all" }: { isin: string; section?: "all" | "calculations" }) {
   const { investorId, token } = useResearchAuth();
   const catalogue = useFetch<Catalogue>(investorId ? rpaths.catalogue(investorId) : null, undefined, token);
   const facts = useFetch<Page<Fact>>(investorId ? paths.companyFacts(investorId, isin) : null, { limit: 100 }, token);
-  const events = useFetch<ResearchEvent[]>(investorId ? rpaths.events(investorId, isin) : null, undefined, token);
+  const events = useFetch<ResearchEvent[]>(investorId && section === "all" ? rpaths.events(investorId, isin) : null, undefined, token);
   const c = catalogue.data;
 
   return (
@@ -47,9 +47,11 @@ export function AdvancedEvidence({ isin }: { isin: string }) {
         <h2>Approved calculations</h2>
         <div className="ws-hint">computed by the server from verified facts; never estimated</div>
       </div>
+      {catalogue.loading && <p role="status">Loading calculation methods…</p>}
+      {(catalogue.error || facts.error) && <p className="ws-notice ws-notice--error">{catalogue.error ?? facts.error}</p>}
       {c && <Calculator isin={isin} formulas={c.formulas?.approved ?? []} registry={c.formulas?.registry_version ?? "unknown"} facts={facts.data?.items ?? []} />}
 
-      <div className="ws-sechead">
+      {section === "all" && <><div className="ws-sechead">
         <h2>External sources</h2>
         <div className="ws-hint">retrieved only through an approved adapter</div>
       </div>
@@ -63,7 +65,7 @@ export function AdvancedEvidence({ isin }: { isin: string }) {
         <p className="ws-muted">{describeError(events.errorDetail)}</p>
       ) : (
         <EventList events={events.data ?? []} onChanged={events.refetch} />
-      )}
+      )}</>}
     </div>
   );
 }

@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@trackr/core";
+import { PublicHeader } from "../components/Landing";
 import { SignIn } from "../components/SignIn";
 
 /**
@@ -8,5 +12,16 @@ import { SignIn } from "../components/SignIn";
  * browser bookmark expects -- not as a second implementation.
  */
 export default function Login() {
-  return <SignIn />;
+  const { token, ready } = useAuth();
+  const router = useRouter();
+  useEffect(() => {
+    if (ready && token) router.replace("/explorer");
+  }, [ready, token, router]);
+  if (token) return null;
+  return (
+    <div className="ip-public">
+      <PublicHeader />
+      <SignIn />
+    </div>
+  );
 }
