@@ -140,12 +140,11 @@ export function CompanyDocument({ isin }: { isin: string }) {
         <RitualForm isin={isin} onSaved={view.refetch} />
       ) : (
         <>
-          <nav className="ws-modes ip-company-tabs ip-company-primary" aria-label="Company views">
-            {ALL_MODES.filter(m => ["overview", "financials", "notes", "evidence", "questions"].includes(m.key)).map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.key === "notes" ? "Notes" : m.key === "evidence" ? "Sources" : m.label}</Link>)}
-            <select aria-label="More company tools" value={["overview", "financials", "notes", "evidence", "questions"].includes(mode) ? "" : mode} onChange={e => { if(e.target.value) setMode(e.target.value as Mode); }}>
-              <option value="">More…</option>
-              {ALL_MODES.filter(m => !["overview", "financials", "notes", "evidence", "questions"].includes(m.key)).map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
-            </select>
+          <nav className="ws-modes ip-company-tabs" aria-label="Company views">
+            {MODES.map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.label}</Link>)}
+          </nav>
+          <nav className="ws-modes" aria-label="Research workspace tools">
+            {WORK_MODES.map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.label}</Link>)}
             <FollowControl isin={data.identity.isin} />
           </nav>
           {mode === "research" && <ReportsPanel isin={isin} ritualComplete />}
