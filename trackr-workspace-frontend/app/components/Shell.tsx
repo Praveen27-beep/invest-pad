@@ -136,25 +136,11 @@ function ShellFrame({ children }: { children: React.ReactNode }) {
   const { onResearch, researchChatOpen, researchChatFits } = useWorkspaceNav();
   const portfolio = isPortfolioPath(pathname);
 
-  /*
-    THE THIRD COLUMN EXISTS ONLY WHEN SOMEONE ASKED FOR IT. An always-present 340px track
-    sitting empty reads as a panel that failed to load, and costs every portfolio screen 340px
-    of table width for nothing. This is the "no empty chat track" rule, expressed as the one
-    attribute the grid switches on.
-
-    Three conditions, and each rules out a specific wrong state:
-      `onResearch`        -- never beside a portfolio screen. Activating Portfolio also CLOSES
-                             it (see the nav context), so this is belt and braces.
-      `researchChatOpen`  -- an explicit act, closed by default. Navigation never opens it.
-      `researchChatFits`  -- below 1240px there is no room, so the column is not RENDERED at
-                             all rather than hidden with CSS: a hidden panel keeps its close
-                             button and its composer in the tab order, and keyboard focus
-                             would vanish into something nobody can see.
-  */
-  const researchOpen = onResearch && researchChatOpen && researchChatFits;
+  // Research chat is visible by default on desktop and opens as a drawer on smaller screens.
+  const researchOpen = onResearch && researchChatOpen;
 
   return (
-    <div className="ws-shell" data-research={researchOpen ? "open" : "closed"}>
+    <div className="ws-shell" data-research={researchOpen ? "open" : "closed"} data-chat-mobile={researchOpen && !researchChatFits ? "open" : undefined}>
       <Rail />
       <div className="ws-centre">
         <CentreStrip portfolio={portfolio} />

@@ -13,7 +13,8 @@
  */
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { companyDescriptor, noteHref } from "@trackr/portfolio";
 import { useFetch } from "@trackr/core";
 import { useWorkspaceNav } from "@/lib/workspace-context";
@@ -38,7 +39,9 @@ const REASON_LABEL: Record<string, string> = {
 export function ExplorerView() {
   const { investorId, token } = useResearchAuth();
   const [q, setQ] = useState("");
-  const [adding, setAdding] = useState(false);
+  const searchParams = useSearchParams();
+  const [adding, setAdding] = useState(searchParams.get("add") === "1");
+  useEffect(() => { if(searchParams.get("add") === "1") setAdding(true); }, [searchParams]);
   const companies = useFetch<Page<CompanyListItem>>(
     investorId ? paths.companies(investorId) : null,
     { q: q.trim() || undefined },
@@ -50,9 +53,9 @@ export function ExplorerView() {
     <div className="ip-library">
       <header className="ip-library-head">
         <div><div className="ws-crumb">YOUR WORKSPACE</div>
-        <h1 className="ws-h1">Research library</h1>
-        <p className="ws-sub">A place to build conviction. And remember how you got there.</p></div>
-        <button className="ws-btn ws-btn--primary" onClick={() => setAdding(!adding)} aria-expanded={adding}>{adding ? "Close search" : "+ Research a company"}</button>
+        <h1 className="ws-h1">Explorer</h1>
+        <p className="ws-sub">Open a company. Pick up your notes. Ask a question.</p></div>
+        <button className="ws-btn ws-btn--primary" onClick={() => setAdding(!adding)} aria-expanded={adding}>{adding ? "Close search" : "+ Add company"}</button>
       </header>
       {adding && <AddCompany onAdded={companies.refetch} />}
       <div className="ip-library-layout"><section className="ip-library-main">
@@ -94,7 +97,7 @@ export function ExplorerView() {
         </div>
       </div>
       {!q.trim() && companies.data?.items.length === 0 && <div className="ip-library-intro"><span className="ip-library-number">01 / BEGIN</span><h2>What do you want<br />to understand?</h2><p>Choose an Indian company. Write your questions, collect the evidence, and keep your thinking in one place.</p><button className="ws-btn" onClick={() => setAdding(true)}>Find a company <span aria-hidden="true">↗</span></button><div className="ip-library-steps"><span>Ask a question</span><span>Read the evidence</span><span>Write your view</span></div></div>}
-      </section><aside className="ip-library-aside"><HomeFeed home={home.data} error={home.error} loading={home.loading} /><div className="ip-library-principle"><span>THE RESEARCH HABIT</span><p>Separate what you know from what you believe.</p><Link href="/manifesto">Our manifesto ↗</Link></div></aside></div>
+      </section><aside className="ip-library-aside"><HomeFeed home={home.data} error={home.error} loading={home.loading} /></aside></div>
     </div>
   );
 }

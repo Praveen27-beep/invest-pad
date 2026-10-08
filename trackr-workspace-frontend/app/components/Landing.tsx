@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { WorkspaceDemo } from "./WorkspaceDemo";
 
 export type PublicPage = "features" | "pricing" | "blog" | "manifesto" | "docs";
 const nav: [string, string][] = [
@@ -123,135 +123,6 @@ function Features() {
   );
 }
 
-/** Public, read-only product illustration. Never reads or writes investor data. */
-function ProductPreview() {
-  const [view, setView] = useState("Research notes");
-  const [company, setCompany] = useState("PVR INOX");
-  const tabs = ["Overview", "Research notes", "Skills"];
-  return (
-    <section className="ip-preview" aria-label="Interactive product preview">
-      <div className="ip-preview-bar">
-        <span>INVEST-PAD / WORKSPACE</span>
-        <span>Illustrative preview · no live market data</span>
-      </div>
-      <div className="ip-preview-grid">
-        <aside>
-          <div className="ip-wordmark">Invest-pad</div>
-          <p>Portfolio</p>
-          <p>Skills</p>
-          <div className="ip-section-label">YOUR RESEARCH</div>
-          {["PVR INOX", "Asian Paints", "TCS"].map((c) => (
-            <button
-              key={c}
-              aria-pressed={company === c}
-              onClick={() => setCompany(c)}
-            >
-              {c}
-            </button>
-          ))}
-          <small>
-            Linked notes
-            <br />
-            Open questions
-            <br />
-            Thesis history
-          </small>
-        </aside>
-        <div className="ip-preview-main">
-          <div className="ip-preview-company">
-            <span className="ip-monogram">{company.slice(0, 1)}</span>
-            <div>
-              <h3>{company}</h3>
-              <span>Indian equities / Research workspace</span>
-            </div>
-          </div>
-          <div className="ip-preview-tabs" aria-label="Preview views">
-            {tabs.map((t) => (
-              <button
-                key={t}
-                aria-pressed={view === t}
-                onClick={() => setView(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          {view === "Research notes" ? (
-            <div className="ip-preview-writing">
-              <div className="ip-preview-note-nav">
-                <span>NOTES BY KIND</span>
-                <p>Questions</p>
-                <p className="ip-selected">Interpretations</p>
-                <p>Observations</p>
-                <p>Thesis notes</p>
-              </div>
-              <article>
-                <div className="ip-section-label">
-                  EXAMPLE INTERPRETATION · 07 OCT 2026
-                </div>
-                <h3>What would change my mind?</h3>
-                <p>
-                  I want to understand the business before I form a view on{" "}
-                  {company}. What evidence would separate a temporary setback
-                  from a structural change?
-                </p>
-                <p>Start with the economics. Then test the assumptions.</p>
-                <div className="ip-preview-question">
-                  <span>OPEN QUESTION</span>
-                  <p>Which part of this argument can I verify?</p>
-                </div>
-                <small>Written by you. Earlier versions stay readable.</small>
-              </article>
-            </div>
-          ) : view === "Overview" ? (
-            <article className="ip-preview-overview">
-              <div>
-                <div className="ip-section-label">MARKET SNAPSHOT</div>
-                <h3>Price unavailable</h3>
-                <p>
-                  A quote appears only when a dated source is connected. Missing
-                  data stays missing.
-                </p>
-              </div>
-              <dl>
-                <dt>Company</dt>
-                <dd>{company}</dd>
-                <dt>Market</dt>
-                <dd>India</dd>
-                <dt>Financials</dt>
-                <dd>Awaiting sourced evidence</dd>
-                <dt>Research</dt>
-                <dd>Your notes and questions</dd>
-              </dl>
-            </article>
-          ) : (
-            <article className="ip-preview-skills">
-              <h3>A method for the question at hand.</h3>
-              {[
-                "Investment checklist",
-                "Red flags & forensics",
-                "Thesis validation",
-                "Devil’s advocate",
-                "Competitive analysis",
-              ].map((s, i) => (
-                <div key={s}>
-                  <span>0{i + 1}</span>
-                  <strong>{s}</strong>
-                  <span>Research method</span>
-                </div>
-              ))}
-            </article>
-          )}
-        </div>
-      </div>
-      <div className="ip-preview-foot">
-        <span>Questions first. Sources attached. History preserved.</span>
-        <Link href="/login">Open your workspace →</Link>
-      </div>
-    </section>
-  );
-}
-
 export function Landing({ page }: { page?: PublicPage }) {
   return (
     <div className="ip-public">
@@ -264,14 +135,12 @@ export function Landing({ page }: { page?: PublicPage }) {
                 AN INVESTMENT RESEARCH WORKSPACE / INDIA
               </div>
               <h1>
-                Your research.
-                <br />A memory that lasts.
+                Your investment research, all together.
               </h1>
-              <p className="ip-lede">For the work behind every investment.</p>
+              <p className="ip-lede">A clearer workspace for curious investors.</p>
               <p>
-                Write what you believe. Keep the evidence close.
-                <br className="ip-desktop" /> Come back knowing where your
-                thinking left off.
+                Explore companies, keep your notes close, and work through questions with AI.
+                <br className="ip-desktop" /> One place to understand what you own, and why.
               </p>
               <div className="ip-actions">
                 <Link className="ip-button" href="/login">
@@ -281,7 +150,7 @@ export function Landing({ page }: { page?: PublicPage }) {
               </div>
             </section>
             <div id="preview">
-              <ProductPreview />
+              <WorkspaceDemo />
             </div>
             <Features />
             <section className="ip-manifesto-teaser">
@@ -339,7 +208,7 @@ export function Landing({ page }: { page?: PublicPage }) {
                 Writing, evidence and the portfolio, connected around a company.
               </p>
             </div>
-            <ProductPreview />
+            <WorkspaceDemo />
             <Features />
           </>
         ) : page === "pricing" || page === "blog" ? (

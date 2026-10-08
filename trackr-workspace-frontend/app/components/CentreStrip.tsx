@@ -90,7 +90,6 @@ function DocumentStrip() {
     closeDocument,
     goToPortfolio,
     researchChatOpen,
-    researchChatFits,
     openResearchChat,
     closeResearchChat,
   } = useWorkspaceNav();
@@ -172,28 +171,14 @@ function DocumentStrip() {
         <Icon name="portfolio" size={13} />
       </button>
 
-      {/*
-        THE RESEARCH CHAT TOGGLE. The only thing that opens the third column, which is why it is
-        here on the research strip and nowhere on the portfolio one.
-
-        Below 1240px it is DISABLED AND SAYS WHY. Silently doing nothing on click is the version
-        of this that gets reported as a bug; a panel squeezed into 200px is the version that gets
-        reported as unusable. Neither is as good as stating the width requirement, and the shell
-        drops the column at exactly the same breakpoint so the two cannot disagree.
-      */}
+      {/* Available at every width; smaller screens use an overlay. */}
       <button
         type="button"
         className="ws-strip-add"
-        disabled={!researchChatFits}
+
         aria-pressed={researchChatOpen}
         aria-label={researchChatOpen ? "Close research chat" : "Open research chat"}
-        title={
-          researchChatFits
-            ? researchChatOpen
-              ? "Close research chat"
-              : "Open research chat"
-            : "Research chat needs a window wider than 1240px \u2014 the column is dropped rather than squeezed at this width"
-        }
+        title={researchChatOpen ? "Close research chat" : "Open research chat"}
         onClick={researchChatOpen ? closeResearchChat : openResearchChat}
       >
         <Icon name="chat" size={13} />

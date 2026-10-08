@@ -3,6 +3,7 @@
 /** One navigation owner; portfolio restores its last route and research access remains server-authorized. */
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { isPortfolioPath } from "@trackr/portfolio";
 import { useAuth, useCapabilities } from "@trackr/core";
 import { usePathname } from "next/navigation";
@@ -10,10 +11,13 @@ import { useWorkspaceNav } from "@/lib/workspace-context";
 import { Icon } from "./Icon";
 import { Launcher } from "./Launcher";
 import { ButlerInboxEntry } from "./butler/ButlerControls";
+import { ExplorerTree } from "./research/ExplorerTree";
 import { RAIL_ENTRIES } from "./nav";
 
 export function Rail() {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [pathname]);
   const { user, logout } = useAuth();
   const { hasWorkspace, status } = useCapabilities();
   const { lastPortfolioUrl, navigate } = useWorkspaceNav();
@@ -21,7 +25,7 @@ export function Rail() {
   const onPortfolio = isPortfolioPath(pathname);
 
   return (
-    <nav className="ws-rail" aria-label="Workspace">
+    <nav className="ws-rail" aria-label="Workspace" data-menu-open={menuOpen}>
       {/*
         The wordmark IS the brand -- demo.html draws no logo tile, so `.ws-mark` is
         `display: none` in the stylesheet and the two words carry it: the product name in
@@ -32,11 +36,12 @@ export function Rail() {
           <span className="ws-wordmark-name">Invest-pad<span className="ip-brand-cursor">_</span></span>
 
         </span>
+        <button className="ip-mobile-menu" aria-label="Toggle Explorer navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? "×" : "☰"}</button>
       </div>
 
       <div className="ws-rail-scroll">
         <div className="ip-rail-search"><Launcher onNavigate={navigate} activeHref={pathname} /></div>
-        {hasWorkspace && <Link href="/explorer" className="ws-rail-item ip-library-link" data-active={pathname.startsWith("/explorer")} aria-current={pathname.startsWith("/explorer") ? "page" : undefined}>Research library</Link>}
+        {hasWorkspace && <Link href="/explorer" className="ws-rail-item ip-library-link" data-active={pathname.startsWith("/explorer")} aria-current={pathname.startsWith("/explorer") ? "page" : undefined}>Explorer</Link>}
         <div className="ws-rail-group">
           {RAIL_ENTRIES.map((entry) => {
             // Research entries stay out of the rail until the answer is known AND
@@ -65,6 +70,8 @@ export function Rail() {
             );
           })}
         </div>
+
+        {hasWorkspace && <ExplorerTree />}
 
         {status === "ready" && !hasWorkspace && (
           <div className="ws-rail-group">

@@ -1,83 +1,51 @@
 "use client";
 
-/**
- * The third column: Butler (BT 07).
- *
- * THE DEMO GEOMETRY, UNCHANGED -- 340px beside the rail and the centre, a 38px header, a
- * scrollable log, a two-row composer, an explicit close. Closed by default; opened only by the
- * research strip's toggle or the Butler inbox entry by the gear. Switching to Portfolio closes
- * it (the nav context), and coming back restores the research documents without posting
- * anything.
- *
- * WHAT THE LOG SHOWS NOW. Server-VALIDATED items only: deterministic template cards with
- * their citations and coverage, the investor's explicit memory references, and decision reviews
- * holding their own answers. Everything is rendered as text from what the server returned
- * (`butler/CardView.tsx`); there is no message-bubble component that could print a completion.
- *
- * WHAT IT STILL DOES NOT DO. Butler's model (BT 08) is a SELECTOR over checked items, run from
- * the Ask tab on an explicit click -- free text typed here is never sent to a model, so the
- * composer stays DISABLED with the reason stated. No simulated answers, no samples, no
- * placeholder citations, no streamed prose.
- *
- * NOT THE SUPPORT ASSISTANT. Plus's support drawer is a different surface with a different
- * endpoint and different context; it keeps working on the portfolio surface in both products
- * and is never wired to research context or used as a Butler fallback (BE-Q02).
- */
-
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useAuth, useFetch } from "@trackr/core";
 import { useWorkspaceNav } from "@/lib/workspace-context";
+import { paths, type CompanyListItem, type CompanyView, type Note, type Page } from "@/lib/research-api";
+import { useResearchAuth } from "@/lib/research-hooks";
+import { ResearchChat } from "./research/ResearchChat";
 import { ButlerPanel } from "./butler/ButlerPanel";
 
 export function ResearchColumn() {
-  const { closeResearchChat } = useWorkspaceNav();
-
-  return (
-    <aside className="ws-research-column" aria-label="Butler">
-      {/* 38px header, matching the document strip's height so the three columns line up. */}
-      <div className="ws-research-head">
-        <span className="ws-research-title">Butler</span>
-        <button
-          type="button"
-          className="ws-research-close"
-          onClick={closeResearchChat}
-          aria-label="Close research chat"
-          title="Close research chat"
-        >
-          &times;
-        </button>
-      </div>
-
-      {/* Not a live region: it holds forms. The worker status line inside is role="status". */}
-      <div className="ws-research-log">
-        <ButlerPanel />
-      </div>
-
-      {/*
-        THE COMPOSER IS PRESENT AND DISABLED, not absent.
-
-        Absent would hide the shape of the feature; enabled would accept input it then threw
-        away, which is the worse of the two by a distance. Disabled with the reason stated is
-        the honest third option. `form` with an explicit submit rather than Enter-to-send: a
-        research question is not a chat line, and the submit has to be a deliberate act.
-      */}
-      <form
-        className="ws-research-composer"
-        onSubmit={(event) => {
-          // Cannot fire while the control is disabled; kept so that enabling it later is one
-          // change in one place rather than a new handler that forgets this guard.
-          event.preventDefault();
-        }}
-      >
-        <textarea
-          rows={2}
-          disabled
-          className="ws-research-input"
-          placeholder="Free text is not sent to a model. Use the Ask tab: your model may only choose checked items"
-          aria-label="Ask Butler"
-        />
-        <button type="submit" className="ws-btn ws-btn--primary" disabled>
-          Ask
-        </button>
-      </form>
-    </aside>
-  );
+  const { user, investorId } = useAuth();
+  return <ScopedColumn key={`${user?.id}:${investorId}`} />;
+}
+function ScopedColumn() {
+  const { closeResearchChat, researchChatFits } = useWorkspaceNav();
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if(researchChatFits) return;
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.querySelector<HTMLButtonElement>(".ws-research-close")?.focus();
+    return () => { if(previous?.isConnected) previous.focus(); };
+  }, [researchChatFits]);
+  const { investorId, token } = useResearchAuth();
+  const pathname = usePathname();
+  const routeIsin = pathname.match(/^\/research\/companies\/([^/]+)/)?.[1];
+  const [selected, setSelected] = useState("");
+  const [mode, setMode] = useState<"chat" | "activity">("chat");
+  const noteId = pathname.match(/^\/research\/notes\/([^/]+)/)?.[1];
+  const note = useFetch<Note>(investorId && noteId ? paths.note(investorId, decodeURIComponent(noteId)) : null, undefined, token);
+  const isin = routeIsin ? decodeURIComponent(routeIsin) : noteId ? note.data?.isin ?? "" : selected;
+  const companies = useFetch<Page<CompanyListItem>>(investorId ? paths.companies(investorId) : null, { limit: 100 }, token);
+  const company = useFetch<CompanyView>(investorId && isin ? paths.company(investorId, isin) : null, undefined, token);
+  return <aside ref={panel} className="ws-research-column" aria-label="AI research chat" role={researchChatFits ? undefined : "dialog"} aria-modal={researchChatFits ? undefined : true} onKeyDown={e => {
+    if(e.key === "Escape") { e.preventDefault(); closeResearchChat(); }
+    if(e.key === "Tab" && !researchChatFits) {
+      const controls = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], select:not(:disabled), textarea:not(:disabled), input:not(:disabled), summary') ?? []).filter(el => el.getClientRects().length > 0);
+      const first = controls[0], last = controls[controls.length - 1];
+      if(e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      else if(!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+    }
+  }}>
+    <header className="ws-research-head"><div className="ip-chat-modes"><button aria-pressed={mode === "chat"} onClick={() => setMode("chat")}>✧ Chat</button><button aria-pressed={mode === "activity"} onClick={() => setMode("activity")}>Activity</button></div><button className="ws-research-close" aria-label="Close research chat" onClick={closeResearchChat}>×</button></header>
+    {mode === "activity" ? <div className="ws-research-log"><ButlerPanel /></div> : <>
+      <div className="ip-chat-context">{routeIsin || noteId ? <span>▥ {company.data?.identity.symbol ?? company.data?.identity.name ?? isin}</span> : <select aria-label="Chat company" value={selected} onChange={e => setSelected(e.target.value)}><option value="">Choose a company…</option>{companies.data?.items.map(c => <option key={c.isin} value={c.isin}>{c.symbol ?? c.name ?? c.isin}</option>)}</select>}<Link onClick={() => { if(!researchChatFits) closeResearchChat(); }} href="/agents" title="Configure your model">Model settings</Link></div>
+      {!isin ? <div className="ip-chat-welcome"><span>✧</span><h2>Your research partner</h2><p>Choose a company to explore a question with your notes and sources beside you.</p><Link className="ws-btn" onClick={() => { if(!researchChatFits) closeResearchChat(); }} href="/explorer?add=1">Find a company →</Link>{companies.error && <p role="alert">Companies could not be loaded. <button onClick={companies.refetch}>Retry</button></p>}</div> : company.loading ? <p className="ws-empty" role="status">Opening company…</p> : company.error ? <div className="ws-notice" role="alert">Could not open this company. <button onClick={company.refetch}>Try again</button></div> : company.data?.state === "RITUAL_REQUIRED" ? <div className="ip-chat-welcome"><h2>Start with your question</h2><p>Save what you want to understand about this company to open research chat.</p><Link className="ws-btn" onClick={() => { if(!researchChatFits) closeResearchChat(); }} href={`/research/companies/${encodeURIComponent(isin)}`}>Open company →</Link></div> : company.data?.state === "READY" ? <ResearchChat key={isin} isin={isin} label={company.data.identity.symbol ?? company.data.identity.name ?? isin} thesisId={company.data.thesis?.id ?? null} /> : null}
+    </>}
+  </aside>;
 }

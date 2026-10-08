@@ -140,34 +140,13 @@ export function CompanyDocument({ isin }: { isin: string }) {
         <RitualForm isin={isin} onSaved={view.refetch} />
       ) : (
         <>
-          <div className="ip-company-tools">
-            {WORK_MODES.map((m) => (
-              <button
-                key={m.key}
-                className={`ws-btn ws-btn--sm${mode === m.key ? " ws-btn--primary" : " ws-btn--ghost"}`}
-                aria-pressed={mode === m.key}
-                onClick={() => setMode(m.key)}
-              >
-                {m.label}
-                {m.key === "questions" && data.open_questions.length
-                  ? ` (${data.open_questions.length})`
-                  : ""}
-              </button>
-            ))}
+          <nav className="ws-modes ip-company-tabs ip-company-primary" aria-label="Company views">
+            {ALL_MODES.filter(m => ["overview", "financials", "notes", "evidence", "questions"].includes(m.key)).map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.key === "notes" ? "Notes" : m.key === "evidence" ? "Sources" : m.label}</Link>)}
+            <select aria-label="More company tools" value={["overview", "financials", "notes", "evidence", "questions"].includes(mode) ? "" : mode} onChange={e => { if(e.target.value) setMode(e.target.value as Mode); }}>
+              <option value="">More…</option>
+              {ALL_MODES.filter(m => !["overview", "financials", "notes", "evidence", "questions"].includes(m.key)).map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+            </select>
             <FollowControl isin={data.identity.isin} />
-          </div>
-          <nav className="ws-modes ip-company-tabs" aria-label="Company views">
-            {MODES.map((m) => (
-              <Link
-                key={m.key}
-                className="ws-mode"
-                aria-current={mode === m.key ? "page" : undefined}
-                data-active={mode === m.key}
-                href={`${pathname}?mode=${m.key}`}
-              >
-                {m.label}
-              </Link>
-            ))}
           </nav>
           {mode === "research" && <ReportsPanel isin={isin} ritualComplete />}
           {mode === "valuation" && (

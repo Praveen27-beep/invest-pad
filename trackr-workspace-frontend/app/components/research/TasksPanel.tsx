@@ -38,7 +38,7 @@ import {
 import { describeError, useResearchAuth, useSubmit } from "@/lib/research-hooks";
 import { RenderedResult, TaskView, useAgents } from "./TaskView";
 
-function useTaskAgents(): { agents: Agent[]; skills: Skill[]; loading: boolean } {
+export function useTaskAgents(): { agents: Agent[]; skills: Skill[]; loading: boolean } {
   const { investorId, token } = useResearchAuth();
   const agents = useAgents();
   const skills = useFetch<Page<Skill>>(investorId ? rpaths.skills(investorId) : null, { history: true, limit: 100 }, token);
@@ -52,7 +52,7 @@ function useTaskAgents(): { agents: Agent[]; skills: Skill[]; loading: boolean }
   };
 }
 
-function EvidencePicker({
+export function EvidencePicker({
   isin,
   selection,
   onChange,

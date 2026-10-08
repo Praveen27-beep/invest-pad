@@ -98,23 +98,9 @@ interface WorkspaceNav {
    */
   labelDocument: (id: string, label: string) => void;
 
-  /**
-   * Is the research chat column open?
-   *
-   * CLOSED BY DEFAULT, and opened only by an explicit action. Never by navigating to a
-   * research route, never by opening a document, never by widening the window. A panel that
-   * appeared on its own would take 340px from whatever you were reading and would imply
-   * something was waiting there.
-   */
+  /** Open by default when entering research on desktop; users can close it. */
   researchChatOpen: boolean;
-  /**
-   * Is the viewport wide enough for a third column at all?
-   *
-   * Below 1240px the shell is two columns (see `globals.css`), so the answer is no and the
-   * column is DROPPED rather than shrunk. Exposed as state rather than left to CSS because the
-   * action that opens it has to be able to say WHY it is unavailable instead of doing nothing
-   * when clicked.
-   */
+  /** Whether chat fits beside the document or needs an overlay. */
   researchChatFits: boolean;
   openResearchChat: () => void;
   closeResearchChat: () => void;
@@ -145,7 +131,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { user, investorId } = useAuth();
 
   const [documents, setDocuments] = useState<OpenDocument[]>([]);
-  const [researchChatOpen, setResearchChatOpen] = useState(false);
+  const [researchChatOpen, setResearchChatOpen] = useState(true);
   /**
    * Starts FALSE and is corrected after mount.
    *
@@ -305,17 +291,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  /**
-   * PORTFOLIO ACTIVATION CLOSES THE RESEARCH COLUMN.
-   *
-   * Switching to Portfolio is switching subject, and a research conversation hanging beside a
-   * holdings table is both a distraction and 340px the table needs. Closing rather than hiding,
-   * so coming back to research does not silently reopen it -- reopening is an explicit act every
-   * time. The portfolio surface's own SUPPORT drawer is unaffected and keeps its normal behaviour:
-   * it is a different thing, about this screen's errors rather than about a company.
-   */
+  // Entering research opens chat on desktop. Portfolio keeps its own support assistant.
   useEffect(() => {
-    if (!onResearch) setResearchChatOpen(false);
+    setResearchChatOpen(onResearch && window.matchMedia("(min-width: 1024px)").matches);
   }, [onResearch]);
 
   /**
@@ -326,7 +304,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
    * and cannot submit anything.
    */
   useEffect(() => {
-    const query = window.matchMedia("(min-width: 1241px)");
+    const query = window.matchMedia("(min-width: 1024px)");
     const sync = () => setResearchChatFits(query.matches);
     sync();
     query.addEventListener("change", sync);

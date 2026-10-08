@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import "./globals.css";
+import "./studio.css";
 import { Providers } from "./components/Providers";
 
 export const metadata: Metadata = {
