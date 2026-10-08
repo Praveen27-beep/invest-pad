@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { WorkspaceDemo } from "./WorkspaceDemo";
 
 export type PublicPage = "features" | "pricing" | "blog" | "manifesto" | "docs";
@@ -13,21 +14,39 @@ const nav: [string, string][] = [
 ];
 
 export function PublicHeader() {
+  const pathname = usePathname();
   return (
     <header className="ip-header">
-      <Link className="ip-wordmark" href="/">
-        Invest-pad<span aria-hidden="true">_</span>
-      </Link>
-      <nav aria-label="Main navigation">
-        {nav.map(([label, href]) => (
-          <Link key={href} href={href}>
-            {label}
+      <div className="ip-header-inner">
+        <Link className="ip-wordmark" href="/">
+          <span className="ip-mark" aria-hidden="true" />
+          Invest-pad
+        </Link>
+        <nav aria-label="Main navigation">
+          {nav.map(([label, href]) => (
+            <Link key={href} href={href} aria-current={pathname === href ? "page" : undefined}>
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ip-header-actions">
+          <Link className="ip-signin" href="/login">
+            Sign in
           </Link>
-        ))}
-      </nav>
-      <Link className="ip-signin" href="/login">
-        Sign in
-      </Link>
+          <details className="ip-mobile-nav">
+            <summary aria-label="Open menu">
+              <span aria-hidden="true" />
+            </summary>
+            <nav aria-label="Mobile navigation">
+              {nav.map(([label, href]) => (
+                <Link key={href} href={href}>
+                  {label}
+                </Link>
+              ))}
+            </nav>
+          </details>
+        </div>
+      </div>
     </header>
   );
 }
@@ -35,22 +54,37 @@ export function PublicHeader() {
 function Footer() {
   return (
     <footer className="ip-footer">
-      <div>
-        <Link className="ip-wordmark" href="/">
-          Invest-pad
-        </Link>
-        <p>A place for the work behind your conviction.</p>
+      <div className="ip-footer-inner">
+        <div className="ip-footer-brand">
+          <Link className="ip-wordmark" href="/">
+            <span className="ip-mark" aria-hidden="true" />
+            Invest-pad
+          </Link>
+          <p>A place for the work behind your conviction.</p>
+        </div>
+        <div className="ip-footer-cols">
+          <div>
+            <h4>Product</h4>
+            <Link href="/features">Features</Link>
+            <Link href="/pricing">Pricing</Link>
+            <Link href="/docs">Docs</Link>
+          </div>
+          <div>
+            <h4>Company</h4>
+            <Link href="/manifesto">Manifesto</Link>
+            <Link href="/blog">Blog</Link>
+          </div>
+          <div>
+            <h4>Legal</h4>
+            <Link href="/terms">Terms</Link>
+            <Link href="/privacy">Privacy</Link>
+          </div>
+        </div>
       </div>
-      <div>
-        <Link href="/manifesto">Our manifesto</Link>
-        <Link href="/docs">Documentation</Link>
-        <Link href="/terms">Terms & privacy policy</Link>
+      <div className="ip-footer-legal">
+        <span>Built for Indian listed equities.</span>
+        <span>Research and information, not investment advice.</span>
       </div>
-      <p>
-        Built for Indian equities.
-        <br />
-        Research and information, not investment advice.
-      </p>
     </footer>
   );
 }
@@ -82,46 +116,85 @@ const principles = [
   ],
 ];
 
-function Features() {
+const featureList = [
+  [
+    "01",
+    "Room to think in your own words",
+    "Company-linked notes, long-form drafts and a dated research history. Group ideas by kind, connect related notes, and find the argument you wrote last quarter.",
+  ],
+  [
+    "02",
+    "Evidence beside the argument",
+    "Move from company overview to financials, valuation, management and forensics. Keep source material separate from your interpretation, with uncertainty in view.",
+  ],
+  [
+    "03",
+    "A repeatable research practice",
+    "Skills bring structure to a checklist, a forensic review or a thesis challenge. The method is reusable; the conclusion remains yours.",
+  ],
+  [
+    "04",
+    "Connected to what you own",
+    "Trackr+ brings your portfolio into the same workspace. Research sits beside the transaction-derived record, without changing it.",
+  ],
+];
+
+function Features({ linkAll = true }: { linkAll?: boolean }) {
   return (
     <section className="ip-features" id="features">
-      <div className="ip-section-label">THE WORKSPACE</div>
-      <h2>
-        Keep the company.
-        <br />
-        Keep your thinking.
-      </h2>
-      {[
-        [
-          "01",
-          "Room to think in your own words",
-          "Company-linked notes, long-form drafts and a dated research history. Group ideas by kind, connect related notes, and find the argument you wrote last quarter.",
-        ],
-        [
-          "02",
-          "Evidence beside the argument",
-          "Move from company overview to financials, valuation, management and forensics. Keep source material separate from your interpretation, with uncertainty in view.",
-        ],
-        [
-          "03",
-          "A repeatable research practice",
-          "Skills bring structure to a checklist, a forensic review or a thesis challenge. The method is reusable; the conclusion remains yours.",
-        ],
-        [
-          "04",
-          "Connected to what you own",
-          "Trackr+ brings your portfolio into the same workspace. Research sits beside the transaction-derived record, without changing it.",
-        ],
-      ].map(([n, title, body]) => (
-        <div className="ip-feature" key={n}>
-          <span>{n}</span>
-          <h3>{title}</h3>
-          <p>{body}</p>
+      <div className="ip-section-head">
+        <div>
+          <div className="ip-section-label">The workspace</div>
+          <h2>
+            Keep the company.
+            <br />
+            Keep your thinking.
+          </h2>
         </div>
-      ))}
+        {linkAll && (
+          <Link className="ip-text-link" href="/features">
+            All features <span aria-hidden="true">→</span>
+          </Link>
+        )}
+      </div>
+      <div className="ip-feature-grid">
+        {featureList.map(([n, title, body]) => (
+          <article className="ip-feature" key={n}>
+            <span>{n}</span>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
+
+const sources = [
+  "CSV import",
+  "Broker tradebooks",
+  "Contract-note PDFs",
+  "Gmail forwarding",
+  "Manual entry",
+];
+
+const steps = [
+  [
+    "Ask",
+    "Write the question first.",
+    "Before research opens, save what you need to know. Blocking questions keep a thesis in draft until they are answered.",
+  ],
+  [
+    "Gather",
+    "Bring evidence with its source.",
+    "Cite filings and annual reports with their dates. Observations carry sources; interpretations stay visibly yours.",
+  ],
+  [
+    "Return",
+    "Keep every version.",
+    "A revision adds to the record and never erases it. Reopen a company and meet the reasoning you actually had.",
+  ],
+];
 
 export function Landing({ page }: { page?: PublicPage }) {
   return (
@@ -131,30 +204,63 @@ export function Landing({ page }: { page?: PublicPage }) {
         {!page ? (
           <>
             <section className="ip-hero">
-              <div className="ip-section-label">
-                AN INVESTMENT RESEARCH WORKSPACE / INDIA
-              </div>
+              <span className="ip-eyebrow">
+                <i aria-hidden="true" /> A research workspace for Indian equities
+              </span>
               <h1>
-                Your investment research, all together.
+                Your investment research, <em>all together.</em>
               </h1>
-              <p className="ip-lede">A clearer workspace for curious investors.</p>
-              <p>
-                Explore companies, keep your notes close, and work through questions with AI.
-                <br className="ip-desktop" /> One place to understand what you own, and why.
+              <p className="ip-lede">
+                Explore companies, keep your notes close, and work through questions
+                with AI. One place to understand what you own, and why.
               </p>
               <div className="ip-actions">
                 <Link className="ip-button" href="/login">
                   Start your research <span aria-hidden="true">→</span>
                 </Link>
-                <a href="#preview">Explore the workspace</a>
+                <a className="ip-button ip-button--ghost" href="#preview">
+                  Explore the workspace
+                </a>
               </div>
+              <ul className="ip-hero-facts" aria-label="Principles">
+                <li>Securities keyed by ISIN</li>
+                <li>Revisions never overwrite</li>
+                <li>No buy or sell calls</li>
+                <li>No broker passwords stored</li>
+              </ul>
             </section>
-            <div id="preview">
+            <div id="preview" className="ip-preview-wrap">
               <WorkspaceDemo />
             </div>
+            <section className="ip-sources" aria-label="Ways to bring your portfolio">
+              <p>
+                Bring the record you already keep.
+                <span>File and email based. Read only, always.</span>
+              </p>
+              <ul>
+                {sources.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </section>
             <Features />
+            <section className="ip-steps">
+              <div className="ip-section-label">How it works</div>
+              <h2>A method you can return to.</h2>
+              <ol>
+                {steps.map(([k, h, p], i) => (
+                  <li key={k}>
+                    <span>
+                      0{i + 1} · {k}
+                    </span>
+                    <h3>{h}</h3>
+                    <p>{p}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
             <section className="ip-manifesto-teaser">
-              <span className="ip-section-label">OUR PHILOSOPHY</span>
+              <span className="ip-section-label">Our philosophy</span>
               <h2>
                 Good research deserves
                 <br />a second reading.
@@ -163,10 +269,19 @@ export function Landing({ page }: { page?: PublicPage }) {
                 The hardest part is often remembering what you believed, and
                 being honest when it changes.
               </p>
-              <Link href="/manifesto">Read the manifesto →</Link>
+              <Link className="ip-button ip-button--light" href="/manifesto">
+                Read the manifesto <span aria-hidden="true">→</span>
+              </Link>
             </section>
             <section className="ip-faq">
-              <h2>A few things to know.</h2>
+              <div>
+                <div className="ip-section-label">FAQ</div>
+                <h2>A few things to know.</h2>
+                <p>
+                  More in the <Link href="/docs">documentation</Link>.
+                </p>
+              </div>
+              <div className="ip-faq-list">
               {[
                 [
                   "Who is Invest-pad for?",
@@ -192,28 +307,36 @@ export function Landing({ page }: { page?: PublicPage }) {
                 <details key={q}>
                   <summary>
                     {q}
-                    <span aria-hidden="true">+</span>
+                    <span className="ip-faq-icon" aria-hidden="true" />
                   </summary>
                   <p>{a}</p>
                 </details>
               ))}
+              </div>
+            </section>
+            <section className="ip-cta">
+              <h2>Start with a question.</h2>
+              <p>Open a company, write what you need to know, and keep the answer.</p>
+              <Link className="ip-button" href="/login">
+                Start your research <span aria-hidden="true">→</span>
+              </Link>
             </section>
           </>
         ) : page === "features" ? (
           <>
             <div className="ip-page-intro">
-              <span className="ip-section-label">FEATURES</span>
+              <span className="ip-section-label">Features</span>
               <h1>A place to do the work.</h1>
               <p>
                 Writing, evidence and the portfolio, connected around a company.
               </p>
             </div>
             <WorkspaceDemo />
-            <Features />
+            <Features linkAll={false} />
           </>
         ) : page === "pricing" || page === "blog" ? (
           <section className="ip-coming">
-            <span className="ip-section-label">{page.toUpperCase()}</span>
+            <span className="ip-section-label">{page}</span>
             <h1>Coming soon.</h1>
             <p>
               {page === "pricing"
@@ -224,7 +347,7 @@ export function Landing({ page }: { page?: PublicPage }) {
           </section>
         ) : page === "manifesto" ? (
           <article className="ip-essay">
-            <span className="ip-section-label">THE INVEST-PAD MANIFESTO</span>
+            <span className="ip-section-label">The Invest-pad manifesto</span>
             <h1>
               Remember why.
               <br />
@@ -252,7 +375,7 @@ export function Landing({ page }: { page?: PublicPage }) {
           </article>
         ) : (
           <article className="ip-essay">
-            <span className="ip-section-label">DOCS / GETTING STARTED</span>
+            <span className="ip-section-label">Docs · Getting started</span>
             <h1>Your first research file.</h1>
             {[
               [
