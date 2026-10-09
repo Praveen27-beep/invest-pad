@@ -4,8 +4,10 @@ import { useState } from "react";
 import {
   sources, financials, balance, operations, calculations, crore, growth,
   initialScenario, projectScenario, forensicFindings, callFindings,
-  type SourceKey, type Basis, type ResearchSection, type ScenarioInputs, type Finding,
+  type SourceKey, type Basis, type ScenarioInputs, type Finding,
 } from "@/lib/pvr-research";
+
+import type { ResearchSection } from "@/lib/company-sections";
 
 function Source({ id, page, children }: { id: SourceKey; page?: number; children?: React.ReactNode }) {
   const source = sources[id];

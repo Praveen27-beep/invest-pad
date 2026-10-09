@@ -29,6 +29,8 @@ export interface Notice {
 }
 
 export interface Identity {
+  /** Optional company research coverage; specialised views never depend on a sector guess. */
+  research_sections?: readonly import("./company-sections").ResearchSection[];
   isin: string;
   canonical_isin: string;
   symbol: string | null;

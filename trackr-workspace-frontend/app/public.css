@@ -372,3 +372,14 @@
 @media (prefers-reduced-motion: reduce) {
   .ip-public *, .ip-public *::before, .ip-public *::after { transition: none !important; }
 }
+
+/* Let writing use the full phone width; Explorer stays reachable above it. */
+@media (max-width: 700px) {
+  .ip-public .ip-demo-window { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: 180px minmax(0, 1fr); }
+  .ip-public .ip-demo-rail { border-right: 0; border-bottom: 1px solid var(--ip-line); overflow-y: auto; padding: 8px 0; }
+  .ip-public .ip-demo-rail .ip-demo-dots, .ip-public .ip-demo-rail .ip-wordmark, .ip-public .ip-demo-user { display: none; }
+  .ip-public .ip-demo-nav { display: flex; flex-wrap: wrap; margin-bottom: 8px; }
+  .ip-public .ip-demo-nav button { width: auto; margin: 0 2px; padding: 7px 9px; }
+  .ip-public .ip-demo-rail .ip-tree-heading { padding-bottom: 3px; }
+  .ip-public .ip-demo-center { min-height: 0; }
+}

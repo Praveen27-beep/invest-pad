@@ -44,6 +44,8 @@ import { EvidencePanel } from "./EvidencePanel";
 import { AdvancedEvidence } from "./AdvancedEvidence";
 import { AskPanel, TasksPanel } from "./TasksPanel";
 import { ReportsPanel } from "./ReportsPanel";
+import { companySections } from "@/lib/company-sections";
+import { CompanySnapshot } from "./CompanySnapshot";
 import { FollowControl } from "../butler/ButlerControls";
 
 const MODES = [
@@ -80,7 +82,8 @@ export function CompanyDocument({ isin }: { isin: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const requested = searchParams.get("mode") ?? searchParams.get("view");
-  const mode: Mode = ALL_MODES.some((m) => m.key === requested)
+  const requestedSection = MODES.find(section => section.key === requested);
+  const mode: Mode = ALL_MODES.some((m) => m.key === requested) && (!requestedSection || companySections(view.data?.identity || {}).includes(requestedSection.label))
     ? (requested as Mode)
     : "overview";
 
@@ -123,6 +126,7 @@ export function CompanyDocument({ isin }: { isin: string }) {
   }
 
   const data = view.data;
+  const availableSections = companySections(data.identity);
   return (
     <div>
       <div className="ws-crumb">Research &middot; Company</div>
@@ -140,13 +144,13 @@ export function CompanyDocument({ isin }: { isin: string }) {
         <RitualForm isin={isin} onSaved={view.refetch} />
       ) : (
         <>
-          <nav className="ws-modes ip-company-tabs" aria-label="Company views">
-            {MODES.map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.label}</Link>)}
-          </nav>
-          <nav className="ws-modes" aria-label="Research workspace tools">
+          {mode !== "notes" && <nav className="ws-modes ip-company-tabs" aria-label="Company views">
+            {MODES.filter(m => availableSections.includes(m.label)).map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.label}</Link>)}
+          </nav>}
+          {mode === "notes" ? <p><Link href={pathname}>← Company overview</Link></p> : <nav className="ws-modes" aria-label="Research workspace tools">
             {WORK_MODES.map(m => <Link key={m.key} className="ws-mode" aria-current={mode === m.key ? "page" : undefined} href={`${pathname}?mode=${m.key}`}>{m.label}</Link>)}
             <FollowControl isin={data.identity.isin} />
-          </nav>
+          </nav>}
           {mode === "research" && <ReportsPanel isin={isin} ritualComplete />}
           {mode === "valuation" && (
             <>
@@ -909,32 +913,11 @@ function MarketSummary({ data }: { data: CompanyViewReady }) {
   const price =
     typeof holding?.last_price === "string" ? holding.last_price : null;
   return (
-    <section className="ip-market" aria-label="Company snapshot">
-      <div>
-        <span className="ws-eyebrow">Recorded market snapshot · INR</span>
-        <h2>{price ? <Figure>₹{price}</Figure> : "Price unavailable"}</h2>
-        <p className="ws-row-m">
-          {price
-            ? `Portfolio price as of ${data.position?.as_of}. This is not a streaming quote.`
-            : "No sourced quote is available for this company. We do not substitute an estimate."}
-        </p>
-        <p className="ws-row-m">Price history is not connected.</p>
-      </div>
-      <div>
-        <dl>
-          <dt>Company</dt>
-          <dd>{data.identity.name ?? "Not recorded"}</dd>
-          <dt>Symbol</dt>
-          <dd>{data.identity.symbol ?? "Not recorded"}</dd>
-          <dt>ISIN</dt>
-          <dd>{data.identity.canonical_isin}</dd>
-          <dt>Research as of</dt>
-          <dd>{data.as_of.slice(0, 10)}</dd>
-          <dt>Market cap / P/E</dt>
-          <dd>Not available</dd>
-        </dl>
-      </div>
-    </section>
+    <CompanySnapshot name={data.identity.name || data.identity.symbol || data.identity.isin} symbol={data.identity.symbol} price={price} asOf={data.position?.as_of} statistics={[
+      { label: "ISIN", value: data.identity.canonical_isin },
+      { label: "Research as of", value: data.as_of.slice(0, 10) },
+    ]}/>
+
   );
 }
 

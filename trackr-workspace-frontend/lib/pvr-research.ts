@@ -5,8 +5,6 @@
 import Decimal from "decimal.js-light";
 
 export const PVR_ISIN = "INE191H01014";
-export const RESEARCH_SECTIONS = ["Overview", "Financials", "Investment Thesis", "Research Report", "Valuation Summary", "Valuation Model", "Capex Tracker", "Read Between the Lines", "Forensics", "Management Consistency"] as const;
-export type ResearchSection = typeof RESEARCH_SECTIONS[number];
 export const sources = {
   presentation: { title: "FY26 investor presentation", date: "11 May 2026", url: "https://nsearchives.nseindia.com/corporate/PVRINOXLTD_11052026140830_PVRINOXInvestorPresentation11052026.pdf" },
   results: { title: "FY26 audited consolidated filing", date: "11 May 2026", url: "https://nsearchives.nseindia.com/corporate/ixbrl/INTEGRATED_FILING_INDAS_156765_11052026210236_iXBRL_WEB.html" },

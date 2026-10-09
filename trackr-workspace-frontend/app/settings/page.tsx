@@ -30,6 +30,12 @@ export default function Settings() {
         <p className="ws-sub">This account, and the scope every figure is computed at.</p>
       </header>
 
+      <section className="ws-card" id="research-connections" style={{ maxWidth: 640, marginBottom: 24, scrollMarginTop: 32 }}>
+        <h2 className="ws-card-title">Research connections</h2><h3>Zip Filings</h3>
+        <p>Indian company filings, annual reports and earnings-call transcripts, beside your research.</p>
+        <span className="ws-chip">Not connected</span><p className="ws-muted">The extension or service connection has not been configured. Automated retrieval is unavailable; record or upload documents through Get filings on a company.</p>
+        <a className="ws-btn" href="/explorer">Research a company →</a>
+      </section>
       <div className="ws-grid" style={{ maxWidth: 640 }}>
         <section className="ws-card">
           <p className="ws-card-title">Account</p>

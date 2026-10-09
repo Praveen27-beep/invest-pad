@@ -12,8 +12,8 @@
  * there is nothing for Plus to import even by accident, and no research module reaches its
  * bundle.
  *
- * FOUR RAIL ENTRIES, with Skills preceding Monitors in the Invest-pad surface:
- * Portfolio, Skills, Monitors, Research settings. Portfolio is a surface switch with a default of `/`,
+ * FIVE RAIL ENTRIES, with Skills preceding Monitors in the Invest-pad surface:
+ * Portfolio, Skills, Monitors, MCPs, Research settings. Portfolio is a surface switch with a default of `/`,
  * not a closable document -- it is the one entry that restores where you were rather than
  * going to a fixed place.
  */
@@ -36,11 +36,12 @@ export interface RailEntry {
   research: boolean;
 }
 
-/** The four workspace destinations. */
+/** The workspace destinations. */
 export const RAIL_ENTRIES: readonly RailEntry[] = [
   { key: "portfolio", href: "/", label: "Portfolio", surfaceSwitch: true, research: false },
   { key: "skills", href: "/skills", label: "Skills", surfaceSwitch: false, research: true },
   { key: "monitors", href: "/monitors", label: "Monitors", surfaceSwitch: false, research: true },
+  { key: "connections", href: "/settings#research-connections", label: "MCPs", surfaceSwitch: false, research: true },
   { key: "agents", href: "/agents", label: "Research settings", surfaceSwitch: false, research: true },
 ];
 
