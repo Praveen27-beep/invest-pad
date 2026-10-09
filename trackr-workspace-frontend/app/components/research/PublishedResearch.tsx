@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AnnualForensics, ManagementHistory, QuarterlyUpdate, ReportCitation, ResearchCoverage, BusinessDiagram, LongFormCompanyReport, ReconciliationReview, FullSourceRegister } from "./CompanyResearchPack";
 import {
   sources, financials, balance, operations, calculations, crore, growth,
   initialScenario, projectScenario, forensicFindings, callFindings,
@@ -30,7 +31,9 @@ export function PublishedResearch({ section, onQuestion }: { section: ResearchSe
   return <div className="ip-published-research">
     <div className="ip-research-dateline"><span>FILED RESEARCH · PVR INOX</span><span>FY ended 31 Mar 2026</span></div>
     <h3>{section === "Overview" ? "A recovery worth unpacking." : section}</h3>
-    <p className="ip-research-scope">Source-backed snapshot · published May 2026 · reviewed 8 Oct 2026. Later quarters and live prices are outside this pack.</p>
+    <p className="ip-research-scope">Dated company research · reviewed 9 Oct 2026. FY26 financial baseline; newer evidence is identified separately. No live market quote.</p>
+
+    <ResearchCoverage/>
 
     {section === "Overview" && <>
       <div className="ip-research-metrics">
@@ -40,6 +43,7 @@ export function PublishedResearch({ section, onQuestion }: { section: ResearchSe
       </div>
       <Source id="presentation" page={32}/><Source id="presentation" page={28}/>
       <div className="ip-result-summary"><span>THE RESEARCH QUESTION</span><h4>How much of the recovery can repeat without disposal gains?</h4><p>Higher attendance and spending support the operating recovery. The harder test is whether cash generation remains strong through a weaker film slate, after rent and maintenance spending.</p></div>
+      <QuarterlyUpdate/><BusinessDiagram/>
       <Table caption="Operating evidence · issuer-reported" headings={["Measure", "FY25", "FY26"]} rows={operations.map(r => [...r])}/>
       <Source id="presentation" page={13}/><p className="ip-result-footnote">Screen counts include managed properties; operating KPIs exclude management properties, as defined in the source.</p>
       <div className="ip-result-summary"><span>ACCOUNTING CHECK</span><p>Reported EBITDA margin is {calculations.reportedMargin}%; lease-adjusted margin is {calculations.adjustedMargin}%. These use different cost treatments. Both appear in Financials with their source definitions.</p></div>
@@ -77,18 +81,7 @@ export function PublishedResearch({ section, onQuestion }: { section: ResearchSe
       <button className="ip-research-question" onClick={() => onQuestion("Thesis challenge: does capital-light expansion improve returns after partner revenue shares, maintenance capex and a weaker content year?")}>+ Challenge this hypothesis in my notes</button>
     </>}
 
-    {section === "Research Report" && <>
-      <div className="ip-result-summary"><span>INVEST-PAD RESEARCH · V1 · 8 OCT 2026</span><h4>Read the recovery through three lenses: demand, leases and cash.</h4><p>This report uses the FY26 filing set. It is an original synthesis of the linked issuer documents; forecasts and more recent developments are not included.</p></div>
-      <article className="ip-report-prose">
-        <h4>01 · The business engine</h4><p>Cinema economics combine admissions, ticket pricing, food spending and advertising with a substantial fixed-cost base. Improved utilisation can lift profit faster than revenue; a weak release slate can reverse that effect. Track the operating drivers alongside the accounting totals.</p>
-        <h4>02 · What changed</h4><p>Lease-adjusted total income increased {calculations.incomeGrowth}% and EBITDA margin reached {calculations.adjustedMargin}%. Admissions, ticket pricing and spend per head all increased. That is stronger evidence than looking at headline profit alone.</p><Source id="presentation" page={13}/>
-        <h4>03 · What headline earnings conceal</h4><p>The audited filing records ₹176.10 cr of continuing PAT and ₹156.70 cr from discontinued operations. Valuing all ₹332.80 cr as a repeatable stream would hide a material distinction. Lease adjustments create a second, separate bridge; they should never be used interchangeably with disposal adjustments.</p><Source id="results"/>
-        <h4>04 · Where the cash went</h4><p>Management reports lower borrowing net of its cash definition. Its free-cash-flow bridge also includes a disposal inflow. The relevant follow-up is whether operating cash after rent, interest and reinvestment can sustain the improvement without further asset sales.</p><Source id="presentation" page={27}/>
-        <h4>05 · Competitive position and limits</h4><p>Locations, programming, brand and access to developer capital are plausible advantages. This pack does not establish a peer-adjusted moat score. A useful comparison needs matched cities, comparable formats, lease terms and mature-site economics.</p>
-        <h4>06 · What to watch next</h4><p>Track commissioned screens against the pipeline, rent against revenue, admissions against price changes, and the operating cash bridge excluding disposals. Revisit the hypothesis when any of these diverges from management’s explanation.</p>
-      </article>
-      <button className="ip-research-question" onClick={() => onQuestion("Report follow-up: compare the next quarterly filing with this FY26 baseline on admissions, rent, capex, recurring cash and screen openings.")}>+ Keep the follow-up question</button>
-    </>}
+    {section === "Research Report" && <LongFormCompanyReport onQuestion={onQuestion}/>}
 
     {isModel && <>
       <div className="ip-result-summary"><span>ILLUSTRATIVE SCENARIO · EDITABLE ASSUMPTIONS</span><p>Start from FY26 lease-adjusted total income of ₹6,742.60 cr. The defaults below are an illustration, not management guidance or an InvestorStack forecast. All model amounts are ₹ crore.</p></div>
@@ -107,17 +100,14 @@ export function PublishedResearch({ section, onQuestion }: { section: ResearchSe
     {section === "Capex Tracker" && <>
       <Table caption="FY26 deployment · company disclosures" headings={["Measure", "Result", "Status"]} rows={[["Gross screen openings", "93", "Reported FY26"],["Screen closures", "18", "Reported FY26"],["Net additions", "75", "93 − 18"],["Capex", "₹254.20 cr", "FY26 cash bridge"],["Signed FOCO pipeline", "52 screens", "Signed, not commissioned"],["Signed asset-light pipeline", "86 screens", "Signed, not commissioned"]]}/><Source id="presentation" page={22}/><Source id="presentation" page={23}/>
       <Table caption="FY27 commitment register · baseline at 11 May 2026" headings={["Commitment", "Evidence", "Next verification"]} rows={[["About 120 screens visible", "Management call", "Actual openings and delays"],["55–60% capital-light mix", "Management expectation", "Funding mix of commissioned screens"],["Positive net cash aspiration", "No completion date promised", "Balance sheet and cash bridge"]]}/><Source id="call" page={5}/>
-      <p className="ip-result-footnote">No site-level budget or commissioning dates are inferred. Signed pipeline is not counted as operating capacity. Later FY27 updates require a new source review.</p>
+      <p className="ip-result-footnote">No site-level budget or commissioning dates are inferred. Signed pipeline is not counted as operating capacity. The dated FY27 update below is management guidance, not completed capacity.</p>
     </>}
-    {section === "Read Between the Lines" && <><p className="ip-result-intro">Management statements are paraphrased. Interpretations and unanswered questions are kept separate.</p>{callFindings.map(item => <Insight key={item.title} item={item} onQuestion={onQuestion}/>)}</>}
-    {section === "Forensics" && <><p className="ip-result-intro">Accounting and disclosure checks from the available filing set. Flags are review prompts, not allegations or a fraud score.</p>{forensicFindings.map(item => <Insight key={item.title} item={item} onQuestion={onQuestion}/>)}</>}
-    {section === "Management Consistency" && <>
-      <div className="ip-result-summary"><span>BASELINE ESTABLISHED · FOLLOW-UP NOT YET REVIEWED</span><p>One call cannot establish a delivery record. The dated commitments below are ready for comparison with later filings; no delivered/failed verdict has been invented.</p></div>
-      <Table caption="Commitment → evidence → outcome" headings={["11 May 2026 statement", "Evidence to compare", "Current assessment"]} rows={[["Roughly 120 screens of FY27 visibility", "FY27 gross openings, closures and timing", "Awaiting later-period review"],["55–60% capital-light additions", "Commissioned screen funding mix", "Awaiting later-period review"],["Move towards positive net cash", "Later net debt on the same cash/lease basis", "Aspiration; no firm deadline"]]}/><Source id="call" page={5}/>
-      <h4>Consistency within the FY26 filing set</h4><p>The company’s balance-sheet bridge reconciles borrowings of ₹758.60 cr less cash and related balances of ₹596.70 cr to net debt of ₹161.90 cr. This is internal arithmetic consistency, not independent verification of management’s broader claims.</p><Source id="presentation" page={28}/>
-      <button className="ip-research-question" onClick={() => onQuestion("Management follow-up: retrieve the next FY27 call and compare openings, capital-light mix and net debt with the 11 May 2026 commitments. Preserve both dates and definitions.")}>+ Add the next-call question</button>
-    </>}
+    {section === "Capex Tracker" && <><div className="ip-result-summary"><span>FY27 UPDATE · 24 JULY 2026</span><p>Management now expects 90–100 gross screens, about 80 net additions and around ₹350 cr capex, including renovation and the food-court joint venture. The near-80% capital-light mix is an analyst premise in this call, not treated here as a separately confirmed management commitment.</p><ReportCitation id="q127" location="PDF pp. 8, 11–12"/></div><ManagementHistory onQuestion={onQuestion}/></>}
+    {section === "Read Between the Lines" && <><QuarterlyUpdate/><p className="ip-result-intro">Management statements are paraphrased. Interpretations and unanswered questions are kept separate.</p>{callFindings.map(item => <Insight key={item.title} item={item} onQuestion={onQuestion}/>)}</>}
+    {section === "Forensics" && <><AnnualForensics onQuestion={onQuestion}/><ReconciliationReview/><p className="ip-result-intro">Accounting and disclosure checks from the available filing set. Flags are review prompts, not allegations or a fraud score.</p>{forensicFindings.map(item => <Insight key={item.title} item={item} onQuestion={onQuestion}/>)}</>}
+    {section === "Management Consistency" && <ManagementHistory onQuestion={onQuestion}/>}
 
-    <details className="ip-result-sources"><summary>Sources, dates & research coverage</summary><p>Security: INE191H01014 · Consolidated. Presentation figures are in ₹ million; this view divides by 10 for ₹ crore. The audited HTML filing is in ₹ lakh; relevant figures divide by 100. Issuer disclosures are not independent corroboration of one another.</p>{Object.entries(sources).map(([id,s]) => <div key={id}><Source id={id as SourceKey}/><small>{s.date}</small></div>)}<p>Coverage ends with the May 2026 filing set. No current market quote, subsequent quarter, related-party review or full auditor-history assessment is claimed. Original analysis: Invest-pad, 8 Oct 2026. This snapshot does not overwrite your research.</p></details>
+    <FullSourceRegister/>
+    <details className="ip-result-sources"><summary>Sources, dates & research coverage</summary><p>Security: INE191H01014 · Consolidated. Presentation figures are in ₹ million; this view divides by 10 for ₹ crore. The audited HTML filing is in ₹ lakh; relevant figures divide by 100. Issuer disclosures are not independent corroboration of one another.</p>{Object.entries(sources).map(([id,s]) => <div key={id}><Source id={id as SourceKey}/><small>{s.date}</small></div>)}<p>The financial tables retain the May 2026 filing baseline. The expanded business report has its own source audit above. No current market quote or complete related-party / auditor-history review is claimed. Original analysis: Invest-pad. This snapshot does not overwrite your research.</p></details>
   </div>;
 }

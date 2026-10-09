@@ -15,6 +15,7 @@
  */
 
 import { useState } from "react";
+import { taskTemplates, researchWorkflow, COMPANY_METHOD_VERSION } from "@/lib/company-research-method";
 import { useFetch } from "@trackr/core";
 import {
   paths,
@@ -164,6 +165,12 @@ function CreateTaskForm({
 
   return (
     <form className={`ws-form${pending ? " ws-pending" : ""}`} onSubmit={create}>
+      <fieldset className="ws-fieldset">
+        <legend className="ws-field-label">Start from a research method</legend>
+        <p className="ws-muted">Choose a brief, then select an agent with the indicated approved method and pin your evidence. This only fills the form.</p>
+        {taskTemplates.map(template => <button key={template.label} type="button" className="ws-btn ws-btn--sm" onClick={() => { setPurpose("RESEARCH"); setTitle(template.title); setBrief(template.brief); }}>{template.label}</button>)}
+        <p className="ws-field-hint">Suggested methods: {taskTemplates.map(t => `${t.label} → ${t.method}`).join(" · ")}. The selected agent’s existing contract remains authoritative.</p>
+      </fieldset>
       <div className="ws-form-row">
         <label className="ws-field">
           <span className="ws-field-label">Purpose</span>
@@ -241,6 +248,11 @@ export function TasksPanel({ isin, thesisId }: { isin: string; thesisId: string 
           {creating ? "Close" : "New task"}
         </button>
       </div>
+      <details className="ws-rendered">
+        <summary>Company research workflow · {COMPANY_METHOD_VERSION}</summary>
+        <ol>{researchWorkflow.map(([step, description]) => <li key={step}><strong>{step}.</strong> {description}</li>)}</ol>
+        <p>Use a new sealed task when sources or your question change. Nothing here starts a background model or modifies your committed thesis.</p>
+      </details>
       {creating && (
         <CreateTaskForm
           isin={isin}
