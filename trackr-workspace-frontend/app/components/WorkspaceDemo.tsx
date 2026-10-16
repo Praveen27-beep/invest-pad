@@ -28,16 +28,18 @@ const outlines: Record<string, string[]> = {
   "Forensics": ["Auditor observations", "Profit versus operating cash flow", "Working capital", "Related-party transactions", "Contingent liabilities"],
   "Management Consistency": ["Original commitment and date", "Subsequent updates", "Evidence of delivery", "Unresolved commitments", "Questions for the next call"],
 };
-const companies = ["PVR INOX", "Asian Paints", "TCS"];
+const companies = ["PVR INOX", "Asian Paints", "TCS", "HDFC Bank"];
 const prompts: Record<string, string> = {
   "PVR INOX": "What drives the economics of a cinema?",
   "Asian Paints": "How durable is the distribution advantage?",
   TCS: "What would change the outlook for IT services?",
+  "HDFC Bank": "How sustainably can HDFC Bank grow deposits and lending?",
 };
 const notes: Record<string, string> = {
   "PVR INOX": "I want to separate changes in attendance from changes in ticket prices. Before forming a view, I would read the latest annual report and compare operating cash flow with expansion spending.",
   "Asian Paints": "I want to understand whether distribution, brand preference and service create a durable advantage. My next step is to compare management’s claims with the evidence across reporting periods.",
   TCS: "I want to understand the connection between client spending, deal conversion and cash generation. I would look for changes in demand before treating a single quarter as a trend.",
+  "HDFC Bank": "I want to track deposit growth, funding mix and asset quality together. I would compare the post-merger trend with earlier periods before treating faster loan growth as sustainable.",
 };
 type Block = { id: string; kind: "paragraph" | "heading" | "list" | "quote" | "fact"; text: string; source: string };
 type Revision = { title: string; blocks: Block[]; date: string };
@@ -100,7 +102,7 @@ export function WorkspaceDemo() {
   const [folder, setFolder] = useState(true);
   const [watchFolder, setWatchFolder] = useState(false);
   const [ideasFolder, setIdeasFolder] = useState(false);
-  const [watchlist, setWatchlist] = useState<string[]>(["PVR INOX", "TCS"]);
+  const [watchlist, setWatchlist] = useState<string[]>(["HDFC Bank"]);
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideas, setIdeas] = useState<{ id: string; title: string; text: string }[]>([]);
   const [activeIdea, setActiveIdea] = useState("");
@@ -160,7 +162,7 @@ export function WorkspaceDemo() {
             {connectionDetails && <div className="ip-research-notice"><h4>Connect Zip Filings</h4><p>The extension or service connection still needs to be configured for this workspace. This preview cannot retrieve filings.</p><p>Once connected, use <strong>Get filings</strong> from a company or research chat.</p><button onClick={() => { setChat(true); setInput(`Get filings for ${company || "a company"}. Include publication dates and sources.`); }}>Prepare a filings request →</button></div>}
           </> : view === "Watchlist" ? <>
             <div className="ip-demo-kicker">EXPLORER / WATCHLIST</div><h3>Companies to revisit.</h3><p>Keep your coverage close. Your notes follow the company.</p>
-            <div className="ip-watchlist">{companies.map(name => <div key={name}><button onClick={() => open(name)}>{name} →</button><button aria-pressed={watchlist.includes(name)} onClick={() => setWatchlist(current => current.includes(name) ? current.filter(item => item !== name) : [...current, name])}>{watchlist.includes(name) ? "Remove from watchlist" : "Add to watchlist"}</button></div>)}</div><small>Preview watchlist · kept until this page reloads.</small>
+            <div className="ip-watchlist">{watchlist.map(name => <div key={name}><button onClick={() => open(name)}>{name} →</button><button aria-label={`Remove ${name} from watchlist`} onClick={() => setWatchlist(current => current.filter(item => item !== name))}>Remove from watchlist</button></div>)}{watchlist.length === 0 && <p>Your watchlist is empty. Follow a company to add it here.</p>}</div><small>Preview watchlist · kept until this page reloads.</small>
           </> : view === "Ideas" ? <>
             <div className="ip-demo-kicker">EXPLORER / IDEAS</div><h3>A place for the next question.</h3><form className="ip-idea-form" onSubmit={event => { event.preventDefault(); if (!ideaTitle.trim()) return; const id = crypto.randomUUID(); setIdeas(current => [...current, { id, title: ideaTitle.trim(), text: "" }]); setActiveIdea(id); setIdeaTitle(""); setIdeasFolder(true); }}><input aria-label="New idea title" placeholder="A theme, a question, a business to explore…" required value={ideaTitle} onChange={event => setIdeaTitle(event.target.value)}/><button>Add idea</button></form>
             {ideas.map(idea => <details className="ip-idea-document" key={idea.id} open={activeIdea === idea.id}><summary onClick={() => setActiveIdea(idea.id)}>{idea.title}</summary><textarea aria-label={`${idea.title} idea`} placeholder="Write before you have a conclusion…" value={idea.text} onChange={event => setIdeas(current => current.map(item => item.id === idea.id ? { ...item, text: event.target.value } : item))}/></details>)}{!ideas.length && <p>No ideas yet. Start with something you want to understand.</p>}<small>Preview ideas · kept until this page reloads.</small>
@@ -173,7 +175,7 @@ export function WorkspaceDemo() {
             <label className="ip-mobile-company-section">Company section<select aria-label="Company section" value={view} onChange={event => setView(event.target.value)}>{sections.map(section => <option key={section}>{section}</option>)}</select></label>
             <div className="ip-demo-sections" role="tablist" aria-label="Demo company sections">{sections.map(section => <button role="tab" tabIndex={view === section ? 0 : -1} aria-selected={view === section} key={section} onClick={() => setView(section)} onKeyDown={event => { const direction = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0; if (direction || event.key === "Home" || event.key === "End") { event.preventDefault(); const index = event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : (sections.indexOf(section) + direction + sections.length) % sections.length; setView(sections[index] || "Overview"); (event.currentTarget.parentElement?.children[index] as HTMLButtonElement)?.focus(); } }}>{section}</button>)}</div>
             {view === "Overview" ? <>
-              <CompanySnapshot name={company} symbol={{ "PVR INOX": "PVRINOX", "Asian Paints": "ASIANPAINT", TCS: "TCS" }[company]} statistics={company === "PVR INOX" ? [{ label: "Total income", value: `₹${crore("67426")} cr`, basis: "FY26 · lease-adjusted" }, { label: "EBITDA margin", value: `${calculations.adjustedMargin}%`, basis: "FY26 · lease-adjusted" }, { label: "Net debt", value: `₹${crore("1619")} cr`, basis: "31 Mar 2026 · excludes leases" }] : []} onResearch={() => { setChat(true); setInput(prompts[company] || "What should I research?"); }}/>
+              <CompanySnapshot name={company} symbol={{ "PVR INOX": "PVRINOX", "Asian Paints": "ASIANPAINT", TCS: "TCS", "HDFC Bank": "HDFCBANK" }[company]} statistics={company === "PVR INOX" ? [{ label: "Total income", value: `₹${crore("67426")} cr`, basis: "FY26 · lease-adjusted" }, { label: "EBITDA margin", value: `${calculations.adjustedMargin}%`, basis: "FY26 · lease-adjusted" }, { label: "Net debt", value: `₹${crore("1619")} cr`, basis: "31 Mar 2026 · excludes leases" }] : []} onResearch={() => { setChat(true); setInput(prompts[company] || "What should I research?"); }}/>
               {company === "PVR INOX" && <p className="ip-stock-source">Annual snapshot · published 11 May 2026 · <a href={sources.presentation.url} target="_blank" rel="noreferrer">Issuer presentation ↗</a>. These are filed figures, not live market data.</p>}
               {company === "PVR INOX" && <QuarterlyUpdate/>}
               <div className="ip-demo-writing"><span className="ip-demo-kicker">THE RESEARCH QUESTION</span><h3>{prompts[company]}</h3><button onClick={() => openNotes()}>Open investment notes →</button></div>

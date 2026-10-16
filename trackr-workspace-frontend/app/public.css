@@ -61,13 +61,10 @@
   font: 600 18px/1 var(--ip-sans); letter-spacing: -.02em;
 }
 .ip-public .ip-mark {
-  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; position: relative;
-  background: linear-gradient(140deg, var(--ip-ink) 0 55%, var(--ip-blue) 55%);
+  width: 30px; height: 34px; flex-shrink: 0;
+  background: url("/icon.svg") center / contain no-repeat;
 }
-.ip-public .ip-mark::after {
-  content: ""; position: absolute; right: 4px; top: 4px; width: 5px; height: 5px;
-  border-radius: 50%; background: var(--ip-coral);
-}
+.ip-public .ip-mark::after { content: none; }
 .ip-public .ip-header-inner > nav { display: flex; gap: 4px; margin: 0; font-size: 14px; }
 .ip-public .ip-header-inner > nav a {
   color: var(--ip-muted); padding: 8px 14px; border-radius: var(--ip-radius); transition: color .15s, background .15s;
@@ -146,16 +143,6 @@
 .ip-public .ip-eyebrow i { width: 8px; height: 8px; border-radius: 50%; background: var(--ip-coral); box-shadow: 0 0 0 4px #ee604024; }
 .ip-public .ip-hero .ip-lede { font-size: 20px; line-height: 1.55; color: var(--ip-muted); max-width: 620px; margin: 0; }
 .ip-public .ip-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; font-size: 15px; }
-.ip-public .ip-hero-facts {
-  list-style: none; margin: 48px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 28px;
-  font-size: 14px; color: var(--ip-muted);
-}
-.ip-public .ip-hero-facts li { display: inline-flex; align-items: center; gap: 8px; }
-.ip-public .ip-hero-facts li::before {
-  content: ""; width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
-  background: var(--ip-blue-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M4 7.2l2 2 4-4.4' fill='none' stroke='%232f53d9' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat;
-}
-
 /* ---- product preview frame ---------------------------------------------------------- */
 .ip-public .ip-preview-wrap { scroll-margin-top: 88px; }
 .ip-public .ip-demo-backdrop {
@@ -201,19 +188,6 @@
 }
 .ip-public .ip-demo-caption a { color: var(--ip-ink); font-weight: 500; }
 
-/* ---- sources strip ----------------------------------------------------------------- */
-.ip-public .ip-sources {
-  display: flex; align-items: center; justify-content: space-between; gap: 32px; flex-wrap: wrap;
-  padding: 40px 0; border-bottom: 1px solid var(--ip-line);
-}
-.ip-public .ip-sources p { margin: 0; color: var(--ip-ink); font-weight: 500; font-size: 16px; line-height: 1.5; }
-.ip-public .ip-sources p span { display: block; color: var(--ip-muted); font-weight: 400; font-size: 14px; }
-.ip-public .ip-sources ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
-.ip-public .ip-sources li {
-  padding: 8px 14px; border: 1px solid var(--ip-line); border-radius: 999px; background: var(--ip-band);
-  font-size: 14px; color: var(--ip-text);
-}
-
 /* ---- features ---------------------------------------------------------------------- */
 .ip-public .ip-features { padding: 112px 0 32px; }
 .ip-public .ip-section-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; margin-bottom: 48px; }
@@ -255,7 +229,7 @@
 }
 .ip-public .ip-manifesto-teaser .ip-section-label { color: #ffb4a2; }
 .ip-public .ip-manifesto-teaser h2 { color: #fff; font-size: clamp(38px, 5vw, 64px); margin: 16px 0 24px; }
-.ip-public .ip-manifesto-teaser p { color: #b9c4e6; font-size: 18px; max-width: 480px; margin: 0 0 36px; }
+.ip-public .ip-manifesto-teaser p { color: #b9c4e6; font-size: 18px; max-width: 650px; margin: 0 0 36px; }
 
 /* ---- FAQ --------------------------------------------------------------------------- */
 .ip-public .ip-faq {
@@ -323,13 +297,27 @@
 .ip-public .ip-essay section { padding: 40px 0; border-bottom: 1px solid var(--ip-line); }
 .ip-public .ip-essay section h2 { font-size: clamp(26px, 3vw, 34px); margin: 10px 0 14px; }
 .ip-public .ip-essay section p { color: var(--ip-muted); font-size: 17px; line-height: 1.8; margin: 0; }
-.ip-public .ip-essay .ip-button { margin-top: 48px; }
+.ip-public .ip-essay .ip-button { margin-top: 32px; }
+.ip-public .ip-essay > .ip-essay-close { margin: 64px 0 0; font-size: 28px; color: var(--ip-ink); }
 
 /* ---- sign-in form (only where it sits on a public page, i.e. /login) ------------------ */
 .ip-public .ws-auth-card { border-color: var(--ip-line); border-radius: 10px; box-shadow: 0 24px 60px -30px #15245a40; }
 .ip-public .ws-btn--primary { background: var(--ip-ink); border-color: var(--ip-ink); border-radius: var(--ip-radius); }
 .ip-public .ws-btn--primary:hover { background: #1d3077; border-color: #1d3077; }
 .ip-public .ws-input:focus { border-color: var(--ip-periwinkle); box-shadow: 0 0 0 3px var(--ip-blue-soft); }
+
+/* ---- neural brain (manifesto) ------------------------------------------------------ */
+.ip-public .ip-brain { margin: 56px 0 72px; }
+.ip-public .ip-brain canvas { display: block; width: 100%; height: 400px; }
+.ip-public .ip-brain figcaption {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 8px;
+  font-size: 13px; color: var(--ip-faint);
+}
+.ip-public .ip-brain button {
+  background: none; border: 1px solid var(--ip-line-strong); border-radius: 999px; padding: 6px 14px;
+  color: var(--ip-ink); font: 500 13px/1 var(--ip-sans);
+}
+.ip-public .ip-brain button:hover { background: var(--ip-band-2); border-color: var(--ip-periwinkle); }
 
 /* ---- responsive -------------------------------------------------------------------- */
 @media (max-width: 1023px) {
@@ -352,10 +340,8 @@
   .ip-public .ip-hero .ip-lede { font-size: 17px; }
   .ip-public .ip-actions { flex-direction: column; align-items: stretch; }
   .ip-public .ip-actions .ip-button { justify-content: center; }
-  .ip-public .ip-hero-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 36px; font-size: 13px; }
   .ip-public .ip-demo-backdrop { padding: 12px 12px 0; border-radius: 10px; }
   .ip-public .ip-demo-caption { margin: 0 -12px; padding: 12px; font-size: 12px; }
-  .ip-public .ip-sources { flex-direction: column; align-items: flex-start; gap: 16px; }
   .ip-public .ip-features { padding-top: 72px; }
   .ip-public .ip-section-head { flex-direction: column; align-items: flex-start; margin-bottom: 32px; }
   .ip-public .ip-feature-grid { grid-template-columns: 1fr; }
@@ -368,6 +354,7 @@
   .ip-public .ip-cta { padding: 56px 20px; margin-bottom: 64px; }
   .ip-public .ip-footer-cols { gap: 40px; }
   .ip-public .ip-page-intro, .ip-public .ip-coming, .ip-public .ip-essay { padding-top: 56px; }
+  .ip-public .ip-brain canvas { height: 280px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ip-public *, .ip-public *::before, .ip-public *::after { transition: none !important; }

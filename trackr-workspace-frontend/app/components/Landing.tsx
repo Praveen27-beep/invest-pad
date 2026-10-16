@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { WorkspaceDemo } from "./WorkspaceDemo";
+import { NeuralBrain } from "./NeuralBrain";
 
 export type PublicPage = "features" | "pricing" | "blog" | "manifesto" | "docs";
 const nav: [string, string][] = [
@@ -60,7 +61,7 @@ function Footer() {
             <span className="ip-mark" aria-hidden="true" />
             Invest-pad
           </Link>
-          <p>A place for the work behind your conviction.</p>
+          <p>Your entire investment routine, in one place. Everything you need to make better investment decisions.</p>
         </div>
         <div className="ip-footer-cols">
           <div>
@@ -91,51 +92,51 @@ function Footer() {
 
 const principles = [
   [
-    "Start with your own questions.",
-    "Before the annual report, the earnings call, or anyone else’s opinion, write what you need to know. Unanswered questions stay in view. A blocking question keeps a thesis in draft.",
+    "An army of specialists.",
+    "Orchestrate agents that each do one job well: an initial report on a new name, a forensic pass through the accounts, a map of the competition, a review of management and governance. Each works from sources, shows its reasoning and hands the result back to you. You run the desk. They do the legwork.",
   ],
   [
-    "Read the source. Test the earnings.",
-    "Start with annual reports, notes to accounts, auditor reports and exchange filings. Test earnings against cash flow and governance before valuation. A reported number and what you think it means are different kinds of knowledge. Observations carry sources and dates. Interpretations remain visibly yours. Conflicting evidence stays visible.",
+    "Built for breadth.",
+    "Active investors follow tens of names, sometimes hundreds. Nobody can hold all of that in their head, and nobody should try. Invest-pad brings the same depth of work to your whole watchlist, not just the two companies you found time for this month.",
   ],
   [
-    "Let your earlier self speak.",
-    "A revision should add to the record. It should never erase what you believed. Notes, thesis changes and decisions keep their history, so you can return to the reasoning you actually had at the time.",
+    "A second brain.",
+    "Your mind is for thinking, not for remembering. Every question, source, note and change of view is kept, dated and linked to the company it belongs to. When you open a name, the research you did and the reasoning you had at the time are already waiting.",
   ],
   [
-    "Make room for being wrong.",
-    "A thesis needs something that would disprove it. Record measurable conditions and a pre-mortem. When evidence is missing, unknown is a useful answer.",
+    "A guardian on your portfolio.",
+    "Invest-pad keeps watching what you own and what you are considering. When a filing, a result or a change in the facts touches your thesis, it asks the question you might not: does the reason you bought still hold? It never tells you what to buy or sell. It makes sure you never decide without asking.",
   ],
   [
-    "Keep the decision yours.",
-    "AI can question an assumption and propose a change. You review the difference before accepting it. Your words, commitments and decisions cannot be silently rewritten.",
+    "Close the gaps.",
+    "Most investing mistakes are not failures of intelligence. They come from what you did not know: the note to the accounts you skipped, the competitor you never studied, the risk nobody wrote down. Invest-pad is built to find those gaps and fill them before they cost you.",
   ],
   [
-    "Research should return.",
-    "Writing is only the beginning. Open a company and meet your unanswered questions. Revisit a thesis and see the original argument. Bring old notes back when new evidence makes them relevant.",
+    "The decision stays yours.",
+    "Agents gather, analyse and challenge. They propose, and you review before anything is accepted. Sources stay separate from interpretation, and nothing you wrote is silently rewritten. The judgement, and the conviction, remain your own.",
   ],
 ];
 
 const featureList = [
   [
     "01",
-    "Room to think in your own words",
-    "Company-linked notes, long-form drafts and a dated research history. Group ideas by kind, connect related notes, and find the argument you wrote last quarter.",
+    "Every company, one workspace",
+    "Open any of thousands of companies and get live price, fundamentals, earnings, and initial research one click apart. Track your portfolio and watchlists alongside your research.",
   ],
   [
     "02",
-    "Evidence beside the argument",
-    "Move from company overview to financials, valuation, management and forensics. Keep source material separate from your interpretation, with uncertainty in view.",
+    "An AI analyst that shows its work",
+    "Ask a real question and watch it pull the actual numbers, reason in the open, and answer in seconds.",
   ],
   [
     "03",
-    "A repeatable research practice",
-    "Skills bring structure to a checklist, a forensic review or a thesis challenge. The method is reusable; the conclusion remains yours.",
+    "Research that runs on a schedule",
+    "Set a monitor and the analyst reruns your question on time. The earnings recap, the filing watch, the weekly portfolio check: they run whether or not you remember to.",
   ],
   [
     "04",
-    "Connected to what you own",
-    "Trackr+ brings your portfolio into the same workspace. Research sits beside the transaction-derived record, without changing it.",
+    "Your process, not ours",
+    "No philosophy baked in. Organize coverage like a codebase, in watchlists, themes, and folders, and teach the analyst your way of working with skills.",
   ],
 ];
 
@@ -144,12 +145,8 @@ function Features({ linkAll = true }: { linkAll?: boolean }) {
     <section className="ip-features" id="features">
       <div className="ip-section-head">
         <div>
-          <div className="ip-section-label">The workspace</div>
-          <h2>
-            Keep the company.
-            <br />
-            Keep your thinking.
-          </h2>
+          <div className="ip-section-label">Capabilities</div>
+          <h2>Everything you need to build conviction</h2>
         </div>
         {linkAll && (
           <Link className="ip-text-link" href="/features">
@@ -170,32 +167,6 @@ function Features({ linkAll = true }: { linkAll?: boolean }) {
   );
 }
 
-const sources = [
-  "CSV import",
-  "Broker tradebooks",
-  "Contract-note PDFs",
-  "Gmail forwarding",
-  "Manual entry",
-];
-
-const steps = [
-  [
-    "Ask",
-    "Write the question first.",
-    "Before research opens, save what you need to know. Blocking questions keep a thesis in draft until they are answered.",
-  ],
-  [
-    "Gather",
-    "Bring evidence with its source.",
-    "Cite filings and annual reports with their dates. Observations carry sources; interpretations stay visibly yours.",
-  ],
-  [
-    "Return",
-    "Keep every version.",
-    "A revision adds to the record and never erases it. Reopen a company and meet the reasoning you actually had.",
-  ],
-];
-
 export function Landing({ page }: { page?: PublicPage }) {
   return (
     <div className="ip-public">
@@ -205,14 +176,16 @@ export function Landing({ page }: { page?: PublicPage }) {
           <>
             <section className="ip-hero">
               <span className="ip-eyebrow">
-                <i aria-hidden="true" /> A research workspace for Indian equities
+                <i aria-hidden="true" /> The AI Investment Studio for Indian equities.
               </span>
               <h1>
-                Your investment research, <em>all together.</em>
+                Built to make you a <em>dramatically better investor.</em>
               </h1>
               <p className="ip-lede">
-                Explore companies, keep your notes close, and work through questions
-                with AI. One place to understand what you own, and why.
+                Your entire investment routine, in one place. Track portfolios and
+                watchlists, get company reports and updates, research with AI, and
+                build a second brain that remembers your investment thinking and
+                way more.
               </p>
               <div className="ip-actions">
                 <Link className="ip-button" href="/login">
@@ -222,52 +195,21 @@ export function Landing({ page }: { page?: PublicPage }) {
                   Explore the workspace
                 </a>
               </div>
-              <ul className="ip-hero-facts" aria-label="Principles">
-                <li>Securities keyed by ISIN</li>
-                <li>Revisions never overwrite</li>
-                <li>No buy or sell calls</li>
-                <li>No broker passwords stored</li>
-              </ul>
             </section>
             <div id="preview" className="ip-preview-wrap">
               <WorkspaceDemo />
             </div>
-            <section className="ip-sources" aria-label="Ways to bring your portfolio">
-              <p>
-                Bring the record you already keep.
-                <span>File and email based. Read only, always.</span>
-              </p>
-              <ul>
-                {sources.map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ul>
-            </section>
             <Features />
-            <section className="ip-steps">
-              <div className="ip-section-label">How it works</div>
-              <h2>A method you can return to.</h2>
-              <ol>
-                {steps.map(([k, h, p], i) => (
-                  <li key={k}>
-                    <span>
-                      0{i + 1} · {k}
-                    </span>
-                    <h3>{h}</h3>
-                    <p>{p}</p>
-                  </li>
-                ))}
-              </ol>
-            </section>
             <section className="ip-manifesto-teaser">
               <span className="ip-section-label">Our philosophy</span>
               <h2>
-                Good research deserves
-                <br />a second reading.
+                Every investor deserves institutional-grade research capabilities.
               </h2>
               <p>
-                The hardest part is often remembering what you believed, and
-                being honest when it changes.
+                Great investment research shouldn't be limited to institutions.
+                With Invest-pad, you get specialised AI analysts to help you
+                research deeper, challenge your thinking, and make better-informed
+                investment decisions.
               </p>
               <Link className="ip-button ip-button--light" href="/manifesto">
                 Read the manifesto <span aria-hidden="true">→</span>
@@ -349,19 +291,30 @@ export function Landing({ page }: { page?: PublicPage }) {
           <article className="ip-essay">
             <span className="ip-section-label">The Invest-pad manifesto</span>
             <h1>
-              Remember why.
+              Raise an army.
               <br />
-              Be willing to reconsider.
+              Keep your mind for thinking.
             </h1>
             <p className="ip-lede">
-              For investors who do the work, and want it to stay useful.
+              Institutional-grade research, built for the individual investor.
+            </p>
+            <NeuralBrain />
+            <p>
+              For decades, deep research belonged to institutions. A fund could
+              put a whole team on one company: one analyst on the accounts,
+              another on the competition, another on management and governance,
+              each doing one specialised job. The individual investor had
+              evenings, a handful of filings and their own memory.
             </p>
             <p>
-              Research accumulates in documents, notebooks and conversations.
-              The reasoning gets harder to find just when it becomes most
-              important. Invest-pad starts with a simple conviction: what you
-              wrote should meet you again.
+              Frontier models change who can do this work. A model can read an
+              annual report, follow an earnings call and reason through a
+              business. But a powerful engine is not yet a research desk. It
+              needs a harness: a method for each task, the right sources, a
+              memory of what came before, and a way to bring the work to the
+              person who decides.
             </p>
+            <p>That harness is Invest-pad.</p>
             {principles.map(([h, p], i) => (
               <section key={h}>
                 <span className="ip-section-label">0{i + 1}</span>
@@ -369,8 +322,11 @@ export function Landing({ page }: { page?: PublicPage }) {
                 <p>{p}</p>
               </section>
             ))}
+            <p className="ip-lede ip-essay-close">
+              Institutions had the analysts. Now you have the harness.
+            </p>
             <Link className="ip-button" href="/login">
-              Start with a question →
+              Raise your research desk <span aria-hidden="true">→</span>
             </Link>
           </article>
         ) : (
