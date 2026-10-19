@@ -40,6 +40,21 @@ Its Postgres-over-Firebase reasoning still stands.)
 7. docs/INGESTION.md               Gmail forwarding, CSV, the price pipe, legal boundaries
 ```
 
+## Invest-pad proposal review
+
+Reviewed 18–19 October 2026. These documents record discussion-derived **proposals** and
+historical context, not implementation approval or evidence of deployed capabilities.
+The existing architecture, contracts and release gates remain authoritative.
+
+- [Master plan](docs/MASTER_PLAN.md): positioning, deployment/privacy/cost proposals and
+  unresolved decisions D1–D7.
+- [Workspace specification](docs/WORKSPACE_SPEC.md): versioned investor memory, assumptions,
+  decision journals, document retrieval/RAG and bounded research harness.
+- [Agent pipeline](docs/AGENT_PIPELINE.md): development review versus runtime loops,
+  evaluation criteria and regression-based harness improvement.
+- [Investi teardown](docs/INVESTI_TEARDOWN.md): dated reference; competitor claims require
+  revalidation. No duplicate historical copies or role prompts are imported.
+
 ## Running it
 
 ```
