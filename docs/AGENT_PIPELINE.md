@@ -264,3 +264,25 @@ into regression cases, changes the harness, then evaluates a candidate version b
 - Evaluating stored traces establishes a baseline, not proof of a fix: rerun the candidate
   agent on held-out cases and compare its new outputs. Use public, synthetic or explicitly
   authorized/redacted cases; never copy private investor traces into shared tests by default.
+
+### Proposed offline harness experiments
+
+Reference: [Harness² repository](https://github.com/google-research/harness2) and
+[paper](https://arxiv.org/abs/2610.14224), reviewed 19 October 2026; research input,
+not a dependency choice or evidence of financial accuracy.
+
+- Run Propose → Probe → Compose offline: compare baseline/candidate procedures on the same
+  permissioned tasks, then test the composed candidate on separate held-out companies.
+  Behavioural comparison without ground truth cannot replace the evaluation gate above.
+- Restrict edits to approved prompts, retrieval and tool guidance; financial formulas,
+  source-verification rules, tenant authorization and human-acceptance controls stay outside
+  the optimizer's authority. Record procedural lessons separately from investor memory.
+- Use isolated, resource-limited execution with no production credentials, private corpora
+  or access to held-out answers/rubrics. Restrict tool/network access; do not inherit the
+  upstream executor's unrestricted network or disabled Codex sandbox configuration.
+- Version the baseline, candidate diff, source revision, dataset/split, execution settings,
+  evidence, test results and cost. Set experiment budgets and promotion criteria in advance.
+- Human promotion requires invariant/isolation tests to pass and held-out gains within
+  agreed cost/latency limits; retain the prior version for rollback. Normal research uses
+  the approved version, without per-request recursive self-modification. Framework reuse,
+  retry counts and benchmark sizes remain undecided; reuse existing execution first.

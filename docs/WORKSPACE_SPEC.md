@@ -383,6 +383,8 @@ frameworks require a demonstrated gap, not a replacement of working contracts.
 - Checkpoints, cancellation, idempotency and retry budgets reuse existing workers. A model
   timeout/refusal or partial run cannot be reported as complete; replay uses pinned inputs.
   Evaluation requirements live in `AGENT_PIPELINE.md` §7; execution approval remains D6.
+- Offline harness optimisation is a separate proposal in `AGENT_PIPELINE.md` §7,
+  “Proposed offline harness experiments”; it grants no runtime self-modification authority.
 
 ```
 Chat     = research now
