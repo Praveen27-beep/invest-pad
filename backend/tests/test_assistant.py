@@ -204,20 +204,24 @@ def test_per_task_cap_stops_an_expensive_call_before_it_is_made(co, model):
     assert model.calls == [] and co.get("/models").json()["month"]["calls"] == 0
 
 
-def test_included_credit_runs_out_then_asks_for_your_own_key(co, model, app, monkeypatch):
-    cfg = app.state.config
-    monkeypatch.setattr(app.state, "config", type(cfg)(**{
-        **cfg.__dict__, "platform_model_url": "https://platform.example/v1", "platform_model_name": "included",
-        "platform_price_in": 300.0, "platform_price_out": 300.0, "task_cost_cap": 5.0, "monthly_credit": 0.5}))
-    model.reply = {"claims": []}
-    first = ask_q(co, "What was revenue?")
-    assert first["outcome"] == "unknown" and model.calls[0]["model"].payer == "platform"
-    second = ask_q(co, "What was the dividend?")
-    assert second["outcome"] == "failed" and "included credit is used up" in second["note"]
-    assert len(model.calls) == 1
-    # With their own key the user can carry on.
-    connect(co)
-    assert ask_q(co, "What was the dividend?")["outcome"] == "unknown" and len(model.calls) == 2
+def test_included_credit_runs_out_then_asks_for_your_own_key(co, model, app):
+    import dataclasses
+    original = app.state.config
+    app.state.config = dataclasses.replace(
+        original, platform_model_url="https://platform.example/v1", platform_model_name="included",
+        platform_price_in=300.0, platform_price_out=300.0, task_cost_cap=5.0, monthly_credit=0.5)
+    try:
+        model.reply = {"claims": []}
+        first = ask_q(co, "What was revenue?")
+        assert first["outcome"] == "unknown" and model.calls[0]["model"].payer == "platform"
+        second = ask_q(co, "What was the dividend?")
+        assert second["outcome"] == "failed" and "included credit is used up" in second["note"]
+        assert len(model.calls) == 1
+        # With their own key the user can carry on.
+        connect(co)
+        assert ask_q(co, "What was the dividend?")["outcome"] == "unknown" and len(model.calls) == 2
+    finally:
+        app.state.config = original
 
 
 def test_model_failure_is_reported_plainly(co, model):
