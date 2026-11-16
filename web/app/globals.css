@@ -43,3 +43,6 @@ button:disabled { opacity: .5; cursor: default; }
 .version { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; white-space: pre-wrap;
   margin-top: 1rem; }
 mark { background: #fff1b8; padding: 0 .1em; }
+select { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.quote { margin: .3rem 0; padding-left: .8rem; border-left: 3px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+.snip a { word-break: break-all; }

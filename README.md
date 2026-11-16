@@ -6,9 +6,9 @@ research it all over again.
 A research and information tool. Not investment advice.
 
 **Status:** early build. Done so far: accounts with per-user isolation enforced by the
-database (M1), and the workspace (M2) — companies, notes in a block editor, a new version
-on every save, `[[links]]` between notes, backlinks, and search. No documents, thesis or
-AI yet. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
+database (M1); the workspace (M2) — companies, notes in a block editor, a new version on
+every save, `[[links]]` between notes, backlinks, and search; and capture (M3) — a Chrome
+extension notepad and an inbox. No documents, thesis or AI yet. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
 
 ## Run it locally
 
@@ -51,6 +51,29 @@ ruff check .
 - Renaming a note updates the links in other notes and records that in their history.
 - Links are shown as plain `[[text]]` in the editor for now; use the side panel to follow them.
 
+## The browser extension
+
+A notepad in Chrome's side panel for jotting a note or a question about the page you are
+reading. It lands in your Inbox.
+
+1. Open `chrome://extensions`, switch on **Developer mode**, click **Load unpacked**, and
+   choose the `extension` folder of this repository.
+2. In Invest-pad, open **Settings**, create a token, and copy it.
+3. Click the Invest-pad toolbar button (or press Alt+Shift+I). Enter the address
+   (`http://localhost:3000`) and the token, and allow access when Chrome asks.
+
+Then: open the notepad on any page, or select text, right-click and choose **Add to
+Invest-pad**. The page's title, address and your selected text are attached; you can
+remove them before saving. If Invest-pad is unreachable, what you write is kept in the
+browser and sent later.
+
+What the extension can and cannot do:
+
+- It reads a page only at the moment you open the notepad on it or use the right-click
+  menu. It runs nothing in the background on other pages.
+- Its token can add captures and read your company names. It cannot read notes.
+- It talks only to the one address you connect it to.
+
 ## How isolation works
 
 - The API connects as `investpad_app`, a role with no special powers.
@@ -66,7 +89,8 @@ backend/app/         API (FastAPI, raw SQL)
 backend/migrations/  numbered .sql files, applied in order
 backend/tests/
 web/                 the app (Next.js); talks to the API through /api/*
-e2e/                 a real-browser check of the workspace (run by hand, see the file)
+extension/           the Chrome notepad (Manifest V3, no build step)
+e2e/                 real-browser checks (run by hand; see each file)
 docs/                plans, research, handoff
 ```
 

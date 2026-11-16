@@ -1,6 +1,6 @@
 # HANDOFF
 
-Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1 and M2 done).
+Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1, M2 and M3 done).
 
 Branches (both pushed):
 - `invest-pad/main` — the build. Clean tree, no Trackr+ files. Planning docs live here too.
@@ -51,6 +51,31 @@ First thing to check on a real machine.
 **Known limits:** links are plain `[[text]]` inside the editor (followed from the side
 panel, not by clicking in the text); history shows a version's text, not a visual diff
 (diffs arrive with the thesis in M5); no autosave — Save creates the version.
+
+## M3 Capture — done
+
+- `backend/migrations/003_capture.sql`, `backend/app/capture.py`: extension tokens (shown
+  once, stored as a hash, revocable, capture-only), `/ext/captures` and `/ext/subjects`
+  for the extension, and the inbox: assign a company, turn a capture into a note (keeps
+  the selection and source), dismiss, restore, delete. Retried captures do not duplicate.
+- `extension/`: Manifest V3, plain JavaScript, no build step. Side-panel notepad opened
+  by toolbar button, Alt+Shift+I, or the right-click menu. Captures go to a local queue
+  first and are sent when Invest-pad is reachable. Permissions: sidePanel, storage,
+  contextMenus, activeTab, scripting; access to the Invest-pad address is asked for when
+  connecting; no blanket access to sites.
+- `web/`: Inbox and Settings pages.
+- Tests: 57 backend tests; 8 extension unit tests (queue logic); `e2e/capture.py` loads
+  the real extension in Chrome and passes (connect, wrong token, save with page context,
+  offline then resend, inbox, make a note, revoke).
+
+**Not exercised by any test — check by hand in Chrome:** the toolbar button, the
+Alt+Shift+I shortcut, the right-click menu, the side panel opening, reading the selected
+text from a real page, and Chrome's permission prompt on Connect. These are browser
+controls an automated browser cannot press.
+
+**Decisions taken:** voice dictation left out (not attempted; revisit if wanted). No
+in-page floating button; the side panel is the notepad. Questions sit in the inbox as
+captures until the question queue exists (M6).
 
 ## Checkpoint 1 — one-page summary
 
@@ -127,8 +152,9 @@ templates in eight groups; synthetic corpus for CI, real IEX corpus kept local.
 
 ## Next
 
-1. M3 Capture: MV3 extension with side panel, capture-only tokens, inbox in the app.
-2. Then M4–M6 in order; `docs/MVP-REPORT.md` before M7.
+1. M4 Documents and retrieval: upload PDF/Excel/Word, extract, chunk, index (full-text +
+   pgvector), hybrid search, passage viewer, delete cascade.
+2. Then M5–M6; `docs/MVP-REPORT.md` before M7.
 
 ## Not done / not verified
 

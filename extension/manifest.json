@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Invest-pad notepad",
+  "version": "0.1.0",
+  "description": "Jot a note or a question about what you are reading. It lands in your Invest-pad inbox.",
+  "minimum_chrome_version": "116",
+  "permissions": ["sidePanel", "storage", "contextMenus", "activeTab", "scripting"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Open the Invest-pad notepad" },
+  "side_panel": { "default_path": "panel.html" },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+I" },
+      "description": "Open the Invest-pad notepad"
+    }
+  }
+}

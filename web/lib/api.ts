@@ -37,6 +37,11 @@ export type Note = NoteSummary & {
   backlinks: { id: string; title: string; block_id: string | null; target_block_id: string | null; snippet: string }[];
   unlinked_mentions: { id: string; title: string; snippet: string }[];
 };
+export type Capture = {
+  id: string; kind: "note" | "question"; body: string; selection: string; url: string; page_title: string;
+  captured_at: string; status: "inbox" | "filed" | "dismissed"; subject_id: string | null; note_id: string | null;
+};
+export type Token = { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null };
 export type Version = { seq: number; title: string; reason: string | null; created_at: string; chars: number };
 
 export const when = (iso: string) =>

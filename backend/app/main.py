@@ -11,7 +11,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import auth, config, db, notes
+from . import auth, capture, config, db, notes
 
 log = logging.getLogger("investpad")
 
@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Invest-pad", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(notes.router)
+app.include_router(capture.router)
 
 
 @app.middleware("http")
@@ -40,8 +41,10 @@ async def guard_and_log(request: Request, call_next):
     started = time.perf_counter()
     request_id = uuid.uuid4().hex[:12]
 
+    # Cross-site request forgery rides on the browser's cookie, so the check applies to
+    # requests that carry one. The extension sends a token and no cookie.
     origin = request.headers.get("origin")
-    if (request.method not in ("GET", "HEAD", "OPTIONS")
+    if (request.method not in ("GET", "HEAD", "OPTIONS") and auth.COOKIE in request.cookies
             and origin and origin not in request.app.state.config.allowed_origins):
         response = JSONResponse({"detail": "Cross-site request refused"}, status_code=403)
     else:
