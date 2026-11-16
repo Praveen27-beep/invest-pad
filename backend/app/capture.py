@@ -32,6 +32,7 @@ def _hash(token: str) -> str:
 
 class TokenIn(BaseModel):
     label: str = Field(min_length=1, max_length=80)
+    can_ask: bool = False     # may this browser also ask questions and read the answers?
 
 
 @router.post("/tokens", status_code=201)
@@ -39,10 +40,10 @@ def create_token(body: TokenIn, user: dict = Depends(auth.current_user)):
     """The token is returned once, here, and never again."""
     token = TOKEN_PREFIX + secrets.token_urlsafe(32)
     with db.as_user(user["id"]) as cur:
-        cur.execute("SELECT token_create(%s, %s) AS id", (_hash(token), body.label.strip()))
+        cur.execute("SELECT token_create(%s, %s, %s) AS id", (_hash(token), body.label.strip(), body.can_ask))
         token_id = cur.fetchone()["id"]
         cur.execute("INSERT INTO audit_log (action, object) VALUES ('token.create', %s)", (str(token_id),))
-    return {"id": token_id, "label": body.label.strip(), "token": token}
+    return {"id": token_id, "label": body.label.strip(), "can_ask": body.can_ask, "token": token}
 
 
 @router.get("/tokens")

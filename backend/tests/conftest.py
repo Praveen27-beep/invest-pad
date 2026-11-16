@@ -42,7 +42,9 @@ def urls():
 def app(urls):
     import tempfile
     os.environ.update(DATABASE_URL=urls["app"], COOKIE_SECURE="false", ALLOWED_ORIGINS="http://localhost:3000",
-                      FILES_DIR=tempfile.mkdtemp(prefix="investpad-files-"), MAX_UPLOAD_MB="2")
+                      FILES_DIR=tempfile.mkdtemp(prefix="investpad-files-"), MAX_UPLOAD_MB="2",
+                      SECRET_KEY="dGVzdC1rZXktdGVzdC1rZXktdGVzdC1rZXktMTIzNDU=", TASK_COST_CAP_USD="0.25",
+                      MONTHLY_CREDIT_USD="2")
     from app.main import app as fastapi_app
     with TestClient(fastapi_app):  # runs startup and shutdown
         yield fastapi_app

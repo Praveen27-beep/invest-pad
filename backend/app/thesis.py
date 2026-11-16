@@ -256,15 +256,22 @@ def retract_evidence(evidence_id: uuid.UUID, user: dict = Depends(auth.current_u
 
 # ---------------------------------------------------------------- decisions
 
+class Flag(BaseModel):
+    rule: str = Field(max_length=2_000)
+    question: str = Field(max_length=400)
+
+
 class DecisionIn(BaseModel):
     type: str
     decided_on: date
     decisive_reason: str = Field(min_length=10, max_length=2_000)
     would_change_mind: str = Field(default="", max_length=2_000)
     assumption_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
+    flags: list[Flag] = Field(default_factory=list, max_length=8)   # guardrail conflicts shown before recording
 
 
-DECISION_COLUMNS = "id, type, decided_on, decisive_reason, would_change_mind, position_seq, assumptions, created_at"
+DECISION_COLUMNS = ("id, type, decided_on, decisive_reason, would_change_mind, position_seq, assumptions, flags, "
+                    "created_at")
 
 
 @router.post("/subjects/{subject_id}/decisions", status_code=201)
@@ -289,9 +296,10 @@ def record_decision(subject_id: uuid.UUID, body: DecisionIn, user: dict = Depend
                 raise HTTPException(404, "One of those assumptions does not belong to this company")
         cur.execute(
             f"INSERT INTO decision (subject_id, type, decided_on, decisive_reason, would_change_mind, position_seq, "
-            f"assumptions) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {DECISION_COLUMNS}",
+            f"assumptions, flags) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING {DECISION_COLUMNS}",
             (subject_id, body.type, body.decided_on, body.decisive_reason.strip(), body.would_change_mind.strip(),
-             position["seq"] if position and position["seq"] else None, Jsonb(snapshot)))
+             position["seq"] if position and position["seq"] else None, Jsonb(snapshot),
+             Jsonb([f.model_dump() for f in body.flags])))
         return cur.fetchone()
 
 
