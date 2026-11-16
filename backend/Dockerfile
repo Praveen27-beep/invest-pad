@@ -3,6 +3,7 @@ WORKDIR /srv
 COPY pyproject.toml ./
 COPY app ./app
 COPY migrations ./migrations
+COPY packs ./packs
 RUN pip install --no-cache-dir .
 # --no-access-log: uvicorn's access log prints full URLs including query strings.
 # The app writes its own one-line request log without them.

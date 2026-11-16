@@ -30,4 +30,4 @@ select = ["E", "F", "I", "B", "UP", "S"]
 ignore = ["S101", "S608", "B008"]   # asserts in tests; f-strings hold column lists only; FastAPI Depends
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S105", "S106", "S107"]   # throwaway passwords in tests
+"tests/*" = ["S105", "S106", "S107", "E501"]   # throwaway passwords in tests

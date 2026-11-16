@@ -1,0 +1,34 @@
+{
+  "key": "investing",
+  "labels": { "subject": "Company", "position": "Thesis", "decision": "Decision" },
+  "decision_types": [
+    { "key": "bought", "label": "Bought" },
+    { "key": "added", "label": "Added" },
+    { "key": "trimmed", "label": "Trimmed" },
+    { "key": "sold", "label": "Sold" },
+    { "key": "passed", "label": "Passed" },
+    { "key": "stopped", "label": "Stopped researching" },
+    { "key": "researching", "label": "Still researching" }
+  ],
+  "document_types": ["annual report", "concall", "presentation", "results", "credit rating", "exchange filing", "other"],
+  "checklists": {
+    "red-flags": {
+      "title": "Red flags before deeper research",
+      "intro": "Answer from primary sources. \"Don't know yet\" is a valid answer and tells you what to read first.",
+      "items": [
+        { "id": "auditor-change", "text": "Has the auditor resigned or been changed in the last three years?" },
+        { "id": "audit-qualification", "text": "Does the auditor's report carry a qualification, emphasis of matter, or adverse remarks under CARO?" },
+        { "id": "related-party", "text": "Are related-party transactions large relative to revenue or profit, or growing?" },
+        { "id": "promoter-pledge", "text": "Have promoters pledged a meaningful share of their holding?" },
+        { "id": "cash-vs-profit", "text": "Is cash flow from operations persistently lower than reported profit?" },
+        { "id": "receivables", "text": "Are receivables or inventory growing much faster than sales?" },
+        { "id": "contingent", "text": "Are contingent liabilities large relative to net worth?" },
+        { "id": "capitalised-costs", "text": "Is the company capitalising costs that peers expense?" },
+        { "id": "frequent-equity", "text": "Has there been frequent equity dilution or preferential allotment to promoters?" },
+        { "id": "management-turnover", "text": "Have the CFO, company secretary or independent directors left abruptly?" },
+        { "id": "regulatory-action", "text": "Is there any regulatory order, penalty or investigation against the company or promoters?" },
+        { "id": "disclosure-quality", "text": "Are disclosures thin, delayed, or inconsistent between filings and presentations?" }
+      ]
+    }
+  }
+}
