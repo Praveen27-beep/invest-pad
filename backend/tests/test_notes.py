@@ -215,3 +215,16 @@ def test_oversized_note_is_refused(new_user):
     a = new_user()
     r = a.post("/notes", json={"title": "Huge", "blocks": [block("b1", "x" * 2_100_000)]})
     assert r.status_code == 413
+
+
+def test_text_inside_tables_and_links_is_searchable(new_user):
+    a = new_user()
+    table = {"id": "t1", "type": "table", "content": {"type": "tableContent", "rows": [
+        {"cells": [{"type": "tableCell", "content": [{"type": "text", "text": "Revenue"}]},
+                   {"type": "tableCell", "content": [{"type": "text", "text": "608 crore"}]}]}]}, "children": []}
+    para = {"id": "p1", "type": "paragraph", "children": [], "content": [
+        {"type": "text", "text": "See "},
+        {"type": "link", "href": "https://example.com", "content": [{"type": "text", "text": "the filing"}]}]}
+    note = a.post("/notes", json={"title": "Table note", "blocks": [table, para]}).json()
+    assert a.get(f"/notes/{note['id']}/versions/1").json()["body"] == "Revenue 608 crore\nSee the filing"
+    assert [n["title"] for n in a.get("/search", params={"q": "crore"}).json()["notes"]] == ["Table note"]

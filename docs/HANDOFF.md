@@ -1,6 +1,6 @@
 # HANDOFF
 
-Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1 done).
+Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1 and M2 done).
 
 Branches (both pushed):
 - `invest-pad/main` — the build. Clean tree, no Trackr+ files. Planning docs live here too.
@@ -30,6 +30,27 @@ Branches (both pushed):
 **Not verified:** `docker compose up` was not run — this environment has no Docker
 daemon. The server was run directly with uvicorn and exercised end to end instead.
 First thing to check on a real machine.
+
+## M2 Workspace — done
+
+- `backend/migrations/002_workspace.sql`, `backend/app/notes.py`: notes with append-only
+  versions (the API role cannot edit or delete a version), `[[Title]]`,
+  `[[Title|text]]` and `[[Title#^block]]` links, linked backlinks with their surrounding
+  text, unlinked mentions, rename that retargets links in other notes and records why,
+  keyword search with highlights, owner delete that removes versions and links.
+- **Isolation hole found and closed:** foreign-key checks ignore row-level security, so a
+  user could have attached a note to another user's company by id. Every reference
+  between owned tables now includes `owner_id`, and a test enforces that for future tables.
+- `web/`: Next.js app — sign in / sign up, companies, company page, note page with the
+  BlockNote editor (MPL-2.0 core packages only) and a side panel for links, backlinks,
+  mentions and history, search page. Calls the API through a same-origin `/api` proxy.
+- Tests: 47 backend tests; `e2e/workspace.py` passes in real Chrome (sign-up → company →
+  linked notes → backlinks → rename → history → search → sign-out). The e2e script is run
+  by hand, not in CI yet.
+
+**Known limits:** links are plain `[[text]]` inside the editor (followed from the side
+panel, not by clicking in the text); history shows a version's text, not a visual diff
+(diffs arrive with the thesis in M5); no autosave — Save creates the version.
 
 ## Checkpoint 1 — one-page summary
 
@@ -106,9 +127,8 @@ templates in eight groups; synthetic corpus for CI, real IEX corpus kept local.
 
 ## Next
 
-1. M2 Workspace: Next.js app (login, company pages), block editor, note versions,
-   `[[links]]`, backlinks, keyword search. Add `web` to docker compose.
-2. Then M3–M6 in order; `docs/MVP-REPORT.md` before M7.
+1. M3 Capture: MV3 extension with side panel, capture-only tokens, inbox in the app.
+2. Then M4–M6 in order; `docs/MVP-REPORT.md` before M7.
 
 ## Not done / not verified
 

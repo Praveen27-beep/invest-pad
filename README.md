@@ -5,9 +5,10 @@ research it all over again.
 
 A research and information tool. Not investment advice.
 
-**Status:** early build. Milestone M1 (foundation) is done: accounts, sessions, and
-per-user data isolation enforced by the database. There is no user interface yet — that
-starts in M2. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
+**Status:** early build. Done so far: accounts with per-user isolation enforced by the
+database (M1), and the workspace (M2) — companies, notes in a block editor, a new version
+on every save, `[[links]]` between notes, backlinks, and search. No documents, thesis or
+AI yet. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
 
 ## Run it locally
 
@@ -18,17 +19,16 @@ cp .env.example .env        # then edit the two passwords
 docker compose up --build
 ```
 
-The API is at http://localhost:8000 (`/health`, interactive docs at `/docs`).
-
-Create an invite code, then sign up with it:
+Create an invite code (in a second terminal, same folder):
 
 ```
 docker compose exec api python -m app.migrate invite my-first-invite
-curl -c cookies.txt -H 'content-type: application/json' \
-  -d '{"email":"you@example.com","password":"a long password","invite":"my-first-invite"}' \
-  http://localhost:8000/auth/signup
-curl -b cookies.txt http://localhost:8000/auth/me
 ```
+
+Open http://localhost:3000, choose "I have an invite code", and sign up. Each invite code
+works once; make one per person.
+
+The API itself is at http://localhost:8000 (`/health`, interactive docs at `/docs`).
 
 ## Run the tests
 
@@ -40,6 +40,16 @@ pip install -e ".[dev]"
 TEST_ADMIN_URL=postgresql://postgres:postgres@127.0.0.1:5432/postgres pytest -q
 ruff check .
 ```
+
+## Using notes
+
+- Add a company, open it, create a note. **Save** (or Ctrl/Cmd+S) records a new version;
+  earlier versions stay readable under History.
+- Link notes by typing `[[Note title]]`. The side panel shows where a note links, which
+  notes link to it, and notes that mention its title without linking.
+- "Copy link to this block" gives a `[[Title#^block]]` link to one paragraph.
+- Renaming a note updates the links in other notes and records that in their history.
+- Links are shown as plain `[[text]]` in the editor for now; use the side panel to follow them.
 
 ## How isolation works
 
@@ -55,6 +65,8 @@ ruff check .
 backend/app/         API (FastAPI, raw SQL)
 backend/migrations/  numbered .sql files, applied in order
 backend/tests/
+web/                 the app (Next.js); talks to the API through /api/*
+e2e/                 a real-browser check of the workspace (run by hand, see the file)
 docs/                plans, research, handoff
 ```
 

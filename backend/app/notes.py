@@ -41,11 +41,15 @@ def _inline_text(content) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return "".join(_inline_text(c) for c in content)
+        # Table rows and cells are separated by a space; inline runs of text are not.
+        separate = any(isinstance(c, dict) and ("cells" in c or c.get("type") == "tableCell") for c in content)
+        return (" " if separate else "").join(_inline_text(c) for c in content)
     if isinstance(content, dict):
         if isinstance(content.get("text"), str):
             return content["text"]
-        return _inline_text(content.get("content"))  # e.g. a link wrapping styled text
+        # A link wraps styled text in "content"; a table keeps its text in rows of cells.
+        parts = [_inline_text(content.get(key)) for key in ("content", "rows", "cells")]
+        return " ".join(p for p in parts if p)
     return ""
 
 

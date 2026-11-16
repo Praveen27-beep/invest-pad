@@ -7,6 +7,8 @@ __pycache__/
 build/
 node_modules/
 .next/
+next-env.d.ts
+tsconfig.tsbuildinfo
 .DS_Store
 # User research never enters this public repository.
 local/
