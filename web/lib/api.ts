@@ -28,7 +28,7 @@ export async function api<T = unknown>(path: string, options: { method?: string;
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
-export type Subject = { id: string; name: string; created_at: string };
+export type Subject = { id: string; name: string; created_at: string; watch_since?: string | null };
 export type NoteSummary = { id: string; subject_id: string | null; title: string; seq: number; updated_at: string };
 export type Block = Record<string, unknown>;
 export type Note = NoteSummary & {
@@ -114,3 +114,25 @@ export type ModelsInfo = {
   month: { platform: string; own: string; calls: number }; caps: { per_task: number; monthly_credit: number };
 };
 export type Profile = { seq: number; body: string; versions: { seq: number; created_at: string }[] };
+
+export type Holding = {
+  symbol: string; quantity: number; value: number; invested: number | null; weight_pct: number;
+  subject_id: string | null; subject_name: string | null; has_thesis: boolean; decisions: number;
+};
+export type Alert = { id: string; rule_key: string; symbol: string; message: string; status: "open" | "acknowledged"; note: string; created_at: string };
+export type Portfolio = {
+  snapshot: { id: string; filename: string; total_value: number; created_at: string } | null;
+  holdings: Holding[]; alerts: Alert[];
+  limits: { key: string; label: string; value: number; enabled: boolean }[];
+  watchlist: { id: string; name: string; watch_since: string; notes: number; documents: number; held: boolean }[];
+};
+export type ReviewItem = { id: string; kind: string; subject_id: string | null; question: string; basis: string; answer: string; answered_at: string | null };
+export type Review = {
+  id: string | null; period: string; items: ReviewItem[];
+  past?: { id: string; period: string; questions: number; answered: number }[];
+};
+export type Graph = {
+  nodes: { id: string; kind: string; ref: string; label: string; state?: string }[];
+  edges: { from: string; to: string; kind: string }[];
+};
+export const money = (n: number) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });

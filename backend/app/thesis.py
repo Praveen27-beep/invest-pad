@@ -363,7 +363,7 @@ def overview(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
     Read straight from what was recorded. No model is involved.
     """
     with db.as_user(user["id"]) as cur:
-        cur.execute("SELECT id, name, created_at FROM subject WHERE id = %s", (subject_id,))
+        cur.execute("SELECT id, name, created_at, watch_since FROM subject WHERE id = %s", (subject_id,))
         subject = cur.fetchone()
         if not subject:
             raise HTTPException(404, "Not found")

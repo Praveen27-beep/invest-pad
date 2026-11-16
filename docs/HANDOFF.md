@@ -250,12 +250,10 @@ templates in eight groups; synthetic corpus for CI, real IEX corpus kept local.
 
 ## Next
 
-1. **M6b:** calculation tools with visible formulas; export everything as a ZIP; the
-   50-question eval on the synthetic corpus; a worker process; first real-model run once
-   Parasu supplies a key.
-2. `docs/MVP-REPORT.md`, then the landing page branch.
-3. **M7:** holdings (CSV) and watchlist; monthly review with hard questions; contradiction
-   scan; routines on new documents; assistant-proposed additions to "How I invest".
+M7 is done except the items listed in `docs/REMAINING.md` (16 Nov 2026): holdings CSV
+import, user-set limits with alerts, watchlist, monthly review and the connection graph are
+built, tested (147 backend tests, `e2e/portfolio.py`) and merged. **`docs/REMAINING.md` is
+the ordered queue for everything still to build**, written so a cheaper model can continue.
 
 ## Not done / not verified
 
