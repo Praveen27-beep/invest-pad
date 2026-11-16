@@ -11,7 +11,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import auth, capture, config, db, notes
+from . import auth, capture, config, db, documents, notes
 
 log = logging.getLogger("investpad")
 
@@ -29,6 +29,7 @@ app = FastAPI(title="Invest-pad", lifespan=lifespan)
 app.include_router(auth.router)
 app.include_router(notes.router)
 app.include_router(capture.router)
+app.include_router(documents.router)
 
 
 @app.middleware("http")
@@ -114,10 +115,14 @@ def get_subject(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
 
 
 @app.delete("/subjects/{subject_id}", status_code=204)
-def delete_subject(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
+def delete_subject(subject_id: uuid.UUID, request: Request, user: dict = Depends(auth.current_user)):
+    """Deletes the company and everything filed under it, including uploaded files."""
     with db.as_user(user["id"]) as cur:
+        cur.execute("SELECT id FROM document WHERE subject_id = %s", (subject_id,))
+        document_ids = [row["id"] for row in cur.fetchall()]
         cur.execute("DELETE FROM subject WHERE id = %s RETURNING id", (subject_id,))
         if not cur.fetchone():
             raise HTTPException(404, "Not found")
         cur.execute("INSERT INTO audit_log (action, object) VALUES ('subject.delete', %s)",
                     (str(subject_id),))
+    documents.remove_files(request, user["id"], document_ids)

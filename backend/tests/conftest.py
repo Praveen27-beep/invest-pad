@@ -40,8 +40,9 @@ def urls():
 
 @pytest.fixture(scope="session")
 def app(urls):
-    os.environ.update(DATABASE_URL=urls["app"], COOKIE_SECURE="false",
-                      ALLOWED_ORIGINS="http://localhost:3000")
+    import tempfile
+    os.environ.update(DATABASE_URL=urls["app"], COOKIE_SECURE="false", ALLOWED_ORIGINS="http://localhost:3000",
+                      FILES_DIR=tempfile.mkdtemp(prefix="investpad-files-"), MAX_UPLOAD_MB="2")
     from app.main import app as fastapi_app
     with TestClient(fastapi_app):  # runs startup and shutdown
         yield fastapi_app
