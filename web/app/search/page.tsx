@@ -5,6 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { api, when } from "@/lib/api";
 
+type Found = {
+  passages: { id: string; document_id: string; label: string; title: string; period: string; doc_type: string; snippet: string }[];
+};
 type Results = {
   notes: { id: string; title: string; snippet: string; updated_at: string }[];
   subjects: { id: string; name: string }[];
@@ -19,7 +22,9 @@ function Snippet({ text }: { text: string }) {
 function SearchResults() {
   const q = useSearchParams().get("q") ?? "";
   const [results, setResults] = useState<Results | null>(null);
+  const [found, setFound] = useState<Found>({ passages: [] });
   useEffect(() => {
+    api<Found>(`/retrieve?q=${encodeURIComponent(q)}&limit=12`).then(setFound).catch(() => setFound({ passages: [] }));
     api<Results>(`/search?q=${encodeURIComponent(q)}`).then(setResults).catch(() => setResults({ notes: [], subjects: [] }));
   }, [q]);
 
@@ -32,6 +37,18 @@ function SearchResults() {
           <h2>Companies</h2>
           <ul className="list">{results.subjects.map((s) => (<li key={s.id}><Link href={`/c/${s.id}`}>{s.name}</Link></li>))}</ul>
         </>
+      )}
+      <h2>Passages in your documents</h2>
+      {found.passages.length === 0 ? <p className="empty">Nothing found in your documents.</p> : (
+        <ul className="list side">
+          {found.passages.map((p) => (
+            <li key={p.id} style={{ display: "block" }}>
+              <Link href={`/d/${p.document_id}#${p.id}`}>{p.title}</Link>{" "}
+              <small>{p.doc_type}{p.period ? ` · ${p.period}` : ""} · {p.label}</small>
+              <Snippet text={p.snippet} />
+            </li>
+          ))}
+        </ul>
       )}
       <h2>Notes</h2>
       {results.notes.length === 0 ? <p className="empty">Nothing found in your notes.</p> : (

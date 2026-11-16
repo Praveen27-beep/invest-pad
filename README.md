@@ -5,10 +5,22 @@ research it all over again.
 
 A research and information tool. Not investment advice.
 
-**Status:** early build. Done so far: accounts with per-user isolation enforced by the
-database (M1); the workspace (M2) — companies, notes in a block editor, a new version on
-every save, `[[links]]` between notes, backlinks, and search; and capture (M3) — a Chrome
-extension notepad and an inbox. No documents, thesis or AI yet. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
+**Status:** early build, milestones M1–M5 of six before the first usable version.
+
+Works today:
+
+- accounts, with each person's data isolated by the database;
+- notes in a block editor, a new version on every save, `[[links]]`, backlinks, search;
+- a Chrome notepad that sends notes and questions to an inbox;
+- documents: upload PDF, Excel or Word, read page by page, search passages by company,
+  period and type;
+- a thesis per company with versions and diffs, assumptions, evidence for and against
+  (a fact must cite a passage; your opinion is kept separate), a decision journal, a
+  red-flag checklist, and a first screen that shows your last decision and the reason
+  for it when you come back.
+
+Not built yet: anything that calls an AI model (the question queue is M6), scheduled
+routines, export. See `docs/04-roadmap.md` and `docs/HANDOFF.md`.
 
 ## Run it locally
 
@@ -50,6 +62,23 @@ ruff check .
 - "Copy link to this block" gives a `[[Title#^block]]` link to one paragraph.
 - Renaming a note updates the links in other notes and records that in their history.
 - Links are shown as plain `[[text]]` in the editor for now; use the side panel to follow them.
+
+## Documents, thesis and decisions
+
+- **Documents tab:** upload a file. Type and period are guessed from the file name
+  (`IEX Q4FY26 concall.pdf` → concall, Q4 FY26) and can be corrected. Scanned PDFs with
+  no text layer are reported as such; text recognition is not built.
+- **Thesis tab:** write the thesis, add the assumptions it rests on, and record changes
+  to an assumption's state with a reason. Nothing saved is edited; changes add versions.
+- **Evidence:** open a document, pick a passage, choose "Use as evidence". That is a
+  fact, shown with its source and page. Your own view goes in as an opinion.
+- **Decisions:** record what you did and the one reason that decided it. A journal entry
+  cannot be edited.
+- **Overview tab:** the first thing you see on reopening a company — the last decision,
+  the reason in your words, what it rested on and how that stands now, open questions,
+  and what has changed since.
+- **Deleting a document** removes its file, text and passages. Evidence that cited it
+  stays as your own words and is no longer shown as a fact.
 
 ## The browser extension
 

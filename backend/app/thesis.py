@@ -115,12 +115,14 @@ def get_thesis(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
 def thesis_diff(subject_id: uuid.UUID, a: int, b: int, user: dict = Depends(auth.current_user)):
     """What changed between version `a` and version `b` of the thesis."""
     with db.as_user(user["id"]) as cur:
-        cur.execute("SELECT v.seq, v.body, v.created_at FROM position_version v JOIN position p ON p.id = v.position_id "
+        cur.execute("SELECT v.seq, v.body, v.created_at FROM position_version v "
+                    "JOIN position p ON p.id = v.position_id "
                     "WHERE p.subject_id = %s AND v.seq IN (%s, %s)", (subject_id, a, b))
         rows = {r["seq"]: r for r in cur.fetchall()}
     if a not in rows or b not in rows:
         raise HTTPException(404, "Version not found")
-    return {"from": {"seq": a, "created_at": rows[a]["created_at"]}, "to": {"seq": b, "created_at": rows[b]["created_at"]},
+    return {"from": {"seq": a, "created_at": rows[a]["created_at"]},
+            "to": {"seq": b, "created_at": rows[b]["created_at"]},
             "changes": diff(rows[a]["body"], rows[b]["body"])}
 
 
@@ -393,7 +395,8 @@ def overview(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
                 cur.execute(
                     "SELECT v.assumption_id AS id, v.seq, v.body, v.state, v.reason, v.created_at "
                     "FROM assumption_version v JOIN assumption a ON a.id = v.assumption_id "
-                    "WHERE a.position_id = %s AND v.created_at > %s ORDER BY v.created_at DESC", (position["id"], since))
+                    "WHERE a.position_id = %s AND v.created_at > %s ORDER BY v.created_at DESC",
+                    (position["id"], since))
                 changes["assumptions"] = cur.fetchall()
                 cur.execute("SELECT count(*) AS n FROM position_version WHERE position_id = %s AND created_at > %s",
                             (position["id"], since))

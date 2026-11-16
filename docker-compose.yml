@@ -24,6 +24,9 @@ services:
       DATABASE_URL: postgresql://investpad_app:${APP_DB_PASSWORD}@db:5432/investpad
       ALLOWED_ORIGINS: http://localhost:3000
       COOKIE_SECURE: "false"        # local http only; must be true behind https
+      FILES_DIR: /data/files
+    volumes:
+      - files:/data/files           # uploaded originals
     ports:
       - "8000:8000"
 
@@ -36,3 +39,4 @@ services:
 
 volumes:
   dbdata:
+  files:

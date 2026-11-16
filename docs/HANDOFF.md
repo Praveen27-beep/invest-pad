@@ -1,6 +1,6 @@
 # HANDOFF
 
-Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1, M2 and M3 done).
+Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1–M5 done).
 
 Branches (both pushed):
 - `invest-pad/main` — the build. Clean tree, no Trackr+ files. Planning docs live here too.
@@ -77,6 +77,55 @@ controls an automated browser cannot press.
 in-page floating button; the side panel is the notepad. Questions sit in the inbox as
 captures until the question queue exists (M6).
 
+## M4 Documents and retrieval — done
+
+- `004_documents.sql`, `app/extract.py`, `app/documents.py`: upload PDF / .xlsx / .docx
+  (type judged by content, 40 MB default cap), original kept on disk with SHA-256,
+  extraction per page / sheet, passages of up to 1,800 characters cut at paragraph and
+  sentence ends, type and period guessed from the file name, status `ready` /
+  `no_text` (scanned) / `failed`. Retrieval filters by company, period and type before
+  ranking and returns passages with page labels, plus matching notes.
+- Delete removes the row, passages and file; a test searches every table and the disk for
+  a planted marker and the file digest.
+- **Changed from the plan:** no vector search yet. pgvector could not be installed in the
+  build environment, so it could not be tested here, and the plan already said the vector
+  half ships only if the eval shows it beats keyword search. Retrieval is Postgres
+  full-text for now; embeddings are a later migration, decided in M6 with the eval.
+- **Changed from the plan:** extraction runs in a background task of the API process, not
+  a separate worker. The worker arrives with the question queue in M6.
+- Notes are retrieved whole, not block by block. Block-level citations of notes are M6.
+
+## M5 Thesis engine — done
+
+- `005_thesis.sql`, `app/thesis.py`, `backend/packs/investing/pack.json`: one thesis per
+  company with append-only versions and word-level diffs; assumptions with basis
+  (source / judgement), state (holds / challenged / broken / outdated) and a required
+  reason for state changes; evidence for/against stored by kind — a fact must cite a
+  passage from that company's documents, an opinion is the investor's words, `ai` is
+  reserved for M6; decision journal with a required decisive reason that snapshots the
+  thesis version and the chosen assumptions; red-flag checklist (12 items, each run kept).
+- `GET /subjects/{id}/overview` is the reopen view: last decision, reason, what it rested
+  on then and now, open questions, changes since. No model involved.
+- The API role cannot update or delete thesis versions, assumption versions, decisions or
+  checklist runs, and cannot delete evidence (it can be withdrawn, not erased).
+- Deleting a document flags evidence that cited it as "source deleted": it stays as the
+  investor's words and stops being shown as a fact.
+- Web: company page has tabs — Overview, Thesis & decisions, Documents, Notes, Red flags —
+  and a document page where a passage becomes evidence.
+- Tests: 96 backend tests. `e2e/thesis.py` runs the success test in real Chrome and
+  passes: after leaving and reopening the company, the first screen shows the decision,
+  the reason verbatim and above the fold, the broken assumption with its reason, and the
+  changes since — without opening a document.
+
+**The success test passes on a synthetic company with AI switched off (there is no AI
+yet).** It has not been run on IEX: your IEX drafts are working notes, not a thesis with
+a recorded decision. Loading them means you writing the thesis, assumptions and decision
+in the app — that is the real test, and only you can do it.
+
+**Known limits:** thesis is a plain text box, not the block editor; evidence can cite a
+document passage but note-linked evidence has no UI yet; red-flag items are a generic
+starting list, not yet your forensic checklist; no OCR; large PDFs are read in-process.
+
 ## Checkpoint 1 — one-page summary
 
 **Landscape.** Analysis is crowded (Investi in the US; Screener AI, Multibagg AI,
@@ -152,9 +201,11 @@ templates in eight groups; synthetic corpus for CI, real IEX corpus kept local.
 
 ## Next
 
-1. M4 Documents and retrieval: upload PDF/Excel/Word, extract, chunk, index (full-text +
-   pgvector), hybrid search, passage viewer, delete cascade.
-2. Then M5–M6; `docs/MVP-REPORT.md` before M7.
+1. M6 Question queue and analyst: job table + worker, answer pipeline with claim
+   verification and `UNKNOWN`, calculation tools with formulas, model adapter with
+   bring-your-own-key, per-question model, cost caps and usage ledger, full export ZIP,
+   the 50-question eval on a synthetic corpus with a scripted fake model.
+2. `docs/MVP-REPORT.md`, then the landing page branch, then M7.
 
 ## Not done / not verified
 

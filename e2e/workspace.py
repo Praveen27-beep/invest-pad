@@ -16,6 +16,7 @@ EMAIL, PASSWORD = f"e2e-{secrets.token_hex(4)}@example.com", "a long test passwo
 
 
 def new_note(page, title: str, text: str) -> None:
+    page.get_by_role("tab", name="Notes").click()
     page.get_by_placeholder("New note title").fill(title)
     page.get_by_role("button", name="New note").click()
     page.wait_for_url("**/n/*")

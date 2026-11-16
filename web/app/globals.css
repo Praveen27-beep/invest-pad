@@ -46,3 +46,24 @@ mark { background: #fff1b8; padding: 0 .1em; }
 select { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
 .quote { margin: .3rem 0; padding-left: .8rem; border-left: 3px solid var(--line); color: var(--muted); white-space: pre-wrap; }
 .snip a { word-break: break-all; }
+.tabs { display: flex; gap: .25rem; border-bottom: 1px solid var(--line); margin: 1rem 0 1.25rem; flex-wrap: wrap; }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: .5rem .8rem; color: var(--muted); }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; }
+.card + .card { margin-top: 1rem; }
+.reason { font-size: 1.2rem; line-height: 1.45; margin: .5rem 0; padding-left: .9rem; border-left: 3px solid var(--accent); white-space: pre-wrap; }
+.badge { display: inline-block; font-size: .72rem; font-weight: 600; padding: .1rem .45rem; border-radius: 99px; border: 1px solid var(--line);
+  text-transform: uppercase; letter-spacing: .04em; vertical-align: middle; }
+.badge.holds { color: var(--accent); border-color: var(--accent); } .badge.challenged { color: var(--warn); border-color: var(--warn); }
+.badge.broken { color: var(--danger); border-color: var(--danger); } .badge.outdated { color: var(--muted); }
+.badge.fact { color: #1d4e89; border-color: #1d4e89; } .badge.opinion { color: #6a3d8a; border-color: #6a3d8a; }
+.badge.ai { color: var(--warn); border-color: var(--warn); } .badge.gone { color: var(--danger); border-color: var(--danger); }
+textarea { width: 100%; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); resize: vertical; }
+ins { background: #dff3e4; text-decoration: none; } del { background: #fbe1dd; }
+.diff { white-space: pre-wrap; }
+.muted { color: var(--muted); } .small { font-size: .85rem; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; } @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } }
+.ev { border-top: 1px solid var(--line); padding: .5rem 0; } .ev:first-of-type { border-top: 0; }
+.field { display: block; font-size: .85rem; color: var(--muted); } .field > * { margin-top: .2rem; }
+input[type=date], input[type=file] { font: inherit; }
+.snip { display: block; color: var(--muted); font-size: .82rem; }
