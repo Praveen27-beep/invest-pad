@@ -26,7 +26,7 @@ include = ["app*"]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 120
+line-length = 132
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S"]
 ignore = ["S101", "S608", "B008"]   # asserts in tests; f-strings hold column lists only; FastAPI Depends

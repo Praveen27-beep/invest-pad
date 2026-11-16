@@ -11,7 +11,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import assistant, auth, capture, config, db, documents, notes, thesis
+from . import assistant, auth, capture, config, db, documents, notes, portfolio, thesis
 
 log = logging.getLogger("investpad")
 
@@ -32,6 +32,7 @@ app.include_router(capture.router)
 app.include_router(documents.router)
 app.include_router(thesis.router)
 app.include_router(assistant.router)
+app.include_router(portfolio.router)
 
 
 @app.middleware("http")
@@ -80,7 +81,7 @@ class SubjectIn(BaseModel):
     identifiers: dict[str, str] = Field(default_factory=dict)
 
 
-SUBJECT_COLUMNS = "id, name, identifiers, pack, created_at"
+SUBJECT_COLUMNS = "id, name, identifiers, pack, created_at, watch_since"
 
 
 @app.get("/subjects")
