@@ -1,0 +1,31 @@
+# Local run:  cp .env.example .env  &&  docker compose up --build
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: investpad_owner
+      POSTGRES_PASSWORD: ${OWNER_DB_PASSWORD}
+      POSTGRES_DB: investpad
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U investpad_owner -d investpad"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MIGRATE_DATABASE_URL: postgresql://investpad_owner:${OWNER_DB_PASSWORD}@db:5432/investpad
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+      DATABASE_URL: postgresql://investpad_app:${APP_DB_PASSWORD}@db:5432/investpad
+      ALLOWED_ORIGINS: http://localhost:3000
+      COOKIE_SECURE: "false"        # local http only; must be true behind https
+    ports:
+      - "8000:8000"
+
+volumes:
+  dbdata:
