@@ -29,6 +29,12 @@ export default function Overview({ data, goTo }: { data: Data; goTo: (tab: strin
           <h2>The reason that decided it</h2>
           <p className="reason">{d.decisive_reason}</p>
           {d.would_change_mind && (<><h2>What would change my mind</h2><p style={{ whiteSpace: "pre-wrap" }}>{d.would_change_mind}</p></>)}
+          {d.flags.length > 0 && (
+            <>
+              <h2>Raised against your own rules when you recorded it</h2>
+              {d.flags.map((f, i) => (<div className="ev" key={i}><span className="quote" style={{ display: "block" }}>“{f.rule}”</span>{f.question}</div>))}
+            </>
+          )}
           {d.assumptions.length > 0 && (
             <>
               <h2>It rested on</h2>

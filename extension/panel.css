@@ -17,3 +17,8 @@ blockquote { margin: 0 0 6px; max-height: 9em; overflow: auto; white-space: pre-
 #page { margin: 0; color: var(--muted); font-size: .85rem; word-break: break-all; }
 #status, #setup-status { min-height: 1.4em; color: var(--muted); } .warn { color: var(--warn) !important; }
 .foot { text-align: right; font-size: .85rem; }
+#answer { border-top: 1px solid var(--line); padding-top: 10px; }
+#answer h2 { font-size: .95rem; margin: 0 0 6px; }
+#answer .claim { margin: 0 0 10px; } #answer .claim q { display: block; color: var(--muted); border-left: 3px solid var(--line);
+  padding-left: 8px; margin: 4px 0; quotes: "“" "”"; }
+#answer .src { color: var(--muted); font-size: .82rem; } #answer .ai { font-size: .78rem; color: var(--warn); }

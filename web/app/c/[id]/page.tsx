@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import AskTab from "@/components/AskTab";
 import ChecklistTab from "@/components/ChecklistTab";
 import DocumentsTab from "@/components/DocumentsTab";
 import NoteList from "@/components/NoteList";
@@ -9,7 +10,7 @@ import OverviewPanel from "@/components/Overview";
 import ThesisTab from "@/components/ThesisTab";
 import { api, type NoteSummary, type Overview, type Pack } from "@/lib/api";
 
-const TABS = [["overview", "Overview"], ["thesis", "Thesis & decisions"], ["documents", "Documents"], ["notes", "Notes"], ["checklist", "Red flags"]];
+const TABS = [["overview", "Overview"], ["ask", "Ask"], ["thesis", "Thesis & decisions"], ["documents", "Documents"], ["notes", "Notes"], ["checklist", "Red flags"]];
 
 export default function Company() {
   const { id } = useParams<{ id: string }>();
@@ -54,6 +55,7 @@ export default function Company() {
         ))}
       </div>
       {tab === "overview" && <OverviewPanel data={overview} goTo={setTab} />}
+      {tab === "ask" && <AskTab subjectId={id} />}
       {tab === "thesis" && <ThesisTab subjectId={id} pack={pack} onChange={load} />}
       {tab === "documents" && <DocumentsTab subjectId={id} pack={pack} onChange={load} />}
       {tab === "notes" && <NoteList notes={notes} subjectId={id} />}

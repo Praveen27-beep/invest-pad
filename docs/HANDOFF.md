@@ -1,6 +1,6 @@
 # HANDOFF
 
-Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1–M5 done).
+Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1–M5 and M6a done).
 
 Branches (both pushed):
 - `invest-pad/main` — the build. Clean tree, no Trackr+ files. Planning docs live here too.
@@ -76,6 +76,55 @@ controls an automated browser cannot press.
 **Decisions taken:** voice dictation left out (not attempted; revisit if wanted). No
 in-page floating button; the side panel is the notepad. Questions sit in the inbox as
 captures until the question queue exists (M6).
+
+## Direction change, 16 Nov 2026 (read `docs/07-second-brain.md`)
+
+Parasu ran the app and said it is "too simple, only Google-Doc-like". He wants an
+investment studio: an AI chatbot, a second brain that answers in the floating pad,
+remembers his investing style, guards against decisions that deviate from it, checks the
+portfolio for risk (with a Trackr+ connection), asks hard questions monthly on position
+sizing, and compares portfolio with watchlist. He also supplied seven references.
+
+Decisions taken in response:
+- M6 split into **M6a** (done, below) and **M6b**; portfolio, watchlist and the monthly
+  review go to **M7**.
+- "How I invest" added as a first-class, versioned, user-written layer.
+- **Held, because it is his own rule:** no buy/sell/sizing advice. The portfolio check will
+  show where holdings break limits *he* wrote and ask about it; it will not say what to
+  trade to "offset" risk. Flagged to him; needs his answer.
+- Trackr+ link: start with a holdings CSV upload; a live link needs a change in Trackr+,
+  which is off-limits without his say-so.
+- **Open question to him:** "No obsidian like backlink connection" — read as "couldn't find
+  it", not "remove it". Confirm.
+
+## M6a Assistant — done
+
+- `006_analyst.sql`, `app/llm.py`, `app/ask.py`, `app/assistant.py`.
+- Model connection: any OpenAI-compatible endpoint, user's own key encrypted (Fernet),
+  shown as last four characters, never returned or logged. Optional platform model via
+  environment. A built-in **test model** (not an AI) runs the whole flow at no cost.
+- Ask: advice questions refused before any call; nothing found → `unknown`, no call; else
+  top passages from that company's documents and notes go to the model with the rules;
+  each returned claim is kept only if its quotation is in the cited source, its figures
+  are in the quotation, and it does not read as advice. Removed claims are counted.
+- Guardrail: `POST /subjects/{id}/decisions/check` compares a draft decision with "How I
+  invest"; a flag is kept only if the rule it quotes is really in the user's text. Flags
+  shown are stored with the decision and appear on the reopen view.
+- Cost: per-question cap checked before the call; monthly platform credit; usage ledger.
+- Deleting a document deletes citations to it and any claim left without one.
+- Notepad: tokens can be created with permission to ask; "Ask now" shows the cited answer
+  in the panel. A notepad token can read back only questions asked from the notepad.
+- Web: Ask tab on the company page; Settings has How I invest, AI model, and tokens.
+- Tests: 134 backend, 9 extension; four browser runs pass (workspace, capture, thesis,
+  assistant incl. notepad ask).
+
+**Not proven:** answer quality with a real model. Every test uses a scripted or the
+built-in test model. No real key has been used and no money spent. The first real-model
+run needs Parasu's key (stop condition).
+
+**Known limits:** period labels (FY25, Q2) are not checked by the figure rule; answers run
+in a background task, not a worker; one model call per question, no multi-step reasoning;
+no calculation tools yet; notes are cited whole, not by block.
 
 ## M4 Documents and retrieval — done
 
@@ -201,11 +250,12 @@ templates in eight groups; synthetic corpus for CI, real IEX corpus kept local.
 
 ## Next
 
-1. M6 Question queue and analyst: job table + worker, answer pipeline with claim
-   verification and `UNKNOWN`, calculation tools with formulas, model adapter with
-   bring-your-own-key, per-question model, cost caps and usage ledger, full export ZIP,
-   the 50-question eval on a synthetic corpus with a scripted fake model.
-2. `docs/MVP-REPORT.md`, then the landing page branch, then M7.
+1. **M6b:** calculation tools with visible formulas; export everything as a ZIP; the
+   50-question eval on the synthetic corpus; a worker process; first real-model run once
+   Parasu supplies a key.
+2. `docs/MVP-REPORT.md`, then the landing page branch.
+3. **M7:** holdings (CSV) and watchlist; monthly review with hard questions; contradiction
+   scan; routines on new documents; assistant-proposed additions to "How I invest".
 
 ## Not done / not verified
 

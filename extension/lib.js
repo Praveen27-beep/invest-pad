@@ -61,3 +61,30 @@ export async function flush(queue, send) {
   }
   return { remaining, sent, dropped, stopped };
 }
+
+/**
+ * Turn an answer from Invest-pad into plain data for the panel to draw:
+ * { heading, note, claims: [{ text, quote, source }] }. No HTML is built here or anywhere
+ * from server text; the panel sets textContent only.
+ */
+export function describeAnswer(answer) {
+  const headings = {
+    answered: "From your notes and documents",
+    unknown: "Your material does not answer this",
+    refused: "Not something Invest-pad answers",
+    no_model: "No model connected",
+    failed: "Could not answer",
+  };
+  return {
+    heading: headings[answer.outcome] ?? "Answer",
+    note: answer.note ?? "",
+    model: answer.outcome === "answered" ? answer.model : "",
+    claims: (answer.claims ?? []).map((c) => ({
+      text: c.body,
+      quote: c.quote,
+      source: c.document_title
+        ? [c.document_title, c.document_period, c.page_label].filter(Boolean).join(" · ")
+        : `My note: ${c.note_title ?? ""}`,
+    })),
+  };
+}

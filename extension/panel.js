@@ -1,7 +1,7 @@
 // The notepad. Everything you save goes into a local queue first and is then sent, so
 // nothing is lost if you are offline or the server is down.
 
-import { flush, makeCapture, normaliseServer } from "./lib.js";
+import { describeAnswer, flush, makeCapture, normaliseServer } from "./lib.js";
 
 const $ = (id) => document.getElementById(id);
 let settings = null; // { server, token }
@@ -87,9 +87,61 @@ function show(connected) {
 
 // ---------------------------------------------------------------- actions
 
+// ---------------------------------------------------------------- ask now
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = text;       // text from the server is never treated as HTML
+  return node;
+}
+
+function showAnswer(question, answer) {
+  const view = describeAnswer(answer);
+  const box = $("answer");
+  box.replaceChildren(el("h2", "", question), el("p", "src", view.heading));
+  for (const claim of view.claims) {
+    const item = el("div", "claim", claim.text);
+    item.append(el("q", "", claim.quote), el("div", "src", claim.source));
+    box.append(item);
+  }
+  if (view.note) box.append(el("p", "", view.note));
+  if (view.model) box.append(el("p", "ai", `AI · ${view.model} · each statement quotes its source`));
+  box.hidden = false;
+}
+
+async function askNow(body) {
+  $("answer").hidden = true;
+  setStatus("Reading your notes and documents…");
+  let response;
+  try {
+    response = await request("/ext/questions", {
+      method: "POST", body: JSON.stringify({ body: body.trim(), subject_id: $("subject").value || null }) });
+  } catch {
+    return setStatus("Can’t reach Invest-pad. Asking needs a connection; switch to Question to save it for later.", true);
+  }
+  if (response.status === 403) return setStatus("This token can save captures but not ask. Create one that can, in Invest-pad Settings.", true);
+  if (response.status === 401) return setStatus("Invest-pad no longer accepts this token. Disconnect and connect again.", true);
+  if (!response.ok) return setStatus(`Invest-pad answered with an error (${response.status}).`, true);
+  const { id } = await response.json();
+  for (let attempt = 0; attempt < 80; attempt += 1) {         // up to two minutes
+    await new Promise((done) => setTimeout(done, 1500));
+    const check = await request(`/ext/questions/${id}`).catch(() => null);
+    if (!check?.ok) continue;
+    const question = await check.json();
+    if (question.answer) {
+      $("body").value = "";
+      setStatus("");
+      return showAnswer(question.body, question.answer);
+    }
+  }
+  setStatus("Still working. The answer will be on the company’s Ask tab in Invest-pad.", true);
+}
+
 async function save() {
   const body = $("body").value;
   if (!body.trim()) return setStatus("Write something first.", true);
+  if (document.querySelector("input[name=kind]:checked").value === "ask") return askNow(body);
   const capture = makeCapture({
     kind: document.querySelector("input[name=kind]:checked").value,
     body, context, subjectId: $("subject").value, id: crypto.randomUUID(), now: Date.now(),
@@ -141,7 +193,9 @@ $("disconnect").addEventListener("click", disconnect);
 $("drop-context").addEventListener("click", () => { context = null; showContext(); });
 $("body").addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") save(); });
 document.querySelectorAll("input[name=kind]").forEach((radio) => radio.addEventListener("change", () => {
-  $("body").placeholder = radio.value === "question" ? "What do you want to find out?" : "Write a note…";
+  $("body").placeholder = { note: "Write a note…", question: "What do you want to find out? Saved to your inbox.",
+    ask: "Ask your notes and documents. The answer appears here." }[radio.value];
+  $("save-label").textContent = radio.value === "ask" ? "Ask" : "Save to inbox";
 }));
 window.addEventListener("online", () => settings && sendQueue());
 

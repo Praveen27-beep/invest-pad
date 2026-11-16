@@ -25,6 +25,13 @@ services:
       ALLOWED_ORIGINS: http://localhost:3000
       COOKIE_SECURE: "false"        # local http only; must be true behind https
       FILES_DIR: /data/files
+      # Optional: an included model for everyone on this server. Leave unset to have each
+      # person connect their own in Settings.
+      PLATFORM_MODEL_URL: ${PLATFORM_MODEL_URL:-}
+      PLATFORM_MODEL_NAME: ${PLATFORM_MODEL_NAME:-}
+      PLATFORM_MODEL_KEY: ${PLATFORM_MODEL_KEY:-}
+      PLATFORM_PRICE_IN: ${PLATFORM_PRICE_IN:-0}
+      PLATFORM_PRICE_OUT: ${PLATFORM_PRICE_OUT:-0}
     volumes:
       - files:/data/files           # uploaded originals
     ports:

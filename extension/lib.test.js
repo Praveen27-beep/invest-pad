@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { flush, makeCapture, normaliseServer } from "./lib.js";
+import { describeAnswer, flush, makeCapture, normaliseServer } from "./lib.js";
 
 const item = (n) => ({ client_id: `capture-${n}` });
 
@@ -64,4 +64,16 @@ test("normaliseServer", () => {
   assert.equal(normaliseServer("pad.example.com"), "https://pad.example.com");
   assert.equal(normaliseServer(""), null);
   assert.equal(normaliseServer("http://"), null);
+});
+
+test("describeAnswer shapes answered and unanswered results", () => {
+  const answered = describeAnswer({ outcome: "answered", note: "", model: "My model", claims: [
+    { body: "Revenue was 608 crore.", quote: "Revenue from operations was 608 crore", document_title: "AR", document_period: "FY25", page_label: "p. 1" },
+    { body: "You passed on governance.", quote: "governance looked weak", document_title: null, note_title: "Why I passed" },
+  ] });
+  assert.equal(answered.heading, "From your notes and documents");
+  assert.deepEqual(answered.claims.map((c) => c.source), ["AR · FY25 · p. 1", "My note: Why I passed"]);
+  const unknown = describeAnswer({ outcome: "unknown", note: "Upload the FY24 report.", claims: [] });
+  assert.deepEqual([unknown.heading, unknown.note, unknown.claims.length, unknown.model], ["Your material does not answer this", "Upload the FY24 report.", 0, ""]);
+  assert.equal(describeAnswer({ outcome: "refused", note: "x" }).claims.length, 0);
 });

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type Assumption, type Decision, type Pack, STATES, type Thesis, day, when } from "@/lib/api";
+import { api, type Assumption, type Decision, type Flag, type Pack, STATES, type Thesis, day, when } from "@/lib/api";
 
 type Change = { op: "equal" | "insert" | "delete"; text: string };
 
@@ -68,7 +68,7 @@ export default function ThesisTab({ subjectId, pack, onChange }: { subjectId: st
       <NewAssumption onAdd={(text, basis) => run(() => api(`${base}/assumptions`, { method: "POST", body: { body: text, basis } }))} />
 
       <h2>Record a decision</h2>
-      <DecisionForm pack={pack} assumptions={thesis.assumptions}
+      <DecisionForm pack={pack} assumptions={thesis.assumptions} checkUrl={`${base}/decisions/check`}
         onSave={(d) => run(() => api(`${base}/decisions`, { method: "POST", body: d }), "Decision recorded")} />
 
       <h2>Decision journal</h2>
@@ -78,6 +78,7 @@ export default function ThesisTab({ subjectId, pack, onChange }: { subjectId: st
           <p className="reason" style={{ fontSize: "1rem" }}>{d.decisive_reason}</p>
           {d.would_change_mind && <p className="small"><span className="muted">Would change my mind:</span> {d.would_change_mind}</p>}
           {d.assumptions.map((x) => (<div className="small muted" key={x.id}>Rested on: {x.body} ({x.state} at the time)</div>))}
+          {d.flags.map((f, i) => (<div className="small dirty" key={i}>Recorded after this was raised — your rule “{f.rule}”: {f.question}</div>))}
         </div>
       ))}
     </>
@@ -164,26 +165,45 @@ function NewAssumption({ onAdd }: { onAdd: (text: string, basis: string) => Prom
   );
 }
 
-function DecisionForm({ pack, assumptions, onSave }: { pack: Pack; assumptions: Assumption[]; onSave: (d: object) => Promise<void> }) {
+function DecisionForm({ pack, assumptions, checkUrl, onSave }: { pack: Pack; assumptions: Assumption[]; checkUrl: string; onSave: (d: object) => Promise<void> }) {
   const today = new Date().toISOString().slice(0, 10);
   const [type, setType] = useState(pack.decision_types[0].key);
   const [on, setOn] = useState(today);
   const [reason, setReason] = useState("");
   const [mind, setMind] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
+  // The guardrail: before recording, the decision is compared with "How I invest".
+  // null = not checked yet. Editing the reason or the type means it must be checked again.
+  const [check, setCheck] = useState<{ flags: Flag[]; note: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      let result = check;
+      if (!result) {
+        result = await api<{ flags: Flag[]; note: string }>(checkUrl, {
+          method: "POST", body: { type, decisive_reason: reason, would_change_mind: mind } }).catch(() => ({ flags: [], note: "The check could not be run." }));
+        setCheck(result);
+        if (result.flags.length) return;       // show the questions first; the next click records
+      }
+      await onSave({ type, decided_on: on, decisive_reason: reason, would_change_mind: mind, assumption_ids: picked, flags: result.flags });
+      setReason(""); setMind(""); setPicked([]); setCheck(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <form className="card stack" onSubmit={async (e) => {
-      e.preventDefault();
-      await onSave({ type, decided_on: on, decisive_reason: reason, would_change_mind: mind, assumption_ids: picked });
-      setReason(""); setMind(""); setPicked([]);
-    }}>
+    <form className="card stack" onSubmit={submit}>
       <div className="row" style={{ flexWrap: "wrap" }}>
-        <label className="field">Decision <select value={type} onChange={(e) => setType(e.target.value)}>
+        <label className="field">Decision <select value={type} onChange={(e) => { setType(e.target.value); setCheck(null); }}>
           {pack.decision_types.map((t) => (<option key={t.key} value={t.key}>{t.label}</option>))}</select></label>
         <label className="field">Date <input type="date" value={on} max={today} onChange={(e) => setOn(e.target.value)} required /></label>
       </div>
       <label className="field">The one reason that decided it
-        <textarea rows={3} value={reason} minLength={10} required onChange={(e) => setReason(e.target.value)}
+        <textarea rows={3} value={reason} minLength={10} required onChange={(e) => { setReason(e.target.value); setCheck(null); }}
           placeholder="One or two sentences, in your own words. This is what you will be shown when you come back." /></label>
       <label className="field">What would change your mind? (optional)
         <textarea rows={2} value={mind} onChange={(e) => setMind(e.target.value)} /></label>
@@ -198,7 +218,19 @@ function DecisionForm({ pack, assumptions, onSave }: { pack: Pack; assumptions: 
           ))}
         </fieldset>
       )}
-      <div><button className="primary">Record decision</button> <span className="small muted">A journal entry cannot be edited afterwards.</span></div>
+      {check && check.flags.length > 0 && (
+        <div className="card" role="alert" aria-label="Check against How I invest">
+          <strong>Before you record this — it may sit badly with rules you wrote:</strong>
+          {check.flags.map((f, i) => (
+            <div className="ev" key={i}><span className="quote" style={{ display: "block" }}>“{f.rule}”</span>{f.question}</div>
+          ))}
+          <p className="small muted">You can still record it. These questions are saved with the entry. Editing the reason runs the check again.</p>
+        </div>
+      )}
+      <div>
+        <button className="primary" disabled={busy}>{busy ? "Checking…" : check?.flags.length ? "Record anyway" : "Record decision"}</button>{" "}
+        <span className="small muted">{check && !check.flags.length ? check.note : "A journal entry cannot be edited afterwards."}</span>
+      </div>
     </form>
   );
 }

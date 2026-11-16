@@ -41,7 +41,7 @@ export type Capture = {
   id: string; kind: "note" | "question"; body: string; selection: string; url: string; page_title: string;
   captured_at: string; status: "inbox" | "filed" | "dismissed"; subject_id: string | null; note_id: string | null;
 };
-export type Token = { id: string; label: string; created_at: string; last_used_at: string | null; revoked_at: string | null };
+export type Token = { id: string; label: string; can_ask: boolean; created_at: string; last_used_at: string | null; revoked_at: string | null };
 export type Version = { seq: number; title: string; reason: string | null; created_at: string; chars: number };
 
 export const when = (iso: string) =>
@@ -80,7 +80,7 @@ export type Assumption = {
 export type Thesis = { seq: number; body: string; versions: { seq: number; created_at: string }[]; assumptions: Assumption[] };
 export type Decision = {
   id: string; type: string; type_label?: string; decided_on: string; decisive_reason: string; would_change_mind: string;
-  position_seq: number | null; created_at: string; thesis_changed?: boolean;
+  position_seq: number | null; created_at: string; thesis_changed?: boolean; flags: Flag[];
   assumptions: { id: string; seq: number; body: string; state: string;
     now?: { seq: number; body: string; state: string; reason: string; changed: boolean } | null }[];
 };
@@ -97,3 +97,20 @@ export type Pack = {
   checklists: Record<string, { title: string; intro: string; items: { id: string; text: string }[] }>;
 };
 export const STATES = { holds: "Holds", challenged: "Challenged", broken: "Broken", outdated: "Outdated" } as const;
+
+export type Flag = { rule: string; question: string };
+export type Claim = {
+  id: string; body: string; quote: string; chunk_id: string | null; document_id: string | null; page_label: string | null;
+  document_title: string | null; document_period: string | null; note_id: string | null; note_title: string | null;
+};
+export type Answer = {
+  id: string; outcome: "answered" | "unknown" | "refused" | "no_model" | "failed"; note: string; model: string;
+  removed: number; created_at: string; claims: Claim[];
+};
+export type Question = { id: string; body: string; status: "queued" | "ready"; created_at: string; answer: Answer | null };
+export type ModelConfig = { id: string; label: string; base_url: string; model: string; key_last4: string; price_in: string; price_out: string };
+export type ModelsInfo = {
+  models: ModelConfig[]; included: boolean; test_model_url: string;
+  month: { platform: string; own: string; calls: number }; caps: { per_task: number; monthly_credit: number };
+};
+export type Profile = { seq: number; body: string; versions: { seq: number; created_at: string }[] };

@@ -19,6 +19,7 @@
     <div class="kinds" role="radiogroup" aria-label="What are you saving?">
       <label><input type="radio" name="kind" value="note" checked> Note</label>
       <label><input type="radio" name="kind" value="question"> Question</label>
+      <label><input type="radio" name="kind" value="ask"> Ask now</label>
     </div>
     <textarea id="body" rows="7" placeholder="Write a note…" aria-label="Your note or question"></textarea>
 
@@ -29,8 +30,9 @@
     </div>
 
     <label>Company <select id="subject"><option value="">Decide later</option></select></label>
-    <button id="save" class="primary">Save to inbox <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
+    <button id="save" class="primary"><span id="save-label">Save to inbox</span> <kbd>Ctrl</kbd>+<kbd>Enter</kbd></button>
     <p id="status" role="status"></p>
+    <div id="answer" hidden aria-live="polite"></div>
     <p class="foot"><button id="disconnect" class="link">Disconnect</button></p>
   </section>
   <script type="module" src="panel.js"></script>
