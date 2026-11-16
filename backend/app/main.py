@@ -11,7 +11,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import auth, config, db
+from . import auth, config, db, notes
 
 log = logging.getLogger("investpad")
 
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Invest-pad", lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(notes.router)
 
 
 @app.middleware("http")

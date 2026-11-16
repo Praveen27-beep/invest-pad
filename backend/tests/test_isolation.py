@@ -113,6 +113,28 @@ def test_every_owned_table_is_isolated(owner):
     assert unprotected == []
 
 
+def test_references_between_owned_tables_include_the_owner(owner):
+    """A foreign key from one owned table to another must carry owner_id.
+
+    Foreign-key checks bypass row-level security, so without owner_id in the key a user
+    could attach their row to someone else's. References to app_user are exempt: that is
+    the owner column itself.
+    """
+    rows = owner.execute("""
+        SELECT con.conrelid::regclass::text, con.confrelid::regclass::text, con.conname,
+               EXISTS (SELECT 1 FROM unnest(con.conkey) k
+                       JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k
+                       WHERE a.attname = 'owner_id')
+        FROM pg_constraint con
+        WHERE con.contype = 'f'
+          AND con.confrelid <> 'app_user'::regclass
+          AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = con.conrelid AND a.attname = 'owner_id')
+          AND EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = con.confrelid AND a.attname = 'owner_id')
+    """).fetchall()
+    assert len(rows) >= 3
+    assert [r[:3] for r in rows if not r[3]] == []
+
+
 def test_api_role_has_no_special_powers(owner):
     row = owner.execute(
         "SELECT rolsuper, rolbypassrls, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'investpad_app'"
