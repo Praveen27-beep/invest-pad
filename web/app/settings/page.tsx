@@ -23,6 +23,35 @@ Header: Authorization: Bearer <your token>`}</pre>
         holdings import and review — as readable files plus the full record as JSON. Model keys are not included.
       </p>
       <a className="button" href="/api/export" download>Download my data</a>
+      <DeleteAccount />
+    </>
+  );
+}
+
+function DeleteAccount() {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  return (
+    <>
+      <h2>Delete account</h2>
+      <p className="empty">
+        Deletes your account and everything in it — notes, documents, theses, decisions, answers, holdings — and every
+        uploaded file. It cannot be undone. Download your data first if you want a copy.
+      </p>
+      <form className="stack" style={{ maxWidth: "28rem" }} onSubmit={async (e) => {
+        e.preventDefault();
+        setError("");
+        try {
+          await api("/auth/me", { method: "DELETE", body: { password, confirm } });
+          window.location.href = "/login";
+        } catch (err) { setError((err as Error).message); }
+      }}>
+        <input type="password" placeholder="Your password" aria-label="Password to delete account" value={password} onChange={(e) => setPassword(e.target.value)} />
+        <input type="text" placeholder="Type: delete my account" aria-label="Confirm account deletion" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+        <div><button className="danger" disabled={!password || confirm.trim().toLowerCase() !== "delete my account"}>Delete my account</button></div>
+        {error && <p className="error" role="alert">{error}</p>}
+      </form>
     </>
   );
 }

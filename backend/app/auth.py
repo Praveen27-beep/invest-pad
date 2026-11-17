@@ -6,9 +6,12 @@ SHA-256. Passwords are hashed with argon2.
 
 import hashlib
 import secrets
+import shutil
 import time
+import uuid
 from collections import defaultdict
 from datetime import timedelta
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -115,6 +118,32 @@ def logout(request: Request, response: Response):
     if token:
         with db.anonymous() as cur:
             cur.execute("SELECT auth_session_delete(%s)", (_token_hash(token),))
+    response.delete_cookie(COOKIE, path="/")
+
+
+class DeleteAccount(BaseModel):
+    password: str
+    confirm: str
+
+
+@router.delete("/me", status_code=204)
+def delete_account(body: DeleteAccount, request: Request, response: Response, user: dict = Depends(current_user)):
+    """Delete the account and everything in it: every row the user owns and every uploaded
+    file. Needs the password and the typed phrase, because it cannot be undone."""
+    if body.confirm.strip().lower() != "delete my account":
+        raise HTTPException(422, "Type “delete my account” to confirm")
+    with db.anonymous() as cur:
+        cur.execute("SELECT * FROM auth_lookup(%s)", (user["email"],))
+        row = cur.fetchone()
+    try:
+        _hasher.verify(row["password_hash"], body.password)
+    except VerifyMismatchError as e:
+        raise HTTPException(401, "Wrong password") from e
+    with db.as_user(user["id"]) as cur:
+        cur.execute("SELECT auth_delete_self() AS ok")
+        if not cur.fetchone()["ok"]:
+            raise HTTPException(500, "Could not delete the account")
+    shutil.rmtree(Path(request.app.state.config.files_dir) / str(uuid.UUID(str(user["id"]))), ignore_errors=True)
     response.delete_cookie(COOKIE, path="/")
 
 

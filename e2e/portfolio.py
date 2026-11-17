@@ -93,6 +93,10 @@ with sync_playwright() as p:
     with zipfile.ZipFile(dl.value.path()) as z:
         names = z.namelist()
     assert "data/holding.json" in names and "companies/Northgate Power Exchange/thesis.md" in names, names
+    page.get_by_label("Password to delete account").fill(PASSWORD)
+    page.get_by_label("Confirm account deletion").fill("delete my account")
+    page.get_by_role("button", name="Delete my account").click()
+    page.wait_for_url("**/login")
     assert not errors, errors
     browser.close()
 print("portfolio e2e passed")
