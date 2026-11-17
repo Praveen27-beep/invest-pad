@@ -1,6 +1,21 @@
 # HANDOFF
 
-Last updated: 16 Nov 2026, session 1 (Phases 0–2 done; Phase 3 M1–M5 and M6a done).
+Last updated: 17 Nov 2026, session 2 (M7 done; most of M8–M9 done; see `docs/MVP-REPORT.md`
+for the state of things and `docs/REMAINING.md` for what is left).
+
+## Session 2 (17 Nov 2026), on `invest-pad/m8-export`, merged to `invest-pad/main`
+
+- Full export ZIP (`GET /export`) and company Markdown export; Settings button.
+- Delete audit: deleting a document, note or company leaves no copy of its text in any
+  column of any owned table (008); account deletion (011).
+- Calculations with formulas (`app/calc.py`, Numbers tab).
+- Contradiction scan (`app/scan.py`, 009): suggestions only; user accepts or dismisses.
+- Editable checklists + forensic checklist (010).
+- Workspace Connections page, decision Journal, review badge (`/review/status`).
+- Hardening: rate limits, prompt-tag fencing, injection and cross-tenant tests.
+- Read-only MCP server (`app/mcp.py`).
+- Backup/restore scripts, getting-started guide, eval runner (`backend/eval/`).
+- Docs: `DEPLOY.md`, `DEMO.md`, `MVP-REPORT.md`, `legal/*-DRAFT.md` (for lawyer review).
 
 Branches (both pushed):
 - `invest-pad/main` — the build. Clean tree, no Trackr+ files. Planning docs live here too.

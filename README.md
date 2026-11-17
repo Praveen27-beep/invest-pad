@@ -133,6 +133,16 @@ What the extension can and cannot do:
   the notepad to use that.
 - It talks only to the one address you connect it to.
 
+## Since M7
+
+Export everything (Settings), delete an account, editable checklists with a forensic
+pack, a Numbers tab (formulas shown), a contradiction scan on documents (suggestions you
+accept or dismiss), a decision journal, a workspace connections graph, and a read-only
+MCP server (`/api/mcp`, extension token that can ask). Backups: `scripts/backup.sh` and
+`scripts/restore.sh`. Model eval: `cd backend && python -m eval.run` (dry run; `--send`
+to call your model). Deployment notes: `docs/DEPLOY.md`. State of things:
+`docs/MVP-REPORT.md`.
+
 ## How isolation works
 
 - The API connects as `investpad_app`, a role with no special powers.
