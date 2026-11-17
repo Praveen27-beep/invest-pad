@@ -12,3 +12,4 @@ tsconfig.tsbuildinfo
 .DS_Store
 # User research never enters this public repository.
 local/
+backend/eval/results-*.csv
