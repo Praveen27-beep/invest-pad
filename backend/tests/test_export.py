@@ -105,3 +105,18 @@ def test_awkward_names_stay_inside_their_folders(new_user):
     assert all(".." not in n.split("/") and not n.startswith("/") for n in names)
     assert len([n for n in names if n.startswith("notes/")]) == 2
     assert len([n for n in names if n.endswith("thesis.md")]) == 2
+
+
+def test_company_markdown_and_journal(new_user):
+    a = new_user()
+    sid, _ = fill(a, "Northgate Power Exchange")
+    md = a.get(f"/subjects/{sid}/export.md")
+    assert md.status_code == 200 and md.headers["content-type"].startswith("text/markdown")
+    text = md.text
+    assert text.startswith("# Northgate Power Exchange") and "Share held after coupling." in text
+    assert "Annual report FY25.pdf" in text and "## Note: Northgate Power Exchange first look" in text
+    assert new_user().get(f"/subjects/{sid}/export.md").status_code == 404
+
+    j = a.get("/journal").json()
+    assert [(x["company"], x["label"]) for x in j] == [("Northgate Power Exchange", "Bought")]
+    assert new_user().get("/journal").json() == []

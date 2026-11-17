@@ -31,6 +31,7 @@ export default function Top() {
       <Link href="/inbox">Inbox{inbox ? ` (${inbox})` : ""}</Link>
       <Link href="/portfolio">Portfolio{alerts ? ` (${alerts})` : ""}</Link>
       <Link href="/review">Review{review ? ` (${review})` : ""}</Link>
+      <Link href="/journal">Journal</Link>
       <Link href="/graph">Connections</Link>
       <form onSubmit={(e) => { e.preventDefault(); if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`); }}>
         <input type="search" placeholder="Search notes" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search notes" />

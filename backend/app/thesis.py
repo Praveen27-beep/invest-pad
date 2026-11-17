@@ -425,6 +425,19 @@ def get_checklist(subject_id: uuid.UUID, key: str, user: dict = Depends(auth.cur
         return cur.fetchone() or {"id": None, "items": [], "created_at": None, "runs": 0, "checklist_seq": None}
 
 
+@router.get("/journal")
+def journal(user: dict = Depends(auth.current_user)):
+    """Every decision across companies, newest first, in the user's own words."""
+    with db.as_user(user["id"]) as cur:
+        cur.execute("SELECT d.id, d.subject_id, s.name AS company, d.type, d.decided_on, d.decisive_reason, "
+                    "d.would_change_mind, d.created_at FROM decision d JOIN subject s ON s.id = d.subject_id "
+                    "ORDER BY d.decided_on DESC, d.created_at DESC LIMIT 500")
+        rows = cur.fetchall()
+    for r in rows:
+        r["label"] = DECISION_TYPES.get(r["type"], r["type"])
+    return rows
+
+
 # ---------------------------------------------------------------- the reopen view
 
 @router.get("/subjects/{subject_id}/overview")

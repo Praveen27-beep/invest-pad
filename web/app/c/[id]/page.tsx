@@ -53,6 +53,7 @@ export default function Company() {
           await api(`/subjects/${id}/watch`, { method: "PUT", body: { watching: !overview.subject.watch_since } });
           await load();
         }}>{overview.subject.watch_since ? "On watchlist ✓" : "Add to watchlist"}</button>
+        <a className="button" href={`/api/subjects/${id}/export.md`} download>Download as Markdown</a>
         <button className="danger" onClick={remove}>Delete company</button>
       </div>
       <div className="tabs" role="tablist">

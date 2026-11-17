@@ -23,8 +23,8 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from psycopg import sql
 
 from . import auth, db, ratelimit
@@ -153,3 +153,29 @@ def export(request: Request, user: dict = Depends(auth.current_user)):
     stamp = datetime.now(UTC).strftime("%Y%m%d")
     return StreamingResponse(iter(lambda: out.read(1 << 20), b""), media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="invest-pad-export-{stamp}.zip"'})
+
+
+COMPANY_TABLES = ("subject", "position", "position_version", "assumption", "assumption_version", "evidence", "decision",
+                  "note", "document")
+
+
+@router.get("/subjects/{subject_id}/export.md")
+def company_markdown(subject_id: uuid.UUID, user: dict = Depends(auth.current_user)):
+    """One company as a single Markdown file: thesis, assumptions with evidence, decisions,
+    the list of documents, and every note in full."""
+    with db.as_user(user["id"]) as cur:
+        cols = dict(owned_tables(cur))
+        data = {t: _rows(cur, t, cols[t]) for t in COMPANY_TABLES}
+    subject = next((s for s in data["subject"] if s["id"] == subject_id), None)
+    if not subject:
+        raise HTTPException(404, "Not found")
+    parts = [_thesis_md(subject["name"], data, subject_id).rstrip()]
+    docs = [d for d in data["document"] if d["subject_id"] == subject_id]
+    if docs:
+        parts.append("## Documents\n\n" + "\n".join(
+            f"- {d['title']}" + (f" ({d['period']})" if d["period"] else "") + f" — {d['filename']}" for d in docs))
+    for n in sorted((n for n in data["note"] if n["subject_id"] == subject_id), key=lambda n: n["created_at"]):
+        parts.append(f"## Note: {n['title']}\n\n{n['body']}")
+    name = re.sub(r"[^\w .-]", "_", subject["name"])[:80] or "company"
+    return PlainTextResponse("\n\n".join(parts) + "\n", media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
