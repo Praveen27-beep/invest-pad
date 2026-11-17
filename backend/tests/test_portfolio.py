@@ -256,3 +256,12 @@ def test_breaches_is_pure_arithmetic():
     assert portfolio.breaches(holdings, {"max_top3_pct": Decimal(1)}) == []                                     # fewer than three
     old = datetime.now(UTC) - timedelta(days=1)
     assert isinstance(old, datetime)
+
+
+def test_review_status_counts_without_building(me):
+    load(me)
+    assert me.get("/review/status").json() == {"unanswered": 0}     # not opened yet, so nothing built
+    items = me.get("/review").json()["items"]
+    assert items and me.get("/review/status").json() == {"unanswered": len(items)}
+    me.put(f"/review/items/{items[0]['id']}", json={"answer": "Because I said so in my thesis."})
+    assert me.get("/review/status").json() == {"unanswered": len(items) - 1}

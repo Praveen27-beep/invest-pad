@@ -389,6 +389,17 @@ def _review(cur, review_id) -> dict:
     return review
 
 
+@router.get("/review/status")
+def review_status(user: dict = Depends(auth.current_user)):
+    """For the nav badge: unanswered questions in this month's review, if it has been opened.
+    Reading this never builds the review, so the questions are still built from whatever the
+    user has recorded by the time they actually open it."""
+    with db.as_user(user["id"]) as cur:
+        cur.execute("SELECT count(*) AS n FROM review_item i JOIN review r ON r.id = i.review_id "
+                    "WHERE r.period = %s AND i.answered_at IS NULL", (datetime.now(UTC).strftime("%Y-%m"),))
+        return {"unanswered": cur.fetchone()["n"]}
+
+
 @router.get("/review")
 def get_review(user: dict = Depends(auth.current_user)):
     """This month's review. Built the first time it is opened in a month, then fixed, so the

@@ -12,6 +12,7 @@ export default function Top() {
   const [q, setQ] = useState("");
   const [inbox, setInbox] = useState(0);
   const [alerts, setAlerts] = useState(0);
+  const [review, setReview] = useState(0);
 
   useEffect(() => {
     if (path === "/login") return setEmail(null);
@@ -19,6 +20,7 @@ export default function Top() {
     api<unknown[]>("/captures").then((items) => setInbox(items.length)).catch(() => {});
     api<{ alerts: { status: string }[] }>("/portfolio")
       .then((p) => setAlerts(p.alerts.filter((a) => a.status === "open").length)).catch(() => {});
+    api<{ unanswered: number }>("/review/status").then((r) => setReview(r.unanswered)).catch(() => {});
   }, [path, router]);
 
   if (path === "/login") return null;
@@ -28,7 +30,8 @@ export default function Top() {
       <Link href="/">Companies</Link>
       <Link href="/inbox">Inbox{inbox ? ` (${inbox})` : ""}</Link>
       <Link href="/portfolio">Portfolio{alerts ? ` (${alerts})` : ""}</Link>
-      <Link href="/review">Review</Link>
+      <Link href="/review">Review{review ? ` (${review})` : ""}</Link>
+      <Link href="/graph">Connections</Link>
       <form onSubmit={(e) => { e.preventDefault(); if (q.trim()) router.push(`/search?q=${encodeURIComponent(q.trim())}`); }}>
         <input type="search" placeholder="Search notes" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search notes" />
       </form>
