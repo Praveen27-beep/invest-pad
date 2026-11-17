@@ -4,6 +4,7 @@ Needs a Postgres it can create databases in:
     TEST_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres   (the default)
 """
 
+import json
 import os
 import secrets
 
@@ -70,3 +71,26 @@ def new_user(app, owner):
         client.email, client.user_id, client.password = email, r.json()["id"], password
         return client
     return make
+
+
+@pytest.fixture
+def model(monkeypatch):
+    """Replace the model with a script. `model.reply` is what it will say; `model.calls` records what it was sent."""
+    class Script:
+        reply: dict | str = {}
+        calls: list = []
+        error: Exception | None = None
+
+    script = Script()
+    script.calls = []
+
+    def fake(m, system, user, max_tokens=1200):
+        script.calls.append({"model": m, "system": system, "user": user})
+        if script.error:
+            raise script.error
+        text = script.reply if isinstance(script.reply, str) else json.dumps(script.reply)
+        return text, 1000, 100
+
+    from app import llm
+    monkeypatch.setattr(llm, "complete", fake)
+    return script

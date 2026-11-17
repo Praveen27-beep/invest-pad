@@ -9,6 +9,7 @@ const STATUS = { processing: "Reading…", ready: "", no_text: "No text found", 
 export default function DocumentsTab({ subjectId, pack, onChange }: { subjectId: string; pack: Pack; onChange: () => void }) {
   const [docs, setDocs] = useState<Doc[] | null>(null);
   const [error, setError] = useState("");
+  const [scanNote, setScanNote] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const form = useRef<HTMLFormElement>(null);
 
@@ -68,6 +69,17 @@ export default function DocumentsTab({ subjectId, pack, onChange }: { subjectId:
               <Link href={`/d/${d.id}`}>{d.title}</Link>
               <span className="muted small">{d.doc_type}{d.period ? ` · ${d.period}` : ""}{d.doc_date ? ` · ${day(d.doc_date)}` : ""}</span>
               {STATUS[d.status] && <span className={d.status === "processing" ? "dirty" : "error"}>{STATUS[d.status]}</span>}
+              {d.status === "ready" && (
+                <button className="link small" title="Uses your model; checks this document's passages against the company's live assumptions"
+                  onClick={async () => {
+                    setScanNote((n) => ({ ...n, [d.id]: "Checking…" }));
+                    try {
+                      const r = await api<{ note: string }>(`/documents/${d.id}/scan`, { method: "POST" });
+                      setScanNote((n) => ({ ...n, [d.id]: r.note }));
+                    } catch (e) { setScanNote((n) => ({ ...n, [d.id]: (e as Error).message })); }
+                  }}>Check against my assumptions</button>
+              )}
+              {scanNote[d.id] && <span className="small" role="status">{scanNote[d.id]}</span>}
               <small>{d.pages ? `${d.pages} page(s)` : ""}</small>
             </li>
           ))}

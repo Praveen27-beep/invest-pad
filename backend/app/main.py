@@ -11,7 +11,7 @@ from psycopg.errors import UniqueViolation
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
 
-from . import assistant, auth, calc, capture, config, db, documents, export, notes, portfolio, thesis
+from . import assistant, auth, calc, capture, config, db, documents, export, notes, portfolio, scan, thesis
 
 log = logging.getLogger("investpad")
 
@@ -35,6 +35,7 @@ app.include_router(assistant.router)
 app.include_router(portfolio.router)
 app.include_router(export.router)
 app.include_router(calc.router)
+app.include_router(scan.router)
 
 
 @app.middleware("http")

@@ -97,6 +97,22 @@ function AssumptionCard({ a, run }: { a: Assumption; run: (action: () => Promise
     <div className="card">
       <div><span className={`badge ${a.state}`}>{STATES[a.state]}</span> <span className="badge">{a.basis === "fact" ? "Rests on a source" : "My judgement"}</span> {a.body}</div>
       {a.reason && <div className="snip">Last change: {a.reason}</div>}
+      {a.suggestions.length > 0 && (
+        <div className="card" style={{ marginTop: ".6rem", borderStyle: "dashed" }}>
+          <strong className="small">May cut against this (suggested by AI from your documents — not evidence until you accept)</strong>
+          {a.suggestions.map((s) => (
+            <div className="ev" key={s.id}>
+              {s.reason}
+              <span className="snip"><Link href={`/d/${s.document_id}`}>{s.document_title}</Link> · {s.page_label}
+                <span className="quote" style={{ display: "block" }}>{s.quote}</span></span>
+              <span className="row">
+                <button className="small" onClick={() => run(() => api(`/suggestions/${s.id}/accept`, { method: "POST" }), "Added as evidence against")}>Accept as evidence against</button>
+                <button className="link small" onClick={() => run(() => api(`/suggestions/${s.id}/dismiss`, { method: "POST" }), "Dismissed")}>Dismiss</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="cols" style={{ marginTop: ".6rem" }}>
         {(["for", "against"] as const).map((dir) => (
           <div key={dir}>

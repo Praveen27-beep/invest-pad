@@ -21,28 +21,6 @@ def co(new_user):
     return client
 
 
-@pytest.fixture
-def model(monkeypatch):
-    """Replace the model with a script. `model.reply` is what it will say; `model.calls` records what it was sent."""
-    class Script:
-        reply: dict | str = {}
-        calls: list = []
-        error: Exception | None = None
-
-    script = Script()
-    script.calls = []
-
-    def fake(m, system, user, max_tokens=1200):
-        script.calls.append({"model": m, "system": system, "user": user})
-        if script.error:
-            raise script.error
-        text = script.reply if isinstance(script.reply, str) else json.dumps(script.reply)
-        return text, 1000, 100
-
-    monkeypatch.setattr(llm, "complete", fake)
-    return script
-
-
 def connect(client, **extra):
     body = {"label": "My model", "base_url": "https://models.example/v1", "model": "some-model",
             "api_key": "sk-secret-key-value-9876", "price_in": "0.30", "price_out": "1.20", **extra}

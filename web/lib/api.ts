@@ -76,6 +76,7 @@ export type Evidence = {
 export type Assumption = {
   id: string; seq: number; body: string; basis: "fact" | "judgement";
   state: "holds" | "challenged" | "broken" | "outdated"; reason: string; updated_at: string; evidence: Evidence[];
+  suggestions: { id: string; quote: string; reason: string; page_label: string; document_id: string; document_title: string }[];
 };
 export type Thesis = { seq: number; body: string; versions: { seq: number; created_at: string }[]; assumptions: Assumption[] };
 export type Decision = {

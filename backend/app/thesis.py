@@ -148,8 +148,17 @@ def _assumptions(cur, position_id) -> list[dict]:
         # keep presenting it as one.
         e["is_sourced_fact"] = e["kind"] == "fact" and e["chunk_id"] is not None
         by_assumption.setdefault(e.pop("assumption_id"), []).append(e)
+    cur.execute(
+        "SELECT s.id, s.assumption_id, s.quote, s.reason, s.created_at, c.label AS page_label, d.id AS document_id, "
+        "  d.title AS document_title FROM evidence_suggestion s JOIN assumption a ON a.id = s.assumption_id "
+        "JOIN chunk c ON c.id = s.chunk_id JOIN document d ON d.id = c.document_id "
+        "WHERE a.position_id = %s AND s.status = 'open' ORDER BY s.created_at", (position_id,))
+    suggested: dict = {}
+    for s in cur.fetchall():
+        suggested.setdefault(s.pop("assumption_id"), []).append(s)
     for row in rows:
         row["evidence"] = by_assumption.get(row["id"], [])
+        row["suggestions"] = suggested.get(row["id"], [])
     return rows
 
 
