@@ -10,6 +10,13 @@ export default function Settings() {
       <HowIInvest />
       <Models />
       <Tokens />
+      <h2>Use your workspace from Claude or another MCP client</h2>
+      <p className="empty">
+        Read-only: search your documents and notes, list companies, read a company’s record. Nothing can be changed
+        or deleted this way. Create a token above that can ask questions, then add a remote MCP server with:
+      </p>
+      <pre className="card small" style={{ whiteSpace: "pre-wrap" }}>{`URL:    <this site’s address>/api/mcp   (for example http://localhost:3000/api/mcp)
+Header: Authorization: Bearer <your token>`}</pre>
       <h2>Export everything</h2>
       <p className="empty">
         One ZIP with every note and version, thesis, decision, document you uploaded, answer with its sources,
