@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
@@ -31,7 +32,7 @@ export default function Login() {
   return (
     <div className="narrow">
       <h1>Invest-pad</h1>
-      <p>Remember why you bought, passed, or walked away.</p>
+      <p>Remember why you bought, passed, or walked away. <Link href="/welcome">What is Invest-pad?</Link></p>
       <form onSubmit={submit} className="stack">
         <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
         <input type="password" placeholder="Password (10+ characters)" value={password} minLength={10}

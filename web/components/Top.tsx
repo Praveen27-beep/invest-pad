@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
+const PUBLIC = new Set(["/login", "/welcome", "/features", "/pricing", "/blog", "/manifesto", "/docs"]);
+
 export default function Top() {
   const path = usePathname();
   const router = useRouter();
@@ -15,15 +17,16 @@ export default function Top() {
   const [review, setReview] = useState(0);
 
   useEffect(() => {
-    if (path === "/login") return setEmail(null);
-    api<{ email: string }>("/auth/me").then((me) => setEmail(me.email)).catch(() => router.replace("/login"));
+    if (PUBLIC.has(path)) return setEmail(null);
+    // Signed out: the home page shows the public landing; anything else asks to sign in.
+    api<{ email: string }>("/auth/me").then((me) => setEmail(me.email)).catch(() => router.replace(path === "/" ? "/welcome" : "/login"));
     api<unknown[]>("/captures").then((items) => setInbox(items.length)).catch(() => {});
     api<{ alerts: { status: string }[] }>("/portfolio")
       .then((p) => setAlerts(p.alerts.filter((a) => a.status === "open").length)).catch(() => {});
     api<{ unanswered: number }>("/review/status").then((r) => setReview(r.unanswered)).catch(() => {});
   }, [path, router]);
 
-  if (path === "/login") return null;
+  if (PUBLIC.has(path)) return null;
   return (
     <nav className="top">
       <Link href="/" className="brand">Invest-pad</Link>
