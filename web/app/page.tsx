@@ -41,7 +41,16 @@ export default function Home() {
         </form>
         {error && <p className="error" role="alert">{error}</p>}
         {subjects.length === 0 ? (
-          <p className="empty">Add the first company you are researching.</p>
+          <div className="card">
+            <strong>Getting started</strong>
+            <ol className="small" style={{ margin: ".5rem 0 0", paddingLeft: "1.2rem", lineHeight: 1.7 }}>
+              <li>Add the first company you are researching, above.</li>
+              <li>On its page, upload an annual report or concall transcript, and write notes as you read.</li>
+              <li>Write your thesis and the assumptions it rests on. Mark which rest on a source and which are your judgement.</li>
+              <li>When you buy, pass or stop, record the decision and the one reason that decided it. That reason is what you will see when you come back.</li>
+              <li>Optional: in <Link href="/settings">Settings</Link>, write “How I invest”, connect a model to ask questions with cited answers, and set up the Chrome side panel. On <Link href="/portfolio">Portfolio</Link>, import holdings and set your own limits.</li>
+            </ol>
+          </div>
         ) : (
           <ul className="list">
             {subjects.map((s) => (<li key={s.id}><Link href={`/c/${s.id}`}>{s.name}</Link></li>))}
