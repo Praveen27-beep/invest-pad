@@ -7,6 +7,7 @@ Synthetic holdings only. Proves the screens work together; costs nothing.
 
 import secrets
 import sys
+import zipfile
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -70,9 +71,8 @@ with sync_playwright() as p:
     page.get_by_role("link", name="Settings").click()
     with page.expect_download() as dl:
         page.get_by_role("link", name="Download my data").click()
-    import io
-    import zipfile
-    names = zipfile.ZipFile(io.BytesIO(open(dl.value.path(), "rb").read())).namelist()
+    with zipfile.ZipFile(dl.value.path()) as z:
+        names = z.namelist()
     assert "data/holding.json" in names and "companies/Northgate Power Exchange/thesis.md" in names, names
     assert not errors, errors
     browser.close()
