@@ -94,3 +94,9 @@ def model(monkeypatch):
     from app import llm
     monkeypatch.setattr(llm, "complete", fake)
     return script
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    from app import ratelimit
+    ratelimit.reset()

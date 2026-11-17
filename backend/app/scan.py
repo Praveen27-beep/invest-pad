@@ -11,7 +11,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from . import ask, auth, db, llm
+from . import ask, auth, db, llm, ratelimit
 
 router = APIRouter()
 
@@ -66,8 +66,8 @@ def scan_document(cfg, owner_id, document_id) -> dict:
         return {"found": 0, "note": "No model is connected, so nothing was sent anywhere. Add one in Settings."}
 
     named = {f"A{i}": a for i, a in enumerate(assumptions, 1)}
-    user = "\n".join(f'<assumption id="{k}">{a["body"]}</assumption>' for k, a in named.items()) + "\n\n" + \
-        "\n".join(f'<source id="{k}">\n{s["text"]}\n</source>' for k, s in sources.items())
+    user = "\n".join(f'<assumption id="{k}">{ask.fence(a["body"])}</assumption>' for k, a in named.items()) + "\n\n" + \
+        "\n".join(f'<source id="{k}">\n{ask.fence(s["text"])}\n</source>' for k, s in sources.items())
     try:
         reply = llm.parse_json(ask._call(cfg, owner_id, model, "scan", SYSTEM, user))
     except llm.ModelError as exc:
@@ -104,6 +104,7 @@ def _or(text: str) -> str:
 
 @router.post("/documents/{document_id}/scan")
 def scan(document_id: uuid.UUID, request: Request, user: dict = Depends(auth.current_user)):
+    ratelimit.check("scan", str(user["id"]))
     try:
         return scan_document(request.app.state.config, user["id"], document_id)
     except LookupError as e:

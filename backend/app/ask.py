@@ -58,6 +58,16 @@ sell or hold, or how much.
 Reply with JSON only: {"flags": [{"rule": "<exact words from the rules>", "question": "<question>"}]}"""
 
 
+_TAG = re.compile(r"<\s*/?\s*(source|assumption|rules|decision)\b", re.I)
+
+
+def fence(text: str) -> str:
+    """Source text goes inside <source> tags in the prompt. A document that contains its own
+    tags could close ours and pose as a second source or as instructions, so any such tag
+    inside the text is defused (the angle bracket becomes a look-alike character)."""
+    return _TAG.sub(lambda m: "‹" + m.group(0)[1:], text)
+
+
 def _squash(text: str) -> str:
     """Compare text ignoring case, whitespace and typographic quote/dash variants."""
     text = text.translate(str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", " ": " "}))
@@ -170,7 +180,7 @@ def answer_question(cfg, owner_id, question_id) -> None:
                 note = "No model is connected, so nothing was sent anywhere. Add one in Settings."
             else:
                 model_name = model.label
-                blocks = "\n".join(f'<source id="{k}" from="{s["label"]}">\n{s["text"]}\n</source>'
+                blocks = "\n".join(f'<source id="{k}" from="{fence(s["label"])}">\n{fence(s["text"])}\n</source>'
                                    for k, s in sources.items())
                 style = f"\n\nHow this investor works (context, not a source):\n{profile[:2000]}" if profile else ""
                 reply = llm.parse_json(_call(cfg, owner_id, model, "answer", SYSTEM,
@@ -224,9 +234,10 @@ def check_decision(cfg, owner_id, draft: dict) -> dict:
         return {"flags": [], "note": "You have not written “How I invest” yet, so there is nothing to check against."}
     if model is None:
         return {"flags": [], "note": "No model is connected, so the check was not run."}
-    user = (f"<rules>\n{rules[:6000]}\n</rules>\n\n<decision>\nCompany: {draft['company']}\nDecision: {draft['type']}\n"
-            f"Reason: {draft['reason']}\nWould change my mind: {draft['would_change_mind']}\n"
-            f"Thesis: {draft['thesis'][:3000]}\nAssumptions: {'; '.join(draft['assumptions'])[:2000]}\n</decision>")
+    decision = (f"Company: {draft['company']}\nDecision: {draft['type']}\nReason: {draft['reason']}\n"
+                f"Would change my mind: {draft['would_change_mind']}\nThesis: {draft['thesis'][:3000]}\n"
+                f"Assumptions: {'; '.join(draft['assumptions'])[:2000]}")
+    user = f"<rules>\n{fence(rules[:6000])}\n</rules>\n\n<decision>\n{fence(decision)}\n</decision>"
     try:
         reply = llm.parse_json(_call(cfg, owner_id, model, "guardrail", GUARDRAIL_SYSTEM, user))
     except llm.ModelError as exc:

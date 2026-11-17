@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from psycopg import sql
 
-from . import auth, db
+from . import auth, db, ratelimit
 
 router = APIRouter()
 
@@ -144,6 +144,7 @@ def build(owner_id, files_dir: str, out) -> None:
 
 @router.get("/export")
 def export(request: Request, user: dict = Depends(auth.current_user)):
+    ratelimit.check("export", str(user["id"]))
     with db.as_user(user["id"]) as cur:
         cur.execute("INSERT INTO audit_log (action, object) VALUES ('export', '')")
     out = tempfile.SpooledTemporaryFile(max_size=50_000_000)

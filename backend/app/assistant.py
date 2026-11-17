@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from psycopg.errors import ForeignKeyViolation
 from pydantic import BaseModel, Field
 
-from . import ask, auth, db, llm
+from . import ask, auth, db, llm, ratelimit
 from .capture import _hash, token_user
 
 router = APIRouter()
@@ -106,6 +106,7 @@ class QuestionIn(BaseModel):
 
 
 def _create_question(request, background, owner_id, body: QuestionIn, source: str) -> dict:
+    ratelimit.check("ask", str(owner_id))
     try:
         with db.as_user(owner_id) as cur:
             cur.execute("INSERT INTO question (body, subject_id, model_id, source) VALUES (%s, %s, %s, %s) "

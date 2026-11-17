@@ -15,7 +15,7 @@ from argon2.exceptions import VerifyMismatchError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import db
+from . import db, ratelimit
 
 COOKIE = "investpad_session"
 router = APIRouter(prefix="/auth")
@@ -71,6 +71,7 @@ def current_user(request: Request) -> dict:
 
 @router.post("/signup", status_code=201)
 def signup(body: Signup, request: Request, response: Response):
+    ratelimit.check("signup", request.client.host if request.client else "unknown")
     with db.anonymous() as cur:
         cur.execute(
             "SELECT auth_signup(%s, %s, %s) AS id",
