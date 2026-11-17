@@ -8,7 +8,7 @@ advice wording, no spend or keys without Parasu.
 Done since the last version: export, delete audit, calculations, contradiction scan,
 editable/forensic checklists, workspace graph, journal, review badge, Markdown export,
 MCP server, rate limits, injection and cross-tenant tests, backup/restore, onboarding,
-eval runner, account deletion, deploy/demo/legal drafts, MVP report.
+eval runner, account deletion, decisions as cited Q&A sources, deploy/demo/legal drafts, MVP report.
 
 ## Needs Parasu
 
@@ -25,18 +25,14 @@ eval runner, account deletion, deploy/demo/legal drafts, MVP report.
 
 ## Can be built without him, in order
 
-1. **Decision record as a Q&A source** — medium. Let "why did I buy?" in Ask/the side
-   panel cite the decision entry. Needs `citation.decision_id` (+ assumption version) with
-   owner-scoped FKs, a source block per recent decision in `ask.answer_question`, and the
-   verifier treating the decision text as a source. Tests: quote must be in the decision.
-2. **"How I invest" suggestions** — small/medium. After 3+ decisions share a stated
+1. **"How I invest" suggestions** — small/medium. After 3+ decisions share a stated
    reason, propose a rule the user accepts (new profile version) or dismisses. Model
    call, explicit button, same verification style as the scan.
-3. **Landing page** — on its own branch (`invest-pad/landing`), static, only features in
+2. **Landing page** — on its own branch (`invest-pad/landing`), static, only features in
    `MVP-REPORT.md`, no SEBI/advice claims, no testimonials or numbers, not deployed,
    nothing on meicapital.in.
-4. **Vector search** — pgvector is in the image; embeddings need a model call per
+3. **Vector search** — pgvector is in the image; embeddings need a model call per
    passage (cost), so only after the eval shows keyword retrieval misses.
-5. **OCR** for scanned PDFs (e.g. Tesseract) — check licence and image size first.
-6. **Rate limits across processes** — move `ratelimit.py` to a Postgres table if more
+4. **OCR** for scanned PDFs (e.g. Tesseract) — check licence and image size first.
+5. **Rate limits across processes** — move `ratelimit.py` to a Postgres table if more
    than one API process is ever run.

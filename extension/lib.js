@@ -84,7 +84,9 @@ export function describeAnswer(answer) {
       quote: c.quote,
       source: c.document_title
         ? [c.document_title, c.document_period, c.page_label].filter(Boolean).join(" · ")
-        : `My note: ${c.note_title ?? ""}`,
+        : c.decision_id
+          ? `My decision · ${c.decision_date ?? ""}`
+          : `My note: ${c.note_title ?? ""}`,
     })),
   };
 }

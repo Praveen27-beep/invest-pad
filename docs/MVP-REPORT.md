@@ -12,7 +12,9 @@ passed, or stopped researching, without rereading their documents?*
 that shows the last decision, its decisive reason in the user's own words, what would
 change their mind, the thesis version in force that day, the assumptions it rested on
 then and how each stands now, and what was added since. `e2e/thesis.py` checks this in
-real Chrome. No AI is involved, so the answer cannot be invented.
+real Chrome. No AI is involved, so the answer cannot be invented. With a model connected,
+"why did I buy this?" in Ask or the Chrome side panel is answered from the decision
+entry, cited to it; a statement whose quotation is not in the decision is dropped.
 
 **Not yet proven with real material**: no real investor has used it on a real company
 for months, and no real model has answered a question (see below).
@@ -27,7 +29,7 @@ for months, and no real model has answered a question (see below).
 | Capture | Chrome side panel: save selections, offline queue, ask questions (token permission) |
 | Documents | PDF / Excel / Word upload, passage extraction and search; delete removes text and everything derived |
 | Thesis | Versions with diffs, assumptions (sourced fact vs judgement) with versions, evidence for/against, decision journal with snapshot, Overview |
-| Assistant | Bring-your-own model (OpenAI-compatible), cited answers with quotation checking, advice refusal, per-task and monthly caps, "How I invest" guardrail, contradiction scan suggestions |
+| Assistant | Bring-your-own model (OpenAI-compatible), cited answers from documents, notes and your recorded decisions, with quotation checking, advice refusal, per-task and monthly caps, "How I invest" guardrail, contradiction scan suggestions |
 | Analysis | Editable checklists (red flags, forensic), Numbers tab: 11 calculations with formulas, including DuPont, Beneish M-score, Sloan accruals |
 | Portfolio | Holdings CSV import, user-set limits with alerts, watchlist, monthly review questions |
 | Views | Connections graph (per company and workspace), decision journal, company Markdown export |
@@ -36,7 +38,7 @@ for months, and no real model has answered a question (see below).
 
 ## Evidence
 
-- Backend: **199 tests** pass (pytest, Postgres 16), ruff clean. Includes isolation,
+- Backend: **203 tests** pass (pytest, Postgres 16), ruff clean. Includes isolation,
   delete-leaves-nothing (a marker word searched across every text column after delete),
   export completeness (row counts per owned table), prompt-tag forging, cross-tenant
   access on every endpoint added after M6, calculations against hand-worked values.
@@ -60,8 +62,6 @@ and fill the human-check column.
 
 ## Known gaps
 
-- Q&A answers from documents and notes, not from the decision record itself; "why did I
-  buy?" is answered by the Overview, not by the chat.
 - Keyword search only; vector search is not built.
 - No OCR; large scanned annual reports untested.
 - `docker compose up`, the backup scripts under Docker, and the extension's toolbar,

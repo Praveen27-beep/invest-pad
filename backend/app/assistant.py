@@ -130,10 +130,12 @@ def _read_question(cur, question_id) -> dict:
     if answer:
         cur.execute(
             "SELECT c.id, c.body, x.quote, x.chunk_id, k.document_id, k.label AS page_label, "
-            "  d.title AS document_title, d.period AS document_period, x.note_id, n.title AS note_title "
+            "  d.title AS document_title, d.period AS document_period, x.note_id, n.title AS note_title, "
+            "  x.decision_id, dc.type AS decision_type, dc.decided_on AS decision_date, dc.subject_id AS decision_subject_id "
             "FROM claim c JOIN citation x ON x.claim_id = c.id "
             "LEFT JOIN chunk k ON k.id = x.chunk_id LEFT JOIN document d ON d.id = k.document_id "
-            "LEFT JOIN note n ON n.id = x.note_id WHERE c.answer_id = %s ORDER BY c.ordinal", (answer["id"],))
+            "LEFT JOIN note n ON n.id = x.note_id LEFT JOIN decision dc ON dc.id = x.decision_id "
+            "WHERE c.answer_id = %s ORDER BY c.ordinal", (answer["id"],))
         answer["claims"] = cur.fetchall()
         if answer["outcome"] == "answered" and not answer["claims"]:
             # Every source this answer quoted has since been deleted, and its claims with them.
@@ -209,12 +211,15 @@ class AcceptIn(BaseModel):
 def accept_claim(claim_id: uuid.UUID, body: AcceptIn, user: dict = Depends(auth.current_user)):
     """Keep an AI statement as evidence. It stays labelled as AI, with the passage it quoted."""
     with db.as_user(user["id"]) as cur:
-        cur.execute("SELECT c.body, x.chunk_id, x.note_id FROM claim c JOIN citation x ON x.claim_id = c.id "
+        cur.execute("SELECT c.body, x.chunk_id, x.note_id, x.decision_id FROM claim c JOIN citation x ON x.claim_id = c.id "
                     "WHERE c.id = %s LIMIT 1", (claim_id,))
         claim = cur.fetchone()
         cur.execute("SELECT 1 FROM assumption WHERE id = %s", (body.assumption_id,))
         if not claim or not cur.fetchone():
             raise HTTPException(404, "Not found")
+        if claim["decision_id"]:
+            # A restatement of your own decision is not evidence for the assumptions under it.
+            raise HTTPException(422, "This statement comes from your own decision record, so it cannot be evidence.")
         cur.execute("INSERT INTO evidence (assumption_id, direction, kind, body, chunk_id, note_id, accepted_claim) "
                     "VALUES (%s, %s, 'ai', %s, %s, %s, %s) RETURNING id",
                     (body.assumption_id, body.direction, claim["body"], claim["chunk_id"], claim["note_id"],

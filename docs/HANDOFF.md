@@ -14,6 +14,7 @@ for the state of things and `docs/REMAINING.md` for what is left).
 - Workspace Connections page, decision Journal, review badge (`/review/status`).
 - Hardening: rate limits, prompt-tag fencing, injection and cross-tenant tests.
 - Read-only MCP server (`app/mcp.py`).
+- Ask/side panel can cite the user's recorded decisions (012), so "why did I buy?" works there too.
 - Backup/restore scripts, getting-started guide, eval runner (`backend/eval/`).
 - Docs: `DEPLOY.md`, `DEMO.md`, `MVP-REPORT.md`, `legal/*-DRAFT.md` (for lawyer review).
 

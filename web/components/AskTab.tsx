@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { api, type Assumption, type Claim, type ModelsInfo, type Question, type Thesis, when } from "@/lib/api";
+import { api, type Assumption, type Claim, type ModelsInfo, type Question, type Thesis, day, when } from "@/lib/api";
 
 const HEAD = {
   unknown: "Your material does not answer this",
@@ -108,9 +108,11 @@ function ClaimRow({ claim, assumptions }: { claim: Claim; assumptions: Assumptio
       <span className="snip">
         {claim.document_id
           ? <Link href={`/d/${claim.document_id}#${claim.chunk_id}`}>{claim.document_title}{claim.document_period ? ` · ${claim.document_period}` : ""} · {claim.page_label}</Link>
-          : <Link href={`/n/${claim.note_id}`}>My note: {claim.note_title}</Link>}
+          : claim.decision_id
+            ? <Link href={`/c/${claim.decision_subject_id}`}>My decision · {day(claim.decision_date ?? "")}</Link>
+            : <Link href={`/n/${claim.note_id}`}>My note: {claim.note_title}</Link>}
         {" · "}
-        {done || <button className="link small" onClick={() => setOpen(!open)}>Keep as evidence</button>}
+        {done || claim.decision_id || <button className="link small" onClick={() => setOpen(!open)}>Keep as evidence</button>}
       </span>
       {open && (assumptions.length === 0 ? <p className="small muted">Add an assumption on the Thesis tab first.</p> : (
         <form className="row" style={{ flexWrap: "wrap", marginTop: ".4rem" }} onSubmit={keep}>

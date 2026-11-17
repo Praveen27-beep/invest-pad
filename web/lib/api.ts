@@ -103,6 +103,7 @@ export type Flag = { rule: string; question: string };
 export type Claim = {
   id: string; body: string; quote: string; chunk_id: string | null; document_id: string | null; page_label: string | null;
   document_title: string | null; document_period: string | null; note_id: string | null; note_title: string | null;
+  decision_id?: string | null; decision_type?: string | null; decision_date?: string | null; decision_subject_id?: string | null;
 };
 export type Answer = {
   id: string; outcome: "answered" | "unknown" | "refused" | "no_model" | "failed"; note: string; model: string;
