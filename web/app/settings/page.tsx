@@ -10,6 +10,12 @@ export default function Settings() {
       <HowIInvest />
       <Models />
       <Tokens />
+      <h2>Export everything</h2>
+      <p className="empty">
+        One ZIP with every note and version, thesis, decision, document you uploaded, answer with its sources,
+        holdings import and review — as readable files plus the full record as JSON. Model keys are not included.
+      </p>
+      <a className="button" href="/api/export" download>Download my data</a>
     </>
   );
 }

@@ -66,6 +66,14 @@ with sync_playwright() as p:
     expect(page.get_by_text("Saved")).to_be_visible()
     text = page.locator("main").inner_text().lower()
     assert not [w for w in BANNED if w in text], [w for w in BANNED if w in text]
+
+    page.get_by_role("link", name="Settings").click()
+    with page.expect_download() as dl:
+        page.get_by_role("link", name="Download my data").click()
+    import io
+    import zipfile
+    names = zipfile.ZipFile(io.BytesIO(open(dl.value.path(), "rb").read())).namelist()
+    assert "data/holding.json" in names and "companies/Northgate Power Exchange/thesis.md" in names, names
     assert not errors, errors
     browser.close()
 print("portfolio e2e passed")
