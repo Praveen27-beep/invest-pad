@@ -6,12 +6,13 @@ import AskTab from "@/components/AskTab";
 import ChecklistTab from "@/components/ChecklistTab";
 import DocumentsTab from "@/components/DocumentsTab";
 import GraphTab from "@/components/GraphTab";
+import NumbersTab from "@/components/NumbersTab";
 import NoteList from "@/components/NoteList";
 import OverviewPanel from "@/components/Overview";
 import ThesisTab from "@/components/ThesisTab";
 import { api, type NoteSummary, type Overview, type Pack } from "@/lib/api";
 
-const TABS = [["overview", "Overview"], ["ask", "Ask"], ["thesis", "Thesis & decisions"], ["documents", "Documents"], ["notes", "Notes"], ["checklist", "Red flags"], ["graph", "Connections"]];
+const TABS = [["overview", "Overview"], ["ask", "Ask"], ["thesis", "Thesis & decisions"], ["documents", "Documents"], ["notes", "Notes"], ["checklist", "Red flags"], ["numbers", "Numbers"], ["graph", "Connections"]];
 
 export default function Company() {
   const { id } = useParams<{ id: string }>();
@@ -65,6 +66,7 @@ export default function Company() {
       {tab === "documents" && <DocumentsTab subjectId={id} pack={pack} onChange={load} />}
       {tab === "notes" && <NoteList notes={notes} subjectId={id} />}
       {tab === "checklist" && <ChecklistTab subjectId={id} pack={pack} />}
+      {tab === "numbers" && <NumbersTab />}
       {tab === "graph" && <GraphTab subjectId={id} />}
     </>
   );
