@@ -5,6 +5,7 @@ is a journal entry that is never changed afterwards.
 """
 
 import difflib
+import hashlib
 import json
 import re
 import uuid
@@ -332,23 +333,86 @@ class ChecklistIn(BaseModel):
     items: list[ChecklistItem] = Field(max_length=100)
 
 
+def checklists(cur) -> dict:
+    """Every checklist this user has: the built-in ones, with the user's latest edit of each
+    in its place, plus the ones they wrote. seq 0 means the built-in wording."""
+    out = {k: {"key": k, "seq": 0, "builtin": True, "edited": False, **c} for k, c in PACK["checklists"].items()}
+    cur.execute("SELECT DISTINCT ON (key) key, seq, title, intro, items FROM checklist_version ORDER BY key, seq DESC")
+    for row in cur.fetchall():
+        builtin = row["key"] in PACK["checklists"]
+        out[row["key"]] = {**row, "builtin": builtin, "edited": builtin}
+    return out
+
+
+@router.get("/checklists")
+def list_checklists(user: dict = Depends(auth.current_user)):
+    with db.as_user(user["id"]) as cur:
+        return list(checklists(cur).values())
+
+
+class ChecklistDefItem(BaseModel):
+    id: str = Field(default="", max_length=60)
+    text: str = Field(min_length=1, max_length=500)
+
+
+class ChecklistDefIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    intro: str = Field(default="", max_length=2_000)
+    items: list[ChecklistDefItem] = Field(min_length=1, max_length=100)
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "checklist"
+
+
+@router.put("/checklists/{key}")
+def save_checklist_def(key: str, body: ChecklistDefIn, user: dict = Depends(auth.current_user)):
+    """Save a new version of a checklist: an edit of a built-in one, of the user's own, or
+    a new one (key "new"). An item keeps its id while its wording is unchanged or edited in
+    place, so earlier answers still line up; new items get a new id."""
+    with db.as_user(user["id"]) as cur:
+        existing = checklists(cur)
+        if key == "new":
+            key, n = _slug(body.title), 2
+            base = key
+            while key in existing:
+                key, n = f"{base}-{n}"[:60], n + 1
+        elif key not in existing:
+            raise HTTPException(404, "Unknown checklist")
+        known = {i["id"] for i in existing.get(key, {}).get("items", [])}
+        items, seen = [], set()
+        for item in body.items:
+            text = item.text.strip()
+            ident = item.id if item.id in known and item.id not in seen else \
+                "i-" + hashlib.sha256(text.encode()).hexdigest()[:10]
+            if ident in seen or not text:
+                continue
+            seen.add(ident)
+            items.append({"id": ident, "text": text})
+        cur.execute("SELECT coalesce(max(seq), 0) + 1 AS seq FROM checklist_version WHERE key = %s", (key,))
+        seq = cur.fetchone()["seq"]
+        cur.execute("INSERT INTO checklist_version (key, seq, title, intro, items) VALUES (%s, %s, %s, %s, %s)",
+                    (key, seq, body.title.strip(), body.intro.strip(), Jsonb(items)))
+        return checklists(cur)[key]
+
+
 @router.post("/subjects/{subject_id}/checklists/{key}", status_code=201)
 def save_checklist(subject_id: uuid.UUID, key: str, body: ChecklistIn, user: dict = Depends(auth.current_user)):
-    checklist = PACK["checklists"].get(key)
-    if not checklist:
-        raise HTTPException(404, "Unknown checklist")
-    questions = {item["id"]: item["text"] for item in checklist["items"]}
-    answers = {item.id: item for item in body.items}
-    if set(answers) != set(questions):
-        raise HTTPException(422, "Answer every item; “don't know yet” is a valid answer")
-    # Store the question text with the answer, so the record still reads correctly if the
-    # checklist wording changes later.
-    items = [{"id": i, "text": questions[i], "answer": answers[i].answer, "note": answers[i].note.strip()}
-             for i in questions]
     with db.as_user(user["id"]) as cur:
         _subject(cur, subject_id)
-        cur.execute("INSERT INTO checklist_run (subject_id, checklist_key, items) VALUES (%s, %s, %s) "
-                    "RETURNING id, items, created_at", (subject_id, key, Jsonb(items)))
+        checklist = checklists(cur).get(key)
+        if not checklist:
+            raise HTTPException(404, "Unknown checklist")
+        questions = {item["id"]: item["text"] for item in checklist["items"]}
+        answers = {item.id: item for item in body.items}
+        if set(answers) != set(questions):
+            raise HTTPException(422, "Answer every item; “don't know yet” is a valid answer")
+        # Store the question text with the answer, so the record still reads correctly if the
+        # checklist wording changes later.
+        items = [{"id": i, "text": questions[i], "answer": answers[i].answer, "note": answers[i].note.strip()}
+                 for i in questions]
+        cur.execute("INSERT INTO checklist_run (subject_id, checklist_key, checklist_seq, items) VALUES (%s, %s, %s, %s) "
+                    "RETURNING id, items, created_at, checklist_seq", (subject_id, key, checklist["seq"], Jsonb(items)))
         return cur.fetchone()
 
 
@@ -356,9 +420,9 @@ def save_checklist(subject_id: uuid.UUID, key: str, body: ChecklistIn, user: dic
 def get_checklist(subject_id: uuid.UUID, key: str, user: dict = Depends(auth.current_user)):
     """The latest run, and how many runs there have been."""
     with db.as_user(user["id"]) as cur:
-        cur.execute("SELECT id, items, created_at, count(*) OVER () AS runs FROM checklist_run "
+        cur.execute("SELECT id, items, created_at, checklist_seq, count(*) OVER () AS runs FROM checklist_run "
                     "WHERE subject_id = %s AND checklist_key = %s ORDER BY created_at DESC LIMIT 1", (subject_id, key))
-        return cur.fetchone() or {"id": None, "items": [], "created_at": None, "runs": 0}
+        return cur.fetchone() or {"id": None, "items": [], "created_at": None, "runs": 0, "checklist_seq": None}
 
 
 # ---------------------------------------------------------------- the reopen view

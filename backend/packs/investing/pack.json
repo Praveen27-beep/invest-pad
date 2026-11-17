@@ -1,33 +1,156 @@
 {
   "key": "investing",
-  "labels": { "subject": "Company", "position": "Thesis", "decision": "Decision" },
+  "labels": {
+    "subject": "Company",
+    "position": "Thesis",
+    "decision": "Decision"
+  },
   "decision_types": [
-    { "key": "bought", "label": "Bought" },
-    { "key": "added", "label": "Added" },
-    { "key": "trimmed", "label": "Trimmed" },
-    { "key": "sold", "label": "Sold" },
-    { "key": "passed", "label": "Passed" },
-    { "key": "stopped", "label": "Stopped researching" },
-    { "key": "researching", "label": "Still researching" }
+    {
+      "key": "bought",
+      "label": "Bought"
+    },
+    {
+      "key": "added",
+      "label": "Added"
+    },
+    {
+      "key": "trimmed",
+      "label": "Trimmed"
+    },
+    {
+      "key": "sold",
+      "label": "Sold"
+    },
+    {
+      "key": "passed",
+      "label": "Passed"
+    },
+    {
+      "key": "stopped",
+      "label": "Stopped researching"
+    },
+    {
+      "key": "researching",
+      "label": "Still researching"
+    }
   ],
-  "document_types": ["annual report", "concall", "presentation", "results", "credit rating", "exchange filing", "other"],
+  "document_types": [
+    "annual report",
+    "concall",
+    "presentation",
+    "results",
+    "credit rating",
+    "exchange filing",
+    "other"
+  ],
   "checklists": {
     "red-flags": {
       "title": "Red flags before deeper research",
       "intro": "Answer from primary sources. \"Don't know yet\" is a valid answer and tells you what to read first.",
       "items": [
-        { "id": "auditor-change", "text": "Has the auditor resigned or been changed in the last three years?" },
-        { "id": "audit-qualification", "text": "Does the auditor's report carry a qualification, emphasis of matter, or adverse remarks under CARO?" },
-        { "id": "related-party", "text": "Are related-party transactions large relative to revenue or profit, or growing?" },
-        { "id": "promoter-pledge", "text": "Have promoters pledged a meaningful share of their holding?" },
-        { "id": "cash-vs-profit", "text": "Is cash flow from operations persistently lower than reported profit?" },
-        { "id": "receivables", "text": "Are receivables or inventory growing much faster than sales?" },
-        { "id": "contingent", "text": "Are contingent liabilities large relative to net worth?" },
-        { "id": "capitalised-costs", "text": "Is the company capitalising costs that peers expense?" },
-        { "id": "frequent-equity", "text": "Has there been frequent equity dilution or preferential allotment to promoters?" },
-        { "id": "management-turnover", "text": "Have the CFO, company secretary or independent directors left abruptly?" },
-        { "id": "regulatory-action", "text": "Is there any regulatory order, penalty or investigation against the company or promoters?" },
-        { "id": "disclosure-quality", "text": "Are disclosures thin, delayed, or inconsistent between filings and presentations?" }
+        {
+          "id": "auditor-change",
+          "text": "Has the auditor resigned or been changed in the last three years?"
+        },
+        {
+          "id": "audit-qualification",
+          "text": "Does the auditor's report carry a qualification, emphasis of matter, or adverse remarks under CARO?"
+        },
+        {
+          "id": "related-party",
+          "text": "Are related-party transactions large relative to revenue or profit, or growing?"
+        },
+        {
+          "id": "promoter-pledge",
+          "text": "Have promoters pledged a meaningful share of their holding?"
+        },
+        {
+          "id": "cash-vs-profit",
+          "text": "Is cash flow from operations persistently lower than reported profit?"
+        },
+        {
+          "id": "receivables",
+          "text": "Are receivables or inventory growing much faster than sales?"
+        },
+        {
+          "id": "contingent",
+          "text": "Are contingent liabilities large relative to net worth?"
+        },
+        {
+          "id": "capitalised-costs",
+          "text": "Is the company capitalising costs that peers expense?"
+        },
+        {
+          "id": "frequent-equity",
+          "text": "Has there been frequent equity dilution or preferential allotment to promoters?"
+        },
+        {
+          "id": "management-turnover",
+          "text": "Have the CFO, company secretary or independent directors left abruptly?"
+        },
+        {
+          "id": "regulatory-action",
+          "text": "Is there any regulatory order, penalty or investigation against the company or promoters?"
+        },
+        {
+          "id": "disclosure-quality",
+          "text": "Are disclosures thin, delayed, or inconsistent between filings and presentations?"
+        }
+      ]
+    },
+    "forensic": {
+      "title": "Forensic accounting checks",
+      "intro": "From the annual reports and notes, several years side by side. Ratios can be worked out on the Numbers tab, formula shown. A \"yes\" is a reason to read further, not a verdict.",
+      "items": [
+        {
+          "id": "cfo-vs-pat",
+          "text": "Over five years, is cumulative cash from operations well below cumulative net profit?"
+        },
+        {
+          "id": "receivables-outpace",
+          "text": "Are receivable days rising, or receivables growing faster than revenue?"
+        },
+        {
+          "id": "inventory-outpace",
+          "text": "Are inventory days rising without a stated reason (new plant, stocking for a launch)?"
+        },
+        {
+          "id": "other-income",
+          "text": "Is other income a large or growing share of profit before tax?"
+        },
+        {
+          "id": "capitalised-costs",
+          "text": "Are interest or other expenses being capitalised, or is capital work-in-progress large and ageing?"
+        },
+        {
+          "id": "related-party",
+          "text": "Are related-party sales, purchases, loans or guarantees large relative to revenue or net worth?"
+        },
+        {
+          "id": "loans-advances",
+          "text": "Are there sizeable loans, advances or investments in group companies, or unexplained 'other' assets?"
+        },
+        {
+          "id": "contingent",
+          "text": "Are contingent liabilities large relative to net worth, or growing?"
+        },
+        {
+          "id": "policy-changes",
+          "text": "Did depreciation method, revenue recognition or other accounting policies change in a way that lifted profit?"
+        },
+        {
+          "id": "tax-gap",
+          "text": "Is tax actually paid (cash flow statement) persistently far below the tax charge in the profit and loss account?"
+        },
+        {
+          "id": "accruals-score",
+          "text": "On the Numbers tab, is the accruals ratio high, or the Beneish M-score above −1.78?"
+        },
+        {
+          "id": "subsidiary-gap",
+          "text": "Do standalone and consolidated numbers tell different stories (profit in the parent, losses or debt in subsidiaries)?"
+        }
       ]
     }
   }
